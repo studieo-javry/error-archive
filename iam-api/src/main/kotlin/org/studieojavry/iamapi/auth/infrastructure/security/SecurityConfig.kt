@@ -38,6 +38,8 @@ class SecurityConfig {
             }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers(
+                    // OAuth 시작 / 콜백 — 로그인 *전* 이라 인증 없이 호출돼야 함
+                    "/api/v1/auth/oauth/**",
                     "/actuator/health",
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람 (실 API 호출은 Authorization 필요)
                     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",

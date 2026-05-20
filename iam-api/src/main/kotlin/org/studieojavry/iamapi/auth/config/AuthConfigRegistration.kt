@@ -7,5 +7,6 @@ import org.springframework.context.annotation.Configuration
 @EnableConfigurationProperties(
     JwtProperties::class,
     AuthCookieProperties::class,
+    OAuthProperties::class,
 )
 class AuthConfigRegistration

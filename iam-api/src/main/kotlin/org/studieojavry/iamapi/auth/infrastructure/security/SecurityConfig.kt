@@ -44,6 +44,8 @@ class SecurityConfig {
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
                     "/actuator/health",
+                    // 정적 아바타 이미지 — 공개 read. 업로드/삭제는 별도 endpoint 라 인증 필요.
+                    "/avatars/**",
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람 (실 API 호출은 Authorization 필요)
                     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
                     // 에러 dispatcher — NoHandler 등 정적 미스가 /error 로 forward 될 때

@@ -8,5 +8,6 @@ import org.springframework.context.annotation.Configuration
     JwtProperties::class,
     AuthCookieProperties::class,
     OAuthProperties::class,
+    AvatarStorageProperties::class,
 )
 class AuthConfigRegistration

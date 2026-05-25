@@ -17,11 +17,16 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.multipart.MultipartFile
 import org.studieojavry.iamapi.auth.application.command.UpdateMyProfileCommand
+import org.studieojavry.iamapi.auth.application.usecase.AvatarUploadInvalidException
 import org.studieojavry.iamapi.auth.application.usecase.GetMyProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetPublicProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.SearchUsersUseCase
+import org.studieojavry.iamapi.auth.application.usecase.UpdateMyAvatarUseCase
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyProfileUseCase
 import org.studieojavry.iamapi.auth.presentation.web.dto.request.UpdateMyProfileRequest
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.MyProfileResponse
@@ -36,6 +41,7 @@ class UserController(
     private val updateMyProfileUseCase: UpdateMyProfileUseCase,
     private val getPublicProfileUseCase: GetPublicProfileUseCase,
     private val searchUsersUseCase: SearchUsersUseCase,
+    private val updateMyAvatarUseCase: UpdateMyAvatarUseCase,
 ) {
 
     @Operation(
@@ -169,6 +175,65 @@ class UserController(
             bio = r.bio,
             status = r.status,
             isDeleted = r.isDeleted,
+        )
+    }
+
+    @Operation(
+        summary = "내 아바타 업로드 (multipart)",
+        description = "Content-Type: image/png|jpeg|webp|gif, 크기 ≤ 5MB. 갱신된 전체 프로필 반환. 기존 storage 파일은 함께 삭제."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "업로드됨 + 프로필 갱신"),
+        ApiResponse(responseCode = "400", description = "허용 외 MIME / 크기 초과 / 빈 파일", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @PostMapping("/me/avatar", consumes = ["multipart/form-data"])
+    fun uploadAvatar(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @RequestParam("file") file: MultipartFile,
+    ): MyProfileResponse {
+        val userId = currentUserId(jwt)
+        try {
+            updateMyAvatarUseCase.upload(
+                userId = userId,
+                originalFileName = file.originalFilename,
+                contentType = file.contentType,
+                bytes = file.bytes,
+            )
+        } catch (e: AvatarUploadInvalidException) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+        }
+        val r = getMyProfileUseCase.invoke(userId)
+        return MyProfileResponse(
+            userId = r.userId, email = r.email, displayName = r.displayName,
+            avatarUrl = r.avatarUrl, bio = r.bio, status = r.status,
+            pendingDeletionAt = r.pendingDeletionAt, createdAt = r.createdAt,
+            language = r.language, timezone = r.timezone, theme = r.theme.name,
+            defaultWorkspaceId = r.defaultWorkspaceId,
+        )
+    }
+
+    @Operation(
+        summary = "내 아바타 제거",
+        description = "user.avatarUrl 을 null 로. 기존 storage 파일도 함께 삭제. 멱등."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "제거됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @DeleteMapping("/me/avatar")
+    fun removeAvatar(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): MyProfileResponse {
+        val userId = currentUserId(jwt)
+        updateMyAvatarUseCase.remove(userId)
+        val r = getMyProfileUseCase.invoke(userId)
+        return MyProfileResponse(
+            userId = r.userId, email = r.email, displayName = r.displayName,
+            avatarUrl = r.avatarUrl, bio = r.bio, status = r.status,
+            pendingDeletionAt = r.pendingDeletionAt, createdAt = r.createdAt,
+            language = r.language, timezone = r.timezone, theme = r.theme.name,
+            defaultWorkspaceId = r.defaultWorkspaceId,
         )
     }
 

@@ -20,14 +20,21 @@ import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.multipart.MultipartFile
 import org.studieojavry.iamapi.auth.application.command.UpdateMyProfileCommand
 import org.studieojavry.iamapi.auth.application.usecase.AvatarUploadInvalidException
 import org.studieojavry.iamapi.auth.application.usecase.GetMyProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetPublicProfileUseCase
+import org.studieojavry.iamapi.auth.application.usecase.ListMySessionsUseCase
+import org.studieojavry.iamapi.auth.application.usecase.RevokeAllMySessionsUseCase
+import org.studieojavry.iamapi.auth.application.usecase.RevokeMySessionUseCase
 import org.studieojavry.iamapi.auth.application.usecase.SearchUsersUseCase
+import org.studieojavry.iamapi.auth.application.usecase.SessionNotFoundException
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyAvatarUseCase
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyProfileUseCase
+import org.studieojavry.iamapi.auth.presentation.web.dto.response.SessionResponse
+import java.util.UUID
 import org.studieojavry.iamapi.auth.presentation.web.dto.request.UpdateMyProfileRequest
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.MyProfileResponse
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.PublicProfileResponse
@@ -42,6 +49,9 @@ class UserController(
     private val getPublicProfileUseCase: GetPublicProfileUseCase,
     private val searchUsersUseCase: SearchUsersUseCase,
     private val updateMyAvatarUseCase: UpdateMyAvatarUseCase,
+    private val listMySessionsUseCase: ListMySessionsUseCase,
+    private val revokeMySessionUseCase: RevokeMySessionUseCase,
+    private val revokeAllMySessionsUseCase: RevokeAllMySessionsUseCase,
 ) {
 
     @Operation(
@@ -235,6 +245,73 @@ class UserController(
             language = r.language, timezone = r.timezone, theme = r.theme.name,
             defaultWorkspaceId = r.defaultWorkspaceId,
         )
+    }
+
+    @Operation(
+        summary = "내 세션 목록",
+        description = "활성 refresh family 목록. 각 항목은 디바이스 메타(deviceLabel/UA/IP) + 마지막 사용 시각."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @GetMapping("/me/sessions")
+    fun mySessions(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): List<SessionResponse> {
+        val userId = currentUserId(jwt)
+        return listMySessionsUseCase.invoke(userId).map {
+            SessionResponse(
+                sessionId = it.sessionId,
+                deviceLabel = it.deviceLabel,
+                userAgent = it.userAgent,
+                ipAddress = it.ipAddress,
+                createdAt = it.createdAt,
+                lastUsedAt = it.lastUsedAt,
+                expiresAt = it.expiresAt,
+                rememberMe = it.rememberMe,
+            )
+        }
+    }
+
+    @Operation(
+        summary = "특정 세션 종료",
+        description = "지정한 sessionId(=family) 의 모든 refresh row 를 revoke. 본인 소유만. 모르는 sessionId 는 404."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "종료됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "본인 활성 세션 중 해당 sessionId 없음", content = [Content()]),
+    )
+    @DeleteMapping("/me/sessions/{sessionId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun revokeSession(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "세션 ID (family UUID)") @PathVariable sessionId: UUID,
+    ) {
+        val userId = currentUserId(jwt)
+        try {
+            revokeMySessionUseCase.invoke(userId, sessionId)
+        } catch (e: SessionNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        }
+    }
+
+    @Operation(
+        summary = "모든 세션 종료 (Sign out everywhere)",
+        description = "현재 디바이스 포함 모든 refresh family 를 revoke. 호출자 자신도 access 만료 후 강제 재로그인."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "전부 종료됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @PostMapping("/me/sessions/revoke-all")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun revokeAllSessions(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        val userId = currentUserId(jwt)
+        revokeAllMySessionsUseCase.invoke(userId)
     }
 
     private fun currentUserId(jwt: Jwt): Long =

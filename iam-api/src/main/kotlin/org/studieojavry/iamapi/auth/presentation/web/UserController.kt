@@ -6,7 +6,9 @@ import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
@@ -27,10 +29,13 @@ import org.studieojavry.iamapi.auth.application.usecase.AvatarUploadInvalidExcep
 import org.studieojavry.iamapi.auth.application.usecase.GetMyProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetPublicProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.ListMySessionsUseCase
+import org.studieojavry.iamapi.auth.application.usecase.RequestAccountDeletionUseCase
+import org.studieojavry.iamapi.auth.application.usecase.RestoreAccountUseCase
 import org.studieojavry.iamapi.auth.application.usecase.RevokeAllMySessionsUseCase
 import org.studieojavry.iamapi.auth.application.usecase.RevokeMySessionUseCase
 import org.studieojavry.iamapi.auth.application.usecase.SearchUsersUseCase
 import org.studieojavry.iamapi.auth.application.usecase.SessionNotFoundException
+import org.studieojavry.iamapi.auth.application.usecase.UserNotFoundException
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyAvatarUseCase
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyProfileUseCase
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.SessionResponse
@@ -52,6 +57,9 @@ class UserController(
     private val listMySessionsUseCase: ListMySessionsUseCase,
     private val revokeMySessionUseCase: RevokeMySessionUseCase,
     private val revokeAllMySessionsUseCase: RevokeAllMySessionsUseCase,
+    private val requestAccountDeletionUseCase: RequestAccountDeletionUseCase,
+    private val restoreAccountUseCase: RestoreAccountUseCase,
+    private val authCookieFactory: org.studieojavry.iamapi.auth.infrastructure.security.AuthCookieFactory,
 ) {
 
     @Operation(
@@ -245,6 +253,52 @@ class UserController(
             language = r.language, timezone = r.timezone, theme = r.theme.name,
             defaultWorkspaceId = r.defaultWorkspaceId,
         )
+    }
+
+    @Operation(
+        summary = "회원 탈퇴 (요청) — soft delete",
+        description = "ACTIVE → PENDING_DELETION. 30일 grace period 시작. refresh 쿠키 만료. 30일 안에 복구 가능 (POST /me/restore)."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "PENDING_DELETION 으로 전환됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "ACTIVE 가 아닌 상태", content = [Content()])
+    )
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deleteMe(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(hidden = true) response: HttpServletResponse,
+    ) {
+        val userId = currentUserId(jwt)
+        try {
+            requestAccountDeletionUseCase.invoke(userId)
+        } catch (e: UserNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: IllegalStateException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
+        }
+        response.addHeader(HttpHeaders.SET_COOKIE, authCookieFactory.expiredRefreshTokenCookie().toString())
+    }
+
+    @Operation(
+        summary = "탈퇴 취소 (복구)",
+        description = "PENDING_DELETION → ACTIVE. grace 안에서만 가능. 워크스페이스 멤버십 / 팔로우는 복원 안 됨."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "복구됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "PENDING_DELETION 이 아니거나 grace 만료", content = [Content()])
+    )
+    @PostMapping("/me/restore")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun restoreMe(@Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt) {
+        val userId = currentUserId(jwt)
+        try {
+            restoreAccountUseCase.invoke(userId)
+        } catch (e: IllegalStateException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
+        }
     }
 
     @Operation(

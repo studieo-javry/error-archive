@@ -26,6 +26,10 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.multipart.MultipartFile
 import org.studieojavry.iamapi.auth.application.command.UpdateMyProfileCommand
 import org.studieojavry.iamapi.auth.application.usecase.AvatarUploadInvalidException
+import org.studieojavry.iamapi.auth.application.usecase.ConnectionNotFoundException
+import org.studieojavry.iamapi.auth.application.usecase.DisconnectConnectionUseCase
+import org.studieojavry.iamapi.auth.application.usecase.LastConnectionRemainingException
+import org.studieojavry.iamapi.auth.application.usecase.ListMyConnectionsUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetMyProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetPublicProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.ListMySessionsUseCase
@@ -38,6 +42,7 @@ import org.studieojavry.iamapi.auth.application.usecase.SessionNotFoundException
 import org.studieojavry.iamapi.auth.application.usecase.UserNotFoundException
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyAvatarUseCase
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyProfileUseCase
+import org.studieojavry.iamapi.auth.presentation.web.dto.response.ConnectionResponse
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.SessionResponse
 import java.util.UUID
 import org.studieojavry.iamapi.auth.presentation.web.dto.request.UpdateMyProfileRequest
@@ -60,6 +65,8 @@ class UserController(
     private val requestAccountDeletionUseCase: RequestAccountDeletionUseCase,
     private val restoreAccountUseCase: RestoreAccountUseCase,
     private val authCookieFactory: org.studieojavry.iamapi.auth.infrastructure.security.AuthCookieFactory,
+    private val listMyConnectionsUseCase: ListMyConnectionsUseCase,
+    private val disconnectConnectionUseCase: DisconnectConnectionUseCase,
 ) {
 
     @Operation(
@@ -366,6 +373,50 @@ class UserController(
     ) {
         val userId = currentUserId(jwt)
         revokeAllMySessionsUseCase.invoke(userId)
+    }
+
+    @Operation(
+        summary = "내 OAuth 연결 목록",
+        description = "Settings → Account → 'Login & connections' 용. provider 내부 식별자는 노출 안 함."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()])
+    )
+    @GetMapping("/me/connections")
+    fun myConnections(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt
+    ): List<ConnectionResponse> {
+        val userId = currentUserId(jwt)
+        return listMyConnectionsUseCase.invoke(userId).map {
+            ConnectionResponse(provider = it.provider.name, providerEmail = it.providerEmail, linkedAt = it.linkedAt)
+        }
+    }
+
+    @Operation(
+        summary = "내 OAuth 연결 해제 (Disconnect)",
+        description = "본인만. 마지막 남은 로그인 수단이면 409 (계정 락아웃 방지). 없는 provider 는 404."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "해제됨"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "해당 provider 없음", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "마지막 남은 로그인 수단 — 해제 불가", content = [Content()]),
+    )
+    @DeleteMapping("/me/connections/{provider}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun disconnect(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "provider name (e.g. github)") @PathVariable provider: String,
+    ) {
+        val userId = currentUserId(jwt)
+        try {
+            disconnectConnectionUseCase.invoke(userId, provider)
+        } catch (e: ConnectionNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: LastConnectionRemainingException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
+        }
     }
 
     private fun currentUserId(jwt: Jwt): Long =

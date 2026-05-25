@@ -17,13 +17,16 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.bind.annotation.RequestParam
 import org.studieojavry.iamapi.auth.application.command.UpdateMyProfileCommand
 import org.studieojavry.iamapi.auth.application.usecase.GetMyProfileUseCase
 import org.studieojavry.iamapi.auth.application.usecase.GetPublicProfileUseCase
+import org.studieojavry.iamapi.auth.application.usecase.SearchUsersUseCase
 import org.studieojavry.iamapi.auth.application.usecase.UpdateMyProfileUseCase
 import org.studieojavry.iamapi.auth.presentation.web.dto.request.UpdateMyProfileRequest
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.MyProfileResponse
 import org.studieojavry.iamapi.auth.presentation.web.dto.response.PublicProfileResponse
+import org.studieojavry.iamapi.auth.presentation.web.dto.response.UserSearchResponse
 
 @Tag(name = "users-me", description = "내 프로필 조회/수정 + 다른 사용자 공개 프로필. 토큰의 sub(userId) 기준.")
 @RestController
@@ -32,6 +35,7 @@ class UserController(
     private val getMyProfileUseCase: GetMyProfileUseCase,
     private val updateMyProfileUseCase: UpdateMyProfileUseCase,
     private val getPublicProfileUseCase: GetPublicProfileUseCase,
+    private val searchUsersUseCase: SearchUsersUseCase,
 ) {
 
     @Operation(
@@ -116,6 +120,28 @@ class UserController(
             theme = r.theme.name,
             defaultWorkspaceId = r.defaultWorkspaceId,
         )
+    }
+
+    @Operation(
+        summary = "사용자 검색 (displayName prefix)",
+        description = "displayName prefix 로 사용자 검색. 대소문자 무시. q 가 비어있으면 최근 가입 순. 본인은 결과에서 제외."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @GetMapping("/search")
+    fun searchUsers(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "displayName prefix (대소문자 무시). 빈 값=최근 가입 순.", example = "ji")
+        @RequestParam(required = false) q: String?,
+        @Parameter(description = "1..20", example = "10")
+        @RequestParam(required = false, defaultValue = "10") limit: Int,
+    ): List<UserSearchResponse> {
+        val viewerId = currentUserId(jwt)
+        return searchUsersUseCase.invoke(q, limit, viewerId).map {
+            UserSearchResponse(userId = it.userId, displayName = it.displayName, avatarUrl = it.avatarUrl)
+        }
     }
 
     @Operation(

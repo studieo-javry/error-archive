@@ -52,6 +52,10 @@ class SecurityConfig {
                     // anyRequest().authenticated() 에 잡혀 401 이 떨어지는 것 방지.
                     "/error"
                 ).permitAll()
+                    // 공개 사회 그래프 조회 (GET 만). PUT/DELETE 는 인증 필수.
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/follow-status").permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/followers").permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/following").permitAll()
                     .anyRequest().authenticated()
             }
             .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }

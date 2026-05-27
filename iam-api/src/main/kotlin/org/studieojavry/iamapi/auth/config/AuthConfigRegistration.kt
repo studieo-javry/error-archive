@@ -10,5 +10,7 @@ import org.springframework.context.annotation.Configuration
     OAuthProperties::class,
     AvatarStorageProperties::class,
     AccountDeletionProperties::class,
+    org.studieojavry.iamapi.workspace.config.InvitationEmailProperties::class,
+    org.studieojavry.iamapi.workspace.config.WorkspaceProperties::class,
 )
 class AuthConfigRegistration

@@ -52,6 +52,8 @@ class SecurityConfig {
                     // anyRequest().authenticated() 에 잡혀 401 이 떨어지는 것 방지.
                     "/error"
                 ).permitAll()
+                    // 초대 토큰 미리보기 — 비로그인 사용자가 토큰 유효성 확인용 (Accept 화면 진입 전)
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/invitations/preview").permitAll()
                     // 공개 사회 그래프 조회 (GET 만). PUT/DELETE 는 인증 필수.
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/follow-status").permitAll()
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/followers").permitAll()

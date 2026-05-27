@@ -1,0 +1,134 @@
+# ===================================================================
+# local — 개발자 로컬 머신.
+# - DB: docker-compose 의 PostgreSQL (localhost:5432).
+# - HTTPS 아님: cookie secure=false, HTTP origin 허용.
+# - DEBUG 로그.
+#
+# ⚠️  필수 환경변수 (없으면 부팅 실패) — IDE Run Configuration / direnv / .env.local 등으로 주입:
+#     IAM_DB_USERNAME, IAM_DB_PASSWORD
+#     IAM_JWT_SECRET                      (≥ 64자, HS256 의 256bit 엔트로피 요구)
+#     GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/iam_db
+    username: ${IAM_DB_USERNAME}
+    password: ${IAM_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: update                         # 로컬은 자유롭게 스키마 변경
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+  # 기본값 = MailHog(docker-compose, SMTP 1025 / web UI http://localhost:8025).
+  # ENV 만 주면 로컬에서도 실제 외부 SMTP(Gmail/SES/SendGrid)로 발송 — 코드/프로파일 변경 불필요.
+  #   예) Gmail:  IAM_MAIL_HOST=smtp.gmail.com IAM_MAIL_PORT=587 \
+  #              IAM_MAIL_USERNAME=you@gmail.com IAM_MAIL_PASSWORD=<앱 비밀번호> \
+  #              IAM_MAIL_SMTP_AUTH=true IAM_MAIL_STARTTLS=true \
+  #              IAM_EMAIL_FROM_ADDRESS=you@gmail.com
+  mail:
+    host: ${IAM_MAIL_HOST:localhost}
+    port: ${IAM_MAIL_PORT:1025}
+    username: ${IAM_MAIL_USERNAME:}            # MailHog 는 인증 안 받음 → 빈 값 OK
+    password: ${IAM_MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${IAM_MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${IAM_MAIL_STARTTLS:false}
+
+logging:
+  level:
+    org.studieojavry: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    root: info         # 바인딩 파라미터 확인용
+
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.local"
+    audience: "local-clients"
+  oauth:
+    github:
+      client-id: ${GITHUB_OAUTH_CLIENT_ID}
+      client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+  cookie:
+    secure: false                              # localhost 는 HTTP
+    same-site: Lax
+    # domain 미지정 — localhost 만 사용
+  workspace:
+    invite-base-url: "http://localhost:5173/invitations"
+  email:
+    provider: ${IAM_EMAIL_PROVIDER:smtp}        # 기본 smtp(→MailHog). logging 으로 콘솔만도 가능
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@error-archive.local}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (local)}
+
+# 내부 서비스 인증 — iam-api 는 검증자(verifier)다. token relay 를 제거했으므로
+# 사용자 JWT 대신 게이트웨이/core-api 가 발급한 internal JWT(X-Internal-Auth)를 검증한다.
+# gateway 와 core-api 양쪽이 iam-api 를 호출하므로 두 발급자의 공개키를 모두 신뢰한다.
+# ※ 공개키이므로 yml 에 인라인 보관해도 보안 영향 없음. 비밀키는 각 서비스에 별도 보관.
+internal-auth:
+  verifier:
+    audience: iam-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----
+      noti-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6XIFeEZhqY8F6ervAOKJ
+        YAIjN9JESMm5+8c6fbR44vFLD4r7pvtqjDcPcEF/CsIC0ik+YGnq+coqY+mdOZaz
+        zl4+508NO8kYaYftBl6H2vhyEFwbG6k8cIX5eB0AuY90GqdooBDC4vZzJW0Blj14
+        /KmXG4/HJD/ZW1wpS+WQVod9HMYAYOOmTg6R3qWIWrjYjKSITiSz0pcgVc4w+TNh
+        w0jWsD4fqxy0wu2N5n3lgypLEUI/7C70qWl/nLKqw88hUxLa29uIOC8jFXGshG3C
+        A/XUchYJGTu+sw+PmTLUDw5yCSUDEVSjHK4dJ6pZz0Gp0hrqtBOW/s+ZinLszk7b
+        IQIDAQAB
+        -----END PUBLIC KEY-----
+      insight-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6XIFeEZhqY8F6ervAOKJ
+        YAIjN9JESMm5+8c6fbR44vFLD4r7pvtqjDcPcEF/CsIC0ik+YGnq+coqY+mdOZaz
+        zl4+508NO8kYaYftBl6H2vhyEFwbG6k8cIX5eB0AuY90GqdooBDC4vZzJW0Blj14
+        /KmXG4/HJD/ZW1wpS+WQVod9HMYAYOOmTg6R3qWIWrjYjKSITiSz0pcgVc4w+TNh
+        w0jWsD4fqxy0wu2N5n3lgypLEUI/7C70qWl/nLKqw88hUxLa29uIOC8jFXGshG3C
+        A/XUchYJGTu+sw+PmTLUDw5yCSUDEVSjHK4dJ6pZz0Gp0hrqtBOW/s+ZinLszk7b
+        IQIDAQAB
+        -----END PUBLIC KEY-----
+      publish-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6XIFeEZhqY8F6ervAOKJ
+        YAIjN9JESMm5+8c6fbR44vFLD4r7pvtqjDcPcEF/CsIC0ik+YGnq+coqY+mdOZaz
+        zl4+508NO8kYaYftBl6H2vhyEFwbG6k8cIX5eB0AuY90GqdooBDC4vZzJW0Blj14
+        /KmXG4/HJD/ZW1wpS+WQVod9HMYAYOOmTg6R3qWIWrjYjKSITiSz0pcgVc4w+TNh
+        w0jWsD4fqxy0wu2N5n3lgypLEUI/7C70qWl/nLKqw88hUxLa29uIOC8jFXGshG3C
+        A/XUchYJGTu+sw+PmTLUDw5yCSUDEVSjHK4dJ6pZz0Gp0hrqtBOW/s+ZinLszk7b
+        IQIDAQAB
+        -----END PUBLIC KEY-----

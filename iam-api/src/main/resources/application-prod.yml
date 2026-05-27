@@ -1,0 +1,82 @@
+# ===================================================================
+# prod — production. 가장 엄격.
+# - DB: prod RDS. 접속 정보는 모두 Secrets Manager / Vault 에서 주입.
+# - Secret: 환경 변수 평문 X. 컨테이너 런타임이 Secret 객체로 마운트.
+# - HTTPS: cookie secure=true.
+# - ddl-auto: validate. 마이그레이션은 Flyway 별도 파이프라인.
+# - 에러 메시지 외부 노출 차단, actuator 경로 숨김.
+# - 분산 추적용 traceId/spanId 로그 패턴.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: ${IAM_DB_URL}
+    username: ${IAM_DB_USERNAME}
+    password: ${IAM_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                       # ★ 절대 update/create 금지
+    show-sql: false
+
+  mail:
+    host: ${IAM_MAIL_HOST}
+    port: ${IAM_MAIL_PORT:587}
+    username: ${IAM_MAIL_USERNAME}
+    password: ${IAM_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
+
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.studieo-javry.com"
+    audience: "prod-clients"
+  oauth:
+    github:
+      client-id: ${GITHUB_OAUTH_CLIENT_ID}
+      client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+  cookie:
+    secure: true                               # ★ 반드시 true
+    same-site: Lax
+    domain: ".studieo-javry.com"
+  workspace:
+    invite-base-url: "https://app.studieo-javry.com/invitations"
+  email:
+    provider: smtp
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@studieo-javry.com}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus        # metrics 등은 내부망에만
+      base-path: /internal/actuator            # 외부 노출 경로 변경
+  endpoint:
+    health:
+      show-details: never                      # 외부에 health 상세 노출 금지
+
+server:
+  error:
+    include-message: never                     # 운영은 에러 메시지 클라이언트에 노출 X
+    include-stacktrace: never
+    include-binding-errors: never

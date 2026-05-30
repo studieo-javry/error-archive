@@ -48,6 +48,10 @@ dependencies {
   // Kafka — 알림 도메인 이벤트 producer (mention 등)
   implementation("org.springframework.kafka:spring-kafka")
 
+  // orphan 첨부 GC 스케줄러의 다중 인스턴스 안전 (분산 락)
+  implementation("net.javacrumbs.shedlock:shedlock-spring:6.10.0")
+  implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.10.0")
+
   // Kotlin data class 의 default value / nullable 타입을 Jackson 이 인식하게 함.
   implementation("tools.jackson.module:jackson-module-kotlin")
   runtimeOnly("org.postgresql:postgresql")

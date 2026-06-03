@@ -1,0 +1,64 @@
+# ===================================================================
+# test — 단위/통합 테스트 전용.
+# - DB: H2 in-memory(PG 호환 모드). docker 없이 부팅.
+# - 활성화: @ActiveProfiles("test") 로 명시. CI/로컬 동일.
+# - main application.yml(공통) 위에 덮인다.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  datasource:
+    url: "jdbc:h2:mem:iam-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE"
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate.dialect: org.hibernate.dialect.H2Dialect
+
+iam:
+  jwt:
+    secret: "test-secret-test-secret-test-secret-test-secret-test-secret-test-secret"
+    issuer: "https://iam.test.local"
+    audience: "test-clients"
+  oauth:
+    github:
+      client-id: "test-client-id"
+      client-secret: "test-client-secret"
+  cookie:
+    secure: false
+    same-site: Lax
+  workspace:
+    invite-base-url: "https://app.test.local/invitations"
+
+# 내부 서비스 인증 — context 로드 + 디코더 구성 검증용. 키는 로컬 dev 키 재사용.
+internal-auth:
+  verifier:
+    audience: iam-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----

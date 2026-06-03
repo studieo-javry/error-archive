@@ -1,0 +1,28 @@
+# ===================================================================
+# gateway 공통 베이스 (Spring Cloud Gateway Server MVC)
+# - Spring Security oauth2ResourceServer 가 JWT 검증
+# - HeaderInjectionFilter 가 X-User-Id 등 downstream 용 헤더 주입
+# - SCG 가 prefix 매칭 라우팅 + CircuitBreaker / Retry 횡단 관심사
+# ===================================================================
+
+spring:
+  application:
+    name: gateway
+  profiles:
+    default: local
+
+server:
+  forward-headers-strategy: framework
+
+iam:
+  jwt:
+    audience: ${IAM_JWT_AUDIENCE:local-clients}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    gateway:
+      access: read_only

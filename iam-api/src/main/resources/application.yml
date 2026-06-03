@@ -1,0 +1,51 @@
+# ===================================================================
+# 공통 베이스 — 모든 환경에서 동일한 값만.
+# 환경별 차이는 application-{local|dev|stg|prod}.yml 에 분리.
+#
+# Profile 활성화:
+#   ./gradlew bootRun                                  → local (default profile)
+#   SPRING_PROFILES_ACTIVE=dev   java -jar app.jar     → dev
+#   SPRING_PROFILES_ACTIVE=prod  java -jar app.jar     → prod
+# ===================================================================
+
+spring:
+  application:
+    name: iam-api
+  profiles:
+    default: local                             # 명시 없으면 local 로 부팅
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  forward-headers-strategy: framework
+
+iam:
+  jwt:
+    access-token-ttl-seconds: 900              # 15 min — 환경 무관
+    remember-me-refresh-ttl-seconds: 2592000   # 30 days
+    session-refresh-ttl-seconds: 28800         # 8 hours
+  cookie:
+    refresh-token-name: iam_refresh
+    oauth-state-name: iam_oauth_state
+    path: /api/v1/auth
+  workspace:
+    default-invitation-ttl-hours: 168          # 7 days
+    max-invitation-ttl-hours: 720              # 30 days
+    max-members-per-workspace: 200
+  email:
+    # provider: smtp | logging.
+    #   smtp    → SmtpInvitationEmailSenderAdapter 활성 (실제 SMTP 발송).
+    #   logging → LoggingInvitationEmailSenderAdapter 활성 (콘솔 로그만, 미설정 시 default).
+    provider: ${IAM_EMAIL_PROVIDER:logging}
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@error-archive.local}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive}
+    subject-prefix: "[Error Archive]"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

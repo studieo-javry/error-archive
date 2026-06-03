@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: core-api-postgres
+    environment:
+      POSTGRES_USER: core
+      POSTGRES_PASSWORD: core_local_pw
+      POSTGRES_DB: core_db
+    ports:
+      - "5433:5432"   # iam-api 가 5432 점유 → core-api 는 5433 으로 노출
+    volumes:
+      - core_pg_data:/var/lib/postgresql/data
+
+volumes:
+  core_pg_data:

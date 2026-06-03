@@ -13,13 +13,49 @@ group = "org.studieo-javry"
 version = "0.0.1-SNAPSHOT"
 description = "core-api"
 
+// Spring Cloud release train (Boot 4.0 매칭)
+extra["springCloudVersion"] = "2025.1.1"
+
 repositories {
+  mavenLocal()
   mavenCentral()
 }
 
+// spring-cloud-dependencies BOM을 읽어 안에 정의된 dependency version들을 Gradle dependency management에 등록
+dependencyManagement {
+  imports {
+    // bill of materials: 라이브러리들의 "호환 가능한 버전 조합" 제공
+    mavenBom("org.springframework.cloud:spring-cloud-dependencies:${property("springCloudVersion")}")
+  }
+}
+
 dependencies {
+  implementation("org.springframework.boot:spring-boot-starter-web")
+  implementation("org.springframework.boot:spring-boot-starter-validation")
   implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+  implementation("org.springframework.boot:spring-boot-starter-actuator")
+  implementation("org.springframework.boot:spring-boot-starter-security")
+
+  // OpenAPI/Swagger UI — v3.x 가 Spring Boot 4 + Jackson 3 지원.
+  implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
+
+  // 내부 서비스 인증 — composite build 가 로컬 shared-internal-auth 로 substitute.
+  implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
+  implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
+  // CircuitBreaker (외부 호출 격리: iam-api)
+  implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
+
+  // orphan 첨부 GC 스케줄러의 다중 인스턴스 안전 (분산 락)
+  implementation("net.javacrumbs.shedlock:shedlock-spring:6.10.0")
+  implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.10.0")
+  // Kotlin data class 의 default value / nullable 타입을 Jackson 이 인식하게 함.
+  // ⚠️ Spring Boot 4 부터 Jackson 3.x (groupId: tools.jackson) 로 마이그레이션됨.
+  //    레거시 com.fasterxml.jackson.module 그룹은 2.x 라 ObjectMapper 에 등록되지 않음.
+  implementation("tools.jackson.module:jackson-module-kotlin")
+  runtimeOnly("org.postgresql:postgresql")
+  testRuntimeOnly("com.h2database:h2")
   testImplementation("org.springframework.boot:spring-boot-starter-test")
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")

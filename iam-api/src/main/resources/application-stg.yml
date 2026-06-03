@@ -1,0 +1,72 @@
+# ===================================================================
+# stg — staging. 운영 직전 검증 환경.
+# - DB: stg RDS. 접속 정보는 모두 env 주입.
+# - Secret: env / Secrets Manager.
+# - HTTPS: cookie secure=true.
+# - ★ ddl-auto: validate. 스키마 변경은 Flyway 마이그레이션으로만.
+# - 운영급 풀 크기 + monitoring endpoint 노출.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  datasource:
+    url: ${IAM_DB_URL}
+    username: ${IAM_DB_USERNAME}
+    password: ${IAM_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 4
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                       # ★ 운영과 동일한 정책으로 검증
+    show-sql: false
+
+  mail:
+    host: ${IAM_MAIL_HOST}
+    port: ${IAM_MAIL_PORT:587}
+    username: ${IAM_MAIL_USERNAME}
+    password: ${IAM_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.stg.studieo-javry.com"
+    audience: "stg-clients"
+  oauth:
+    github:
+      client-id: ${GITHUB_OAUTH_CLIENT_ID}
+      client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+  cookie:
+    secure: true
+    same-site: Lax
+    domain: ".stg.studieo-javry.com"
+  workspace:
+    invite-base-url: "https://app.stg.studieo-javry.com/invitations"
+  email:
+    provider: smtp
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@stg.studieo-javry.com}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (stg)}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized

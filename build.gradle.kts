@@ -4,6 +4,8 @@
 tasks.register("buildAll") {
 	description = "Builds all included builds"
 	dependsOn(
+		gradle.includedBuild("shared-internal-auth").task(":build"),
+		gradle.includedBuild("gateway").task(":build"),
 		gradle.includedBuild("core-api").task(":build"),
 		gradle.includedBuild("iam-api").task(":build"),
 		gradle.includedBuild("publish-api").task(":build"),
@@ -15,6 +17,8 @@ tasks.register("buildAll") {
 tasks.register("testAll") {
 	description = "Runs tests for all included builds"
 	dependsOn(
+		gradle.includedBuild("shared-internal-auth").task(":test"),
+		gradle.includedBuild("gateway").task(":test"),
 		gradle.includedBuild("core-api").task(":test"),
 		gradle.includedBuild("iam-api").task(":test"),
 		gradle.includedBuild("publish-api").task(":test"),
@@ -26,6 +30,8 @@ tasks.register("testAll") {
 tasks.register("cleanAll") {
 	description = "Cleans all included builds"
 	dependsOn(
+		gradle.includedBuild("shared-internal-auth").task(":clean"),
+		gradle.includedBuild("gateway").task(":clean"),
 		gradle.includedBuild("core-api").task(":clean"),
 		gradle.includedBuild("iam-api").task(":clean"),
 		gradle.includedBuild("publish-api").task(":clean"),

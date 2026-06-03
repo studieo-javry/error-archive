@@ -1,0 +1,98 @@
+# ===================================================================
+# local — 개발자 로컬 머신.
+# - DB: docker-compose 의 PostgreSQL (localhost:5432).
+# - Secret: dev placeholder. git 에 들어가도 OK (실제 비밀이 아님).
+# - HTTPS 아님: cookie secure=false, HTTP origin 허용.
+# - DEBUG 로그.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/iam_db
+    username: iam
+    password: iam_local_pw                     # docker-compose.yml 의 dev 값
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: update                         # 로컬은 자유롭게 스키마 변경
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+  # 기본값 = MailHog(docker-compose, SMTP 1025 / web UI http://localhost:8025).
+  # ENV 만 주면 로컬에서도 실제 외부 SMTP(Gmail/SES/SendGrid)로 발송 — 코드/프로파일 변경 불필요.
+  #   예) Gmail:  IAM_MAIL_HOST=smtp.gmail.com IAM_MAIL_PORT=587 \
+  #              IAM_MAIL_USERNAME=you@gmail.com IAM_MAIL_PASSWORD=<앱 비밀번호> \
+  #              IAM_MAIL_SMTP_AUTH=true IAM_MAIL_STARTTLS=true \
+  #              IAM_EMAIL_FROM_ADDRESS=you@gmail.com
+  mail:
+    host: ${IAM_MAIL_HOST:localhost}
+    port: ${IAM_MAIL_PORT:1025}
+    username: ${IAM_MAIL_USERNAME:}
+    password: ${IAM_MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${IAM_MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${IAM_MAIL_STARTTLS:false}
+
+logging:
+  level:
+    org.studieojavry: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE         # 바인딩 파라미터 확인용
+
+iam:
+  jwt:
+    secret: "local-dev-secret-local-dev-secret-local-dev-secret-local-dev-secret-local-dev"
+    issuer: "https://iam.local"
+    audience: "local-clients"
+  oauth:
+    github:
+      client-id: "Ov23litH4iVUkcRrcAeT" #"Ov23litH4iVUkcRrcAeT"
+      client-secret: "c49c1a8068f93a9b58fc8c3148609ccf0e9df2d9" #"a062cb2e95a325d5990a9b3d221cc75a9d851c8e"
+  cookie:
+    secure: false                              # localhost 는 HTTP
+    same-site: Lax
+    # domain 미지정 — localhost 만 사용
+  workspace:
+    invite-base-url: "http://localhost:5173/invitations"
+  email:
+    provider: ${IAM_EMAIL_PROVIDER:smtp}        # 기본 smtp(→MailHog). logging 으로 콘솔만도 가능
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@error-archive.local}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (local)}
+
+# 내부 서비스 인증 — iam-api 는 검증자(verifier)다. token relay 를 제거했으므로
+# 사용자 JWT 대신 게이트웨이/core-api 가 발급한 internal JWT(X-Internal-Auth)를 검증한다.
+# gateway 와 core-api 양쪽이 iam-api 를 호출하므로 두 발급자의 공개키를 모두 신뢰한다.
+internal-auth:
+  verifier:
+    audience: iam-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----

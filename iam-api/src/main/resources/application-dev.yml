@@ -1,0 +1,70 @@
+# ===================================================================
+# dev — 팀 공용 개발 서버.
+# - DB: dev RDS. 접속 정보는 모두 env 주입(누락 시 부팅 실패).
+# - Secret: env. 평문 보관 X.
+# - HTTPS: cookie secure=true.
+# - 로그: INFO. 스키마 변경은 아직 update 허용(dev 한정).
+# - 별도 GitHub OAuth App(callback: app.dev.studieo-javry.com).
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: ${IAM_DB_URL}                         # 기본값 없음 — 누락 시 즉시 실패
+    username: ${IAM_DB_USERNAME}
+    password: ${IAM_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+  mail:
+    host: ${IAM_MAIL_HOST}                     # SES SMTP / SendGrid / 등
+    port: ${IAM_MAIL_PORT:587}
+    username: ${IAM_MAIL_USERNAME}
+    password: ${IAM_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+logging:
+  level:
+    root: INFO
+    org.studieojavry: INFO
+    org.hibernate.SQL: WARN
+
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.dev.studieo-javry.com"
+    audience: "dev-clients"
+  oauth:
+    github:
+      client-id: ${GITHUB_OAUTH_CLIENT_ID}
+      client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+  cookie:
+    secure: true
+    same-site: Lax
+    domain: ".dev.studieo-javry.com"
+  workspace:
+    invite-base-url: "https://app.dev.studieo-javry.com/invitations"
+  email:
+    provider: smtp
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@dev.studieo-javry.com}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (dev)}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

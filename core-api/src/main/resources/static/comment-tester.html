@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Comment Tester · error-archive</title>
+<style>
+:root{
+  --bg:#f6f7fb; --card:#fff; --panel:#f8fafc; --line:#e5e7eb; --text:#111827;
+  --muted:#6b7280; --subtle:#9ca3af; --accent:#2563eb; --accent2:#eff6ff;
+  --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --purple:#7c3aed;
+  --add-bg:rgba(22,163,74,.10); --del-bg:rgba(220,38,38,.09);
+  --shadow:0 18px 60px rgba(15,23,42,.08); --r:18px;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#0f1117; --card:#151923; --panel:#10141c; --line:#283142; --text:#eef2ff;
+  --muted:#a8b1c5; --subtle:#6f7b91; --accent2:rgba(37,99,235,.15);
+  --shadow:0 18px 60px rgba(0,0,0,.35);
+  --add-bg:rgba(22,163,74,.18); --del-bg:rgba(220,38,38,.18);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:var(--sans);color:var(--text);background:radial-gradient(900px 500px at 18% -10%,rgba(37,99,235,.10),transparent 60%),var(--bg);line-height:1.6}
+button,textarea,input,select{font:inherit}
+button{cursor:pointer}
+.shell{max-width:1240px;margin:0 auto;padding:18px 16px 64px}
+
+/* Topbar */
+.topbar{position:sticky;top:10px;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(10px);box-shadow:var(--shadow);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#93c5fd);box-shadow:0 8px 20px rgba(37,99,235,.24)}
+.brand b{font-size:13px;display:block}
+.brand small{display:block;color:var(--muted);font-size:11px}
+.actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.actions input,.actions select{border:1px solid var(--line);background:var(--card);color:var(--text);padding:6px 9px;border-radius:10px;font-size:12px;outline:none}
+.actions input{width:80px}
+.actions select{min-width:240px}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--text);padding:7px 11px;border-radius:11px;font-size:12px}
+.btn.primary{background:linear-gradient(135deg,#2563eb,#60a5fa);border-color:transparent;color:white;box-shadow:0 10px 24px rgba(37,99,235,.20)}
+.miniBtn{border:1px solid var(--line);background:var(--card);color:var(--muted);padding:5px 8px;border-radius:9px;font-size:11px}
+.miniBtn.primary{background:var(--accent2);border-color:rgba(37,99,235,.24);color:var(--accent)}
+.miniBtn.bad{background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.24);color:var(--bad)}
+
+/* Cards */
+.card,.discussion{border:1px solid var(--line);border-radius:var(--r);background:var(--card);box-shadow:var(--shadow);overflow:hidden;margin-top:14px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.hd h2{margin:0;font-size:14px}
+.bd{padding:14px 16px}
+.hero{padding:18px 18px 12px}
+.crumb{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:11px}
+.title{margin:8px 0 6px;font-size:21px;letter-spacing:-.3px;line-height:1.22}
+.lead{margin:0;color:var(--muted);font-size:13px}
+.kvs{display:grid;grid-template-columns:90px 1fr;gap:6px 10px;font-size:12px}
+.k{color:var(--subtle)}
+.chip,.tag,.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 9px;font-size:11px;color:var(--muted)}
+.tag.author{border-color:rgba(37,99,235,.22);background:var(--accent2);color:var(--accent);font-weight:700}
+.chip.vis-PUBLIC{border-color:rgba(22,163,74,.25);background:rgba(22,163,74,.08);color:var(--ok)}
+.chip.vis-WORKSPACE{border-color:rgba(217,119,6,.25);background:rgba(217,119,6,.08);color:var(--warn)}
+.chip.vis-PRIVATE{border-color:rgba(107,114,128,.25);background:var(--panel);color:var(--muted)}
+.section{padding:14px 18px;border-top:1px solid var(--line);scroll-margin-top:90px}
+.section h2{font-size:14px;margin:0 0 8px}
+code.inline{font-family:var(--mono);font-size:12px;padding:2px 6px;border-radius:8px;background:var(--panel);border:1px solid var(--line)}
+.callout{border:1px solid rgba(37,99,235,.20);background:var(--accent2);border-radius:12px;padding:10px;margin:8px 0;color:var(--muted);font-size:12px;font-family:var(--mono)}
+
+/* Step timeline */
+.timeline{position:relative;padding-left:18px}
+.timeline:before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:linear-gradient(var(--accent),rgba(37,99,235,.08));border-radius:999px}
+.attempt{display:grid;grid-template-columns:160px 1fr;gap:12px;padding:12px 0;position:relative}
+@media(max-width:760px){.attempt{grid-template-columns:1fr}}
+.attempt:before{content:"";position:absolute;left:-16px;top:22px;width:11px;height:11px;border-radius:50%;background:var(--card);border:3px solid var(--accent)}
+.attemptMeta{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:12px}
+.attemptCard{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px}
+.attemptCard h3{font-size:14px;margin:0 0 6px}
+.pill.fail{border-color:rgba(220,38,38,.24);background:rgba(220,38,38,.08);color:var(--bad)}
+.pill.success{border-color:rgba(22,163,74,.24);background:rgba(22,163,74,.08);color:var(--ok)}
+.pill.partial{border-color:rgba(217,119,6,.24);background:rgba(217,119,6,.08);color:var(--warn)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+
+/* Reviewable code (gutter drag) */
+.reviewableCode{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden;margin:8px 0;font-family:var(--mono);font-size:12px;line-height:1.55}
+.codeHead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+.codeHead b{font-size:12px}
+.codeHead small{color:var(--subtle);font-size:11px}
+.codeRows{overflow:auto;max-height:360px}
+.codeRow{display:grid;grid-template-columns:52px 1fr;min-width:max-content}
+.gutter{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:5px;padding:2px 8px;background:var(--panel);border-right:1px solid var(--line);color:var(--subtle);user-select:none;cursor:crosshair}
+.gutter:hover{background:rgba(37,99,235,.08);color:var(--accent)}
+.plus{opacity:0;border:1px solid rgba(37,99,235,.25);background:var(--accent);color:#fff;border-radius:999px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1}
+.gutter:hover .plus{opacity:1}
+.codeText{white-space:pre;padding:2px 12px;user-select:text}
+.codeRow.suggesting .gutter,.codeRow.suggesting .codeText{background:rgba(22,163,74,.12)}
+.codeHint{padding:6px 10px;border-top:1px solid var(--line);background:var(--panel);color:var(--subtle);font-size:11px}
+
+/* Discussion */
+.discussionTop{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.discussionTitle h2{margin:0;font-size:16px}
+.discussionTitle p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filter,.sort{border:1px solid var(--line);border-radius:999px;background:transparent;padding:5px 10px;font-size:11px;color:var(--muted)}
+.filter.active,.sort.active{background:var(--accent2);border-color:rgba(37,99,235,.28);color:var(--accent);font-weight:700}
+.discussionBody{padding:16px 18px 18px}
+
+/* Composer */
+.composer{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:13px;margin-bottom:14px}
+.composerHead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#dbeafe,#bfdbfe);display:flex;align-items:center;justify-content:center;font-weight:800;color:#1d4ed8;flex:0 0 auto;font-size:13px}
+.avatar.me{background:linear-gradient(135deg,#2563eb,#93c5fd);color:white}
+.avatar.tiny{width:18px;height:18px;font-size:10px}
+.identityText b{display:block;font-size:13px}
+.identityText small{display:block;color:var(--subtle);font-size:11px}
+.quotePreview{display:none;border:1px solid rgba(37,99,235,.28);background:var(--accent2);border-radius:14px;padding:9px 11px;margin-bottom:9px}
+.quotePreview.show{display:block}
+.quotePreviewTop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.quoteText{font-size:12px;color:var(--muted);margin-top:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+.suggestionPreview{display:none;border:1px solid rgba(22,163,74,.28);background:rgba(22,163,74,.06);border-radius:14px;padding:10px;margin-bottom:9px}
+.suggestionPreview.show{display:block}
+.suggestionPreview h4{margin:0 0 3px;font-size:13px}
+.suggestionPreview small{color:var(--muted);font-size:11px}
+.suggestionPreview textarea{font-family:var(--mono);font-size:12px;min-height:88px;margin-top:8px}
+.composer textarea{width:100%;min-height:90px;resize:vertical;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);padding:10px;outline:none}
+.composerFooter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;flex-wrap:wrap}
+.mini{font-size:11px;color:var(--muted)}
+
+/* Comments */
+.commentList{display:grid;gap:12px}
+.comment{display:grid;grid-template-columns:38px 1fr;gap:10px;position:relative}
+.comment.reply{margin-left:48px;margin-top:-4px}
+.commentBody{border:1px solid var(--line);border-radius:18px;padding:12px;background:var(--card);scroll-margin-top:90px}
+.commentMeta{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.commentMeta b{font-size:13px}
+.commentMeta time{font-size:11px;color:var(--subtle)}
+.locBadge{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(37,99,235,.24);background:var(--accent2);border-radius:999px;padding:3px 8px;font-size:11px;color:var(--accent);font-weight:700}
+.locBadge.STEP{border-color:rgba(22,163,74,.24);background:rgba(22,163,74,.08);color:var(--ok)}
+.commentQuote{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 10px;margin:8px 0;color:var(--muted);font-size:12px;cursor:pointer}
+.commentQuote:hover{background:var(--accent2)}
+.commentQuote blockquote{margin:0;border-left:3px solid var(--accent);padding-left:9px;white-space:pre-wrap}
+.commentText{font-size:13px;margin:8px 0 0;white-space:pre-wrap;word-break:break-word}
+.commentText pre{margin:8px 0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:auto;font-family:var(--mono);font-size:12px}
+.commentText code{font-family:var(--mono);font-size:12px}
+.deletedPlaceholder{font-size:13px;color:var(--subtle);font-style:italic;padding:8px 11px;border:1px dashed var(--line);border-radius:11px;background:var(--panel)}
+.editedMark{font-size:10px;color:var(--subtle)}
+.reactions,.commentActions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.reactionChip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 9px;font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.reactionChip.byMe{background:var(--accent2);border-color:rgba(37,99,235,.32);color:var(--accent)}
+.helpedStack{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:2px 9px 2px 4px;font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px;position:relative}
+.helpedStack.byMe{background:var(--accent2);border-color:rgba(37,99,235,.32);color:var(--accent)}
+.helpedStack .stack{display:inline-flex}
+.helpedStack .stack .avatar{margin-left:-6px;border:2px solid var(--card)}
+.helpedStack .stack .avatar:first-child{margin-left:0}
+.plain{border:0;background:transparent;color:var(--muted);padding:0;font-size:11px}
+.plain:hover{color:var(--accent)}
+.replyComposer{display:none;margin-top:9px;border-top:1px solid var(--line);padding-top:9px}
+.replyComposer.show{display:block}
+.replyComposer textarea{min-height:60px}
+
+/* Diff box */
+.diffBox{margin-top:10px;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.diffHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 11px;border-bottom:1px solid var(--line);background:var(--panel)}
+.diffHead b{display:block;font-size:12px}
+.diffHead small{display:block;color:var(--subtle);font-size:11px;margin-top:1px}
+.diffActions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.diffStats{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.diffStat{font-family:var(--mono);font-size:10px;border-radius:999px;padding:2px 6px;border:1px solid var(--line);background:var(--card);color:var(--muted)}
+.diffStat.add{color:var(--ok);background:rgba(22,163,74,.08);border-color:rgba(22,163,74,.22)}
+.diffStat.del{color:var(--bad);background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.22)}
+.diffStatus{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(37,99,235,.20);background:var(--accent2);color:var(--accent);padding:3px 7px;border-radius:999px;font-size:10px;font-weight:700}
+.diffStatus.APPLIED{border-color:rgba(22,163,74,.25);background:rgba(22,163,74,.08);color:var(--ok)}
+.diffStatus.REJECTED{border-color:rgba(220,38,38,.25);background:rgba(220,38,38,.08);color:var(--bad)}
+.diffTable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;line-height:1.5}
+.diffTable td{padding:0;border:0;vertical-align:top}
+.diffLineNo{width:36px;text-align:right;color:var(--subtle);padding:3px 6px!important;background:var(--panel);user-select:none;border-right:1px solid var(--line)!important}
+.diffSign{width:20px;text-align:center;color:var(--subtle);padding:3px 4px!important;user-select:none}
+.diffCode{padding:3px 9px!important;white-space:pre;overflow:auto}
+.diffRow.add .diffSign,.diffRow.add .diffCode{background:var(--add-bg);color:var(--text)}
+.diffRow.add .diffSign{color:var(--ok);font-weight:800}
+.diffRow.del .diffSign,.diffRow.del .diffCode{background:var(--del-bg);color:var(--text)}
+.diffRow.del .diffSign{color:var(--bad);font-weight:800}
+
+/* FAB / toast */
+.quoteFab{position:absolute;z-index:200;display:none;padding:7px 11px;border:1px solid rgba(37,99,235,.25);border-radius:999px;background:#1d4ed8;color:#fff;box-shadow:0 12px 30px rgba(37,99,235,.28);font-size:12px;cursor:pointer}
+.quoteFab.show{display:block}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:9px 15px;border-radius:999px;font-size:12px;box-shadow:0 16px 40px rgba(0,0,0,.25);opacity:0;transition:opacity .2s ease;pointer-events:none;z-index:300;max-width:80%;text-align:center}
+.toast.show{opacity:1}
+.toast.bad{background:#dc2626}
+
+/* Helped popover */
+.popover{position:absolute;z-index:250;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:9px;font-size:12px;display:none;min-width:160px}
+.popover.show{display:block}
+.popover h4{margin:0 0 6px;font-size:11px;color:var(--subtle);font-weight:600}
+.popover ul{margin:0;padding:0;list-style:none;display:grid;gap:5px}
+.popover li{display:flex;align-items:center;gap:7px;font-size:12px}
+
+/* Empty */
+.empty{padding:30px;text-align:center;color:var(--muted);font-size:13px}
+.tinyHint{font-size:11px;color:var(--subtle);margin-top:6px}
+
+/* Reaction chip — toggle UX */
+.reactionChip{transition:transform .06s ease, box-shadow .12s ease;position:relative}
+.reactionChip:hover{box-shadow:0 4px 12px rgba(15,23,42,.10);transform:translateY(-1px)}
+.reactionChip.byMe:hover{box-shadow:0 4px 14px rgba(37,99,235,.20)}
+.reactionChip[data-react-add]{font-weight:600;border-style:dashed}
+
+/* Emoji picker (Slack-style) */
+.emojiPicker{position:fixed;z-index:400;display:none;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.18);width:320px;max-height:380px;overflow:hidden;flex-direction:column}
+.emojiPicker.show{display:flex}
+.emojiPickerHead{padding:10px 12px 8px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:7px}
+.emojiPickerSearch{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);padding:6px 10px;font-size:12px;outline:none;width:100%}
+.emojiPickerSearch:focus{border-color:var(--accent)}
+.emojiPickerTabs{display:flex;gap:4px;flex-wrap:wrap}
+.emojiPickerTab{border:0;background:transparent;color:var(--muted);padding:3px 6px;border-radius:8px;font-size:14px;cursor:pointer}
+.emojiPickerTab.active{background:var(--accent2);color:var(--accent)}
+.emojiPickerTab:hover{background:var(--panel)}
+.emojiPickerBody{overflow-y:auto;padding:8px 10px;flex:1}
+.emojiCategory{margin-bottom:8px}
+.emojiCategory h5{margin:0 0 4px;font-size:10px;color:var(--subtle);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.emojiGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+.emojiCell{border:0;background:transparent;font-size:18px;padding:6px 0;border-radius:8px;cursor:pointer;line-height:1}
+.emojiCell:hover{background:var(--accent2);transform:scale(1.2)}
+.emojiCell.mine{background:var(--accent2);outline:2px solid var(--accent);outline-offset:-2px}
+.emojiPickerFoot{padding:7px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:11px;color:var(--subtle);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.emojiCustomInput{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:3px 7px;font-size:12px;width:80px;outline:none}
+.emojiBackdrop{position:fixed;inset:0;z-index:399;display:none;background:transparent}
+.emojiBackdrop.show{display:block}
+</style>
+</head>
+<body data-theme="light">
+<button class="quoteFab" id="quoteFab">인용 댓글 달기</button>
+<div class="toast" id="toast">완료</div>
+<div class="popover" id="popover"></div>
+
+<!-- Slack-style emoji picker -->
+<div class="emojiBackdrop" id="emojiBackdrop"></div>
+<div class="emojiPicker" id="emojiPicker" role="dialog" aria-label="이모지 선택">
+  <div class="emojiPickerHead">
+    <input type="text" class="emojiPickerSearch" id="emojiSearch" placeholder="이모지 검색 (예: smile, 👍)" />
+    <div class="emojiPickerTabs" id="emojiTabs"></div>
+  </div>
+  <div class="emojiPickerBody" id="emojiBody"></div>
+  <div class="emojiPickerFoot">
+    <span>이미 사용한 이모지는 강조됨 · 다시 클릭으로 해제</span>
+    <span>
+      <input type="text" class="emojiCustomInput" id="emojiCustom" placeholder="직접 입력" maxlength="16" />
+      <button class="miniBtn primary" id="emojiCustomAdd">추가</button>
+    </span>
+  </div>
+</div>
+
+<div class="shell">
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"></div>
+    <div><b>Comment Tester</b><small>core-api 직접 호출 · X-Test-User-Id 인증</small></div>
+  </div>
+  <div class="actions">
+    <label class="mini">User</label>
+    <input id="userIdInput" type="number" value="777" />
+    <label class="mini">Case</label>
+    <select id="caseSelect"><option value="">— 케이스 선택 —</option></select>
+    <button class="btn" id="reloadBtn">새로고침</button>
+    <button class="btn" id="themeBtn">🌗</button>
+    <button class="btn" id="bellBtn" title="알림 — gateway 경유 필요. playground 의 별도 페이지에서 확인." disabled style="opacity:.55">🔔 inbox →</button>
+  </div>
+</header>
+
+<!-- 멘션 자동완성 dropdown — composer textarea 위 floating -->
+<div id="mentionDropdown" style="display:none;position:absolute;z-index:600;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);min-width:240px;max-height:280px;overflow-y:auto;padding:4px"></div>
+
+<main>
+  <!-- Case header -->
+  <section class="card" id="caseCard" style="display:none">
+    <div class="hero">
+      <div class="crumb">
+        <span id="caseIdBadge">CASE-?</span><span>/</span>
+        <span class="chip" id="visBadge">PUBLIC</span><span>/</span>
+        <span id="caseScope">scope</span>
+      </div>
+      <h1 class="title" id="caseTitle">—</h1>
+      <p class="lead" id="caseLead"></p>
+      <div class="kvs" style="margin-top:10px">
+        <div class="k">Owner</div><div id="caseOwner">—</div>
+        <div class="k">Status</div><div id="caseStatus">—</div>
+        <div class="k">Visibility</div><div id="caseVisibility">—</div>
+        <div class="k">Workspace</div><div id="caseWorkspace">—</div>
+        <div class="k">Created</div><div id="caseCreated">—</div>
+      </div>
+    </div>
+
+    <section class="section selectable" id="caseBodySection" data-target-type="CASE_BODY" data-target-id="body" data-target-label="본문">
+      <h2>본문 (description)</h2>
+      <div id="caseBodyContent"></div>
+      <div id="caseSnippets"></div>
+    </section>
+
+    <section class="section">
+      <h2>Steps Timeline</h2>
+      <div class="timeline" id="stepsTimeline"><div class="mini">스텝 로드 중…</div></div>
+    </section>
+  </section>
+
+  <!-- Discussion -->
+  <section class="discussion" id="discussion" style="display:none">
+    <div class="discussionTop">
+      <div class="discussionTitle">
+        <h2>Discussion · <span id="commentCount">0</span></h2>
+        <p>본문/Step 드래그 → 인용. 코드블럭 라인번호 드래그 → Diff 제안.</p>
+      </div>
+      <div class="toolbar">
+        <div>
+          <button class="filter active" data-filter="ALL">전체</button>
+          <button class="filter" data-filter="GENERAL">일반</button>
+          <button class="filter" data-filter="CASE_BODY">본문</button>
+          <button class="filter" data-filter="STEP">Step</button>
+        </div>
+        <div>
+          <button class="sort active" data-sort="NEWEST">최신순</button>
+          <button class="sort" data-sort="OLDEST">오래된순</button>
+          <button class="sort" data-sort="HELPFUL">도움됨</button>
+        </div>
+      </div>
+    </div>
+    <div class="discussionBody">
+      <div class="composer" id="composer">
+        <div class="composerHead">
+          <div class="avatar me" id="meAvatar">나</div>
+          <div class="identityText"><b id="meName">User #777</b><small>댓글 · 답글 · Diff 제안 작성</small></div>
+        </div>
+        <div class="quotePreview" id="quotePreview">
+          <div class="quotePreviewTop">
+            <span class="locBadge" id="quoteBadge">본문</span>
+            <button class="miniBtn" id="clearQuote">인용 제거</button>
+          </div>
+          <div class="quoteText" id="quoteText"></div>
+        </div>
+        <div class="suggestionPreview" id="suggestionPreview">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+            <div><h4>Diff 제안</h4><small id="suggestionMeta"></small></div>
+            <button class="miniBtn" id="clearSuggestion">제안 제거</button>
+          </div>
+          <textarea id="suggestionAfter" placeholder="제안 코드(after)..."></textarea>
+        </div>
+        <textarea id="commentInput" placeholder="댓글을 입력하세요. @사용자, ```code``` 가능."></textarea>
+        <div class="composerFooter">
+          <span class="mini">parent 지정 시 depth=1 강제됨. 답글의 답글은 서버가 top-level 로 redirect.</span>
+          <div>
+            <button class="btn" id="cancelReplyBtn" style="display:none">답글 취소</button>
+            <button class="btn primary" id="submitBtn">댓글 작성</button>
+          </div>
+        </div>
+        <div class="tinyHint" id="replyHint" style="display:none"></div>
+      </div>
+      <div class="commentList" id="commentList">
+        <div class="empty">댓글이 로드되지 않았습니다.</div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// API helper
+// ─────────────────────────────────────────────────────────────────────────────
+// gateway 절대 URL — 상대 경로(`/api/v1`) 로 두면 8081/comment-tester.html 로 열 때 core-api 직접 호출이 되어
+// 게이트웨이의 internal-JWT/header injection 을 우회한다. 절대 URL 로 고정해 *언제나 gateway 경유*.
+const API_BASE = 'http://localhost:8000/api/v1';
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+function userId() { return Number($('#userIdInput').value) || 777; }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...opts,
+    headers: {
+      'X-Test-User-Id': String(userId()),
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const j = await res.json(); msg = j.detail || j.message || msg; } catch {}
+    throw new Error(`${res.status} ${msg}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function toast(msg, bad = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.toggle('bad', bad);
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let currentCase = null;       // ErrorCaseDetailResponse
+let currentSteps = [];
+let comments = [];            // CommentResponse[] (트리)
+let activeFilter = 'ALL';
+let activeSort = 'NEWEST';
+let selectedQuote = null;     // {kind, sourceId, label, text}
+let selectedSuggestion = null;// {sourceType, sourceId, startLine, endLine, oldCode}
+let replyTo = null;           // parent commentId
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Case list / load
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadCaseList() {
+  try {
+    const list = await api('/error-cases?size=50');
+    const sel = $('#caseSelect');
+    sel.innerHTML = '<option value="">— 케이스 선택 —</option>' +
+      list.items.map(c => `<option value="${c.id}">#${c.id} [${c.visibility}] ${esc(c.title)}</option>`).join('');
+    if (list.items.length === 0) {
+      toast('내 케이스가 없어. PUBLIC 케이스 ID 를 직접 입력하려면 select 옆 input 활용 X — Case API 의 list 가 본인 케이스만 보여줌. case ID 를 알면 URL 직접 변경해서 테스트.', true);
+    }
+  } catch (e) {
+    toast('케이스 목록 로드 실패: ' + e.message, true);
+  }
+}
+
+async function loadCase(id) {
+  if (!id) return;
+  try {
+    const [c, steps] = await Promise.all([
+      api(`/error-cases/${id}`),
+      api(`/error-cases/${id}/steps`).catch(() => ({ items: [] })),
+    ]);
+    currentCase = c;
+    currentSteps = steps.items || steps || [];
+    renderCase();
+    await loadComments();
+    $('#caseCard').style.display = 'block';
+    $('#discussion').style.display = 'block';
+  } catch (e) {
+    toast('케이스 로드 실패: ' + e.message, true);
+  }
+}
+
+function renderCase() {
+  const c = currentCase;
+  $('#caseIdBadge').textContent = `CASE-${c.id}`;
+  $('#caseTitle').textContent = c.title;
+  $('#caseLead').textContent = c.snapshot?.exceptionClass ? `${c.snapshot.exceptionClass}: ${c.snapshot.exceptionMessage || ''}` : '';
+  $('#caseOwner').textContent = `#${c.ownerUserId}` + (c.ownerUserId === userId() ? ' (나)' : '');
+  $('#caseStatus').textContent = c.status;
+  $('#caseVisibility').textContent = c.visibility;
+  $('#caseWorkspace').textContent = c.workspaceId ?? '— (개인)';
+  $('#caseCreated').textContent = c.createdAt;
+  $('#caseScope').textContent = c.scope || 'scope';
+  const visBadge = $('#visBadge');
+  visBadge.className = 'chip vis-' + c.visibility;
+  visBadge.textContent = c.visibility;
+
+  // 본문
+  const bodyEl = $('#caseBodyContent');
+  bodyEl.innerHTML = c.description ? renderMd(c.description) : '<p class="mini">본문 없음</p>';
+
+  // 스니펫 (gutter drag 가능)
+  const sn = $('#caseSnippets');
+  sn.innerHTML = '';
+  (c.snippets || []).forEach(s => {
+    sn.appendChild(buildReviewableCode({
+      code: s.code,
+      sourceType: 'SNIPPET',
+      sourceId: s.markerId,
+      lang: s.language,
+      title: s.title,
+      file: s.filePathOrClass,
+    }));
+  });
+
+  // Steps
+  const tl = $('#stepsTimeline');
+  if (currentSteps.length === 0) {
+    tl.innerHTML = '<div class="mini">스텝 없음</div>';
+  } else {
+    tl.innerHTML = '';
+    currentSteps.forEach(s => {
+      const art = document.createElement('article');
+      art.className = 'attempt selectable';
+      art.dataset.targetType = 'STEP';
+      art.dataset.targetId = s.id;
+      art.dataset.targetLabel = `Step ${s.orderIndex + 1}`;
+      const statusClass = s.status === 'SUCCESS' ? 'success' : s.status === 'PARTIAL' ? 'partial' : 'fail';
+      art.innerHTML = `
+        <div class="attemptMeta">
+          <strong>${esc(s.createdAt)}</strong>
+          <span class="pill ${statusClass}"><span class="dot ${statusClass === 'fail' ? 'bad' : statusClass === 'success' ? 'ok' : 'warn'}"></span> ${s.status}</span>
+          <span class="mini">order=${s.orderIndex}${s.attemptType ? ` · ${s.attemptType}` : ''}</span>
+        </div>
+        <div class="attemptCard">
+          <h3>${esc(s.title)}</h3>
+          ${s.insight ? `<p class="mini">${esc(s.insight)}</p>` : ''}
+          <div class="step-body"></div>
+        </div>`;
+      tl.appendChild(art);
+      const bodyDiv = art.querySelector('.step-body');
+      if (s.body) renderStepBody(bodyDiv, s);
+    });
+  }
+
+  // me header
+  $('#meName').textContent = `User #${userId()}` + (userId() === c.ownerUserId ? ' (케이스 owner)' : '');
+}
+
+function renderStepBody(mount, step) {
+  // 본문은 단순 텍스트 + ``` 코드블럭 추출
+  const lines = (step.body || '').split('\n');
+  let buf = [], inCode = false, codeBuf = [], codeLang = '', idx = 0;
+  function flushText() {
+    if (buf.length) {
+      const p = document.createElement('div');
+      p.innerHTML = renderMd(buf.join('\n'));
+      mount.appendChild(p);
+      buf = [];
+    }
+  }
+  for (const l of lines) {
+    if (l.trim().startsWith('```')) {
+      if (inCode) {
+        flushText();
+        idx++;
+        mount.appendChild(buildReviewableCode({
+          code: codeBuf.join('\n'),
+          sourceType: 'MARKDOWN_CODE',
+          sourceId: `step-${step.id}-code-${idx}`,
+          lang: codeLang,
+          title: `Step ${step.orderIndex + 1} code #${idx}`,
+          file: `step-${step.id}-code-${idx}`,
+        }));
+        codeBuf = []; codeLang = ''; inCode = false;
+      } else {
+        flushText();
+        codeLang = l.trim().replace(/^```/, '').trim();
+        inCode = true;
+      }
+    } else if (inCode) {
+      codeBuf.push(l);
+    } else {
+      buf.push(l);
+    }
+  }
+  flushText();
+}
+
+function buildReviewableCode({ code, sourceType, sourceId, lang, title, file }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'reviewableCode';
+  wrap.dataset.sourceType = sourceType;
+  wrap.dataset.sourceId = sourceId;
+  const lines = String(code).replace(/\n$/, '').split('\n');
+  wrap.innerHTML = `
+    <div class="codeHead">
+      <div><b>${esc(title || sourceId)}</b><small> · ${esc(sourceType)} · ${esc(lang || 'text')} · ${esc(file || '')}</small></div>
+      <button class="miniBtn primary" data-full-suggest>전체 코드 제안</button>
+    </div>
+    <div class="codeRows">
+      ${lines.map((line, i) => `<div class="codeRow" data-line="${i + 1}"><div class="gutter" data-gutter><span class="plus">+</span><span>${i + 1}</span></div><div class="codeText">${esc(line) || ' '}</div></div>`).join('')}
+    </div>
+    <div class="codeHint">라인번호 드래그 = Diff 제안 · 코드 텍스트 드래그 = 인용 댓글</div>`;
+  return wrap;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Markdown (simple)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderMd(text) {
+  const lines = String(text || '').split('\n');
+  const out = [];
+  let code = false, buf = [];
+  function flushCode() { out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>'); buf = []; }
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      if (code) { flushCode(); code = false; } else { code = true; buf = []; }
+      continue;
+    }
+    if (code) { buf.push(line); continue; }
+    if (line.trim()) {
+      let s = esc(line)
+        .replace(/`([^`]+)`/g, '<code class="inline">$1</code>')
+        .replace(/@snippet\(([\w-]+)\)/g, '<span class="locBadge">@snippet($1)</span>')
+        .replace(/@([A-Za-z0-9_.가-힣]+)/g, '<span class="locBadge" style="background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.2);color:var(--purple)">@$1</span>');
+      out.push('<p>' + s + '</p>');
+    }
+  }
+  if (code) flushCode();
+  return out.join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drag → quote (text) & Drag → suggestion (gutter)
+// ─────────────────────────────────────────────────────────────────────────────
+let dragState = null;
+
+document.addEventListener('mousedown', e => {
+  const gut = e.target.closest('.gutter');
+  if (!gut) return;
+  e.preventDefault();
+  const block = gut.closest('.reviewableCode');
+  const line = Number(gut.closest('.codeRow').dataset.line);
+  dragState = { block, start: line, current: line };
+  clearCodeSelection();
+  markRange(block, line, line);
+});
+document.addEventListener('mouseover', e => {
+  if (!dragState) return;
+  const row = e.target.closest('.codeRow');
+  if (!row || !dragState.block.contains(row)) return;
+  dragState.current = Number(row.dataset.line);
+  markRange(dragState.block, dragState.start, dragState.current);
+});
+document.addEventListener('mouseup', () => {
+  if (!dragState) return;
+  const { block, start, current } = dragState;
+  const a = Math.min(start, current), b = Math.max(start, current);
+  openSuggestion(block, a, b);
+  dragState = null;
+});
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-full-suggest]');
+  if (!btn) return;
+  const block = btn.closest('.reviewableCode');
+  const rows = block.querySelectorAll('.codeRow');
+  openSuggestion(block, 1, rows.length);
+});
+function clearCodeSelection() { $$('.codeRow').forEach(r => r.classList.remove('suggesting')); }
+function markRange(block, a, b) {
+  clearCodeSelection();
+  const s = Math.min(a, b), t = Math.max(a, b);
+  block.querySelectorAll('.codeRow').forEach(r => {
+    const n = Number(r.dataset.line);
+    if (n >= s && n <= t) r.classList.add('suggesting');
+  });
+}
+function getCodeLines(block, a, b) {
+  return [...block.querySelectorAll('.codeRow')]
+    .filter(r => { const n = Number(r.dataset.line); return n >= a && n <= b; })
+    .map(r => r.querySelector('.codeText').textContent.replace(/ /g, ' '));
+}
+function openSuggestion(block, a, b) {
+  const lines = getCodeLines(block, a, b);
+  const oldCode = lines.join('\n');
+  selectedSuggestion = {
+    sourceType: block.dataset.sourceType,
+    sourceId: block.dataset.sourceId,
+    startLine: a, endLine: b,
+    oldCode,
+  };
+  // quote 와 anchor 정합 — sourceType=SNIPPET 이면 CASE_BODY 인용, MARKDOWN_CODE 면 STEP 인용
+  const anchor = block.closest('.selectable, [data-target-type]');
+  let kind = 'CASE_BODY', sourceId = null, label = '본문';
+  if (block.dataset.sourceType === 'MARKDOWN_CODE') {
+    const step = block.closest('.attempt');
+    if (step) {
+      kind = 'STEP'; sourceId = Number(step.dataset.targetId); label = step.dataset.targetLabel;
+    }
+  } else if (anchor && anchor.dataset.targetType === 'STEP') {
+    kind = 'STEP'; sourceId = Number(anchor.dataset.targetId); label = anchor.dataset.targetLabel;
+  }
+  showQuote({ kind, sourceId, label, text: oldCode });
+  $('#suggestionPreview').classList.add('show');
+  $('#suggestionMeta').textContent = `${block.dataset.sourceType} · ${block.dataset.sourceId} · L${a}${a === b ? '' : '-L' + b}`;
+  $('#suggestionAfter').value = oldCode;
+  $('#discussion').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 텍스트 드래그 (gutter 가 아닐 때)
+document.addEventListener('mouseup', () => {
+  if (dragState) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.toString().trim().length < 2) {
+      $('#quoteFab').classList.remove('show'); return;
+    }
+    let node = sel.anchorNode;
+    if (node && node.nodeType === 3) node = node.parentElement;
+    // 코드 텍스트 영역 안 — sourceType 으로 anchor 결정
+    const block = node?.closest?.('.reviewableCode');
+    let target = null;
+    if (block) {
+      const step = block.closest('.attempt');
+      if (step) target = { kind: 'STEP', sourceId: Number(step.dataset.targetId), label: step.dataset.targetLabel };
+      else target = { kind: 'CASE_BODY', sourceId: null, label: '본문' };
+    } else {
+      const sel2 = node?.closest?.('.selectable, [data-target-type]');
+      if (!sel2) return;
+      const kind = sel2.dataset.targetType || 'CASE_BODY';
+      target = {
+        kind,
+        sourceId: kind === 'STEP' ? Number(sel2.dataset.targetId) : null,
+        label: sel2.dataset.targetLabel || (kind === 'STEP' ? 'Step' : '본문'),
+      };
+    }
+    target.text = sel.toString().trim();
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    const fab = $('#quoteFab');
+    fab.style.left = Math.min(window.scrollX + r.left, window.scrollX + innerWidth - 160) + 'px';
+    fab.style.top = (window.scrollY + r.top - 42) + 'px';
+    fab.classList.add('show');
+    fab.onclick = () => {
+      $('#suggestionPreview').classList.remove('show'); selectedSuggestion = null;
+      showQuote(target);
+      fab.classList.remove('show'); window.getSelection().removeAllRanges();
+      $('#discussion').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  }, 20);
+});
+
+function showQuote(q) {
+  selectedQuote = { ...q };
+  if (q.text && q.text.length > 500) { selectedQuote.text = q.text.slice(0, 500); selectedQuote.truncated = true; }
+  $('#quotePreview').classList.add('show');
+  const badge = $('#quoteBadge');
+  badge.className = 'locBadge ' + (q.kind === 'STEP' ? 'STEP' : '');
+  badge.textContent = q.label;
+  $('#quoteText').textContent = '"' + selectedQuote.text + (selectedQuote.truncated ? '…"' : '"');
+  $('#commentInput').focus();
+}
+
+$('#clearQuote').onclick = () => { selectedQuote = null; $('#quotePreview').classList.remove('show'); };
+$('#clearSuggestion').onclick = () => { selectedSuggestion = null; $('#suggestionPreview').classList.remove('show'); clearCodeSelection(); };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Comments
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadComments() {
+  if (!currentCase) return;
+  try {
+    const r = await api(`/error-cases/${currentCase.id}/comments?sort=${activeSort}&quoteKind=${activeFilter}&size=100`);
+    comments = r.items;
+    renderComments();
+  } catch (e) {
+    toast('댓글 로드 실패: ' + e.message, true);
+  }
+}
+
+function renderComments() {
+  const visible = comments.filter(c => !c.deletedAt).length;
+  $('#commentCount').textContent = visible;
+  const html = comments.map(c => renderCommentCard(c, false)).join('') || '<div class="empty">댓글이 아직 없어요.</div>';
+  $('#commentList').innerHTML = html;
+  wireCommentButtons();
+}
+
+function renderCommentCard(c, isReply) {
+  if (c.deletedAt) {
+    return `<article class="comment ${isReply ? 'reply' : ''}" id="comment-${c.id}">
+      <div class="avatar tiny">·</div>
+      <div class="commentBody">
+        <div class="deletedPlaceholder">[삭제된 댓글] #${c.authorUserId} · ${esc(c.deletedAt)}</div>
+        ${(c.replies || []).map(r => renderCommentCard(r, true)).join('')}
+      </div>
+    </article>`;
+  }
+  const avatar = `#${c.authorUserId}`.slice(-2);
+  const isMine = c.authorUserId === userId();
+  const isOwner = c.isAuthorOfCase;
+  const caseOwner = currentCase && currentCase.ownerUserId === userId();
+
+  return `<article class="comment ${isReply ? 'reply' : ''}" id="comment-${c.id}">
+    <div class="avatar">${esc(avatar)}</div>
+    <div class="commentBody">
+      <div class="commentMeta">
+        <b>User #${c.authorUserId}</b>
+        ${isOwner ? '<span class="tag author">작성자</span>' : ''}
+        ${isMine ? '<span class="tag">나</span>' : ''}
+        <time>${esc(c.createdAt)}</time>
+        ${c.quote ? renderQuoteBadge(c.quote) : ''}
+        ${c.editedAt ? `<span class="editedMark">(편집됨 · ${esc(c.editedAt)})</span>` : ''}
+      </div>
+      ${c.quote ? renderQuote(c.quote) : ''}
+      <div class="commentText">${renderMd(c.body)}</div>
+      ${c.suggestion ? renderSuggestion(c.suggestion, caseOwner) : ''}
+      ${renderReactions(c)}
+      <div class="commentActions">
+        ${renderHelpful(c)}
+        <button class="plain" data-reply="${c.id}">답글</button>
+        ${isMine ? `<button class="plain" data-edit="${c.id}">수정</button>` : ''}
+        ${isMine ? `<button class="plain" data-delete="${c.id}" style="color:var(--bad)">삭제</button>` : ''}
+        <button class="plain" data-share="${c.id}">공유</button>
+      </div>
+      ${(c.replies || []).map(r => renderCommentCard(r, true)).join('')}
+    </div>
+  </article>`;
+}
+
+function renderQuoteBadge(q) {
+  let label = q.kind === 'CASE_BODY' ? '본문' : q.kind === 'STEP' ? `Step (${q.sourceId})` : '';
+  return `<span class="locBadge ${q.kind}">${esc(label)}</span>`;
+}
+
+function renderQuote(q) {
+  const truncated = q.truncated ? '…' : '';
+  return `<div class="commentQuote" data-jump-snapshot="${esc(q.snapshot || '')}"><blockquote>"${esc(q.snapshot)}${truncated}"</blockquote></div>`;
+}
+
+function renderReactions(c) {
+  const chips = (c.reactions || []).map(r => {
+    const users = (r.userIds || []).map(u => '#' + u).join(', ');
+    const tip = r.reactedByMe
+      ? `클릭으로 해제 · reacted by: ${users}`
+      : `클릭으로 추가 · reacted by: ${users}`;
+    return `<button class="reactionChip ${r.reactedByMe ? 'byMe' : ''}" data-react="${c.id}:${esc(r.emoji)}" title="${esc(tip)}">${esc(r.emoji)} ${r.count}</button>`;
+  }).join('');
+  return `<div class="reactions">${chips}<button class="reactionChip" data-react-add="${c.id}" title="이모지 선택">+ 추가</button></div>`;
+}
+
+function renderHelpful(c) {
+  const h = c.helpful || { count: 0, userIds: [], helpedByMe: false };
+  const stack = (h.userIds || []).slice(0, 3).map(uid =>
+    `<span class="avatar tiny">${String(uid).slice(-2)}</span>`
+  ).join('');
+  const extra = h.count > 3 ? `<span class="mini" style="margin-left:4px">+${h.count - 3}</span>` : '';
+  return `<button class="helpedStack ${h.helpedByMe ? 'byMe' : ''}" data-help="${c.id}">
+    <span class="stack">${stack}</span>${extra} ⭐ 도움됨 ${h.count}
+  </button>`;
+}
+
+function renderSuggestion(s, caseOwner) {
+  const rows = (s.lines || []).map(l =>
+    `<tr class="diffRow ${l.type}">
+      <td class="diffLineNo">${esc(l.oldNo ?? '')}</td>
+      <td class="diffLineNo">${esc(l.newNo ?? '')}</td>
+      <td class="diffSign">${l.type === 'add' ? '+' : '-'}</td>
+      <td class="diffCode">${esc(l.code)}</td>
+    </tr>`).join('');
+  return `<div class="diffBox">
+    <div class="diffHead">
+      <div>
+        <b>Diff 제안 · ${esc(s.sourceType)}</b>
+        <small>${esc(s.sourceId)} · L${s.startLine}${s.startLine === s.endLine ? '' : '-L' + s.endLine}</small>
+        <div class="diffStats">
+          <span class="diffStat add">+${s.additions}</span>
+          <span class="diffStat del">-${s.deletions}</span>
+          <span class="diffStatus ${s.status}">${s.status}</span>
+        </div>
+      </div>
+      ${caseOwner ? `<div class="diffActions">
+        ${s.status !== 'APPLIED' ? `<button class="miniBtn primary" data-suggest-status="APPLIED" data-comment="${s.commentId ?? ''}">반영</button>` : ''}
+        ${s.status !== 'REJECTED' ? `<button class="miniBtn bad" data-suggest-status="REJECTED" data-comment="${s.commentId ?? ''}">거부</button>` : ''}
+        ${s.status !== 'PENDING' ? `<button class="miniBtn" data-suggest-status="PENDING" data-comment="${s.commentId ?? ''}">대기로</button>` : ''}
+      </div>` : ''}
+    </div>
+    <table class="diffTable"><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+// Wire buttons in comment cards
+function wireCommentButtons() {
+  $$('[data-react]').forEach(b => b.onclick = async () => {
+    const [id, em] = b.dataset.react.split(':');
+    const byMe = b.classList.contains('byMe');
+    try {
+      if (byMe) await api(`/error-cases/${currentCase.id}/comments/${id}/reactions/${encodeURIComponent(em)}`, { method: 'DELETE' });
+      else await api(`/error-cases/${currentCase.id}/comments/${id}/reactions`, { method: 'POST', body: JSON.stringify({ emoji: em }) });
+      await loadComments();
+    } catch (e) { toast(e.message, true); }
+  });
+  $$('[data-react-add]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    openEmojiPicker(b, Number(b.dataset.reactAdd));
+  });
+  $$('[data-help]').forEach(b => b.onclick = async () => {
+    try {
+      await api(`/error-cases/${currentCase.id}/comments/${b.dataset.help}/helpful`, { method: 'POST' });
+      await loadComments();
+    } catch (e) { toast(e.message, true); }
+  });
+  $$('[data-reply]').forEach(b => b.onclick = () => {
+    replyTo = Number(b.dataset.reply);
+    $('#replyHint').style.display = 'block';
+    $('#replyHint').textContent = `답글 대상: #${replyTo} (서버가 depth=1 강제)`;
+    $('#cancelReplyBtn').style.display = 'inline-block';
+    $('#commentInput').focus();
+  });
+  $$('[data-edit]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.edit);
+    const c = findComment(id); if (!c) return;
+    const body = prompt('새 본문', c.body); if (body == null) return;
+    try {
+      await api(`/error-cases/${currentCase.id}/comments/${id}`, { method: 'PATCH', body: JSON.stringify({ body }) });
+      await loadComments();
+    } catch (e) { toast(e.message, true); }
+  });
+  $$('[data-delete]').forEach(b => b.onclick = async () => {
+    if (!confirm('이 댓글을 삭제할까요? (soft delete)')) return;
+    try {
+      await api(`/error-cases/${currentCase.id}/comments/${b.dataset.delete}`, { method: 'DELETE' });
+      await loadComments();
+    } catch (e) { toast(e.message, true); }
+  });
+  $$('[data-share]').forEach(b => b.onclick = () => {
+    const url = location.origin + location.pathname + '#comment-' + b.dataset.share;
+    navigator.clipboard?.writeText(url);
+    history.replaceState(null, '', '#comment-' + b.dataset.share);
+    toast('링크 복사됨: ' + url);
+  });
+  $$('[data-suggest-status]').forEach(b => b.onclick = async () => {
+    const status = b.dataset.suggestStatus;
+    const card = b.closest('.comment');
+    const id = card.id.replace('comment-', '');
+    try {
+      await api(`/error-cases/${currentCase.id}/comments/${id}/suggestion/status`, {
+        method: 'PATCH', body: JSON.stringify({ status }),
+      });
+      toast(`상태 → ${status}`);
+      await loadComments();
+    } catch (e) { toast(e.message, true); }
+  });
+  $$('[data-jump-snapshot]').forEach(el => el.onclick = () => {
+    const snap = el.dataset.jumpSnapshot; if (!snap) return;
+    // 본문/Step 텍스트에서 첫 매치 찾기
+    const candidates = [...document.querySelectorAll('.selectable, .reviewableCode, .step-body')];
+    for (const node of candidates) {
+      const txt = node.textContent || '';
+      if (txt.includes(snap.slice(0, 30))) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        node.style.boxShadow = '0 0 0 3px rgba(37,99,235,.4)';
+        setTimeout(() => node.style.boxShadow = '', 1500);
+        return;
+      }
+    }
+    toast('원본을 찾을 수 없습니다 — 본문이 수정되었을 수 있어요', true);
+  });
+}
+
+function findComment(id) {
+  for (const c of comments) {
+    if (c.id === id) return c;
+    for (const r of (c.replies || [])) if (r.id === id) return r;
+  }
+  return null;
+}
+
+$('#cancelReplyBtn').onclick = () => {
+  replyTo = null;
+  $('#replyHint').style.display = 'none';
+  $('#cancelReplyBtn').style.display = 'none';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Submit
+// ─────────────────────────────────────────────────────────────────────────────
+$('#submitBtn').onclick = async () => {
+  if (!currentCase) { toast('케이스 먼저 선택', true); return; }
+  const body = $('#commentInput').value.trim();
+  if (!body) { toast('본문 입력', true); return; }
+  const payload = {
+    parentCommentId: replyTo,
+    body,
+    quoteSourceKind: selectedQuote ? selectedQuote.kind : 'NONE',
+    quoteSourceId: selectedQuote && selectedQuote.kind === 'STEP' ? selectedQuote.sourceId : null,
+    quoteSnapshot: selectedQuote ? selectedQuote.text : null,
+  };
+  if (selectedSuggestion) {
+    payload.suggestion = {
+      sourceType: selectedSuggestion.sourceType,
+      sourceId: selectedSuggestion.sourceId,
+      startLine: selectedSuggestion.startLine,
+      endLine: selectedSuggestion.endLine,
+      oldCode: selectedSuggestion.oldCode,
+      newCode: $('#suggestionAfter').value,
+    };
+  }
+  try {
+    await api(`/error-cases/${currentCase.id}/comments`, { method: 'POST', body: JSON.stringify(payload) });
+    $('#commentInput').value = '';
+    selectedQuote = null; selectedSuggestion = null; replyTo = null;
+    $('#quotePreview').classList.remove('show');
+    $('#suggestionPreview').classList.remove('show');
+    $('#replyHint').style.display = 'none';
+    $('#cancelReplyBtn').style.display = 'none';
+    clearCodeSelection();
+    await loadComments();
+    toast('댓글 작성됨');
+  } catch (e) { toast(e.message, true); }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Filter / sort / theme / case select
+// ─────────────────────────────────────────────────────────────────────────────
+$$('.filter').forEach(b => b.onclick = () => {
+  $$('.filter').forEach(x => x.classList.toggle('active', x === b));
+  activeFilter = b.dataset.filter; loadComments();
+});
+$$('.sort').forEach(b => b.onclick = () => {
+  $$('.sort').forEach(x => x.classList.toggle('active', x === b));
+  activeSort = b.dataset.sort; loadComments();
+});
+$('#themeBtn').onclick = () => document.body.dataset.theme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+$('#caseSelect').onchange = e => { if (e.target.value) loadCase(e.target.value); };
+$('#userIdInput').onchange = () => { loadCaseList(); if (currentCase) loadCase(currentCase.id); };
+$('#reloadBtn').onclick = () => { if (currentCase) loadCase(currentCase.id); else loadCaseList(); };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emoji picker (Slack-style)
+// ─────────────────────────────────────────────────────────────────────────────
+const EMOJI_CATEGORIES = [
+  { id: 'reactions', label: '🙂', name: '자주', emojis: ['👍','👎','❤️','🎉','🚀','🔥','👀','🎯','💯','✅','❌','⚠️','🙏','💪','🤝','👏'] },
+  { id: 'smileys',   label: '😀', name: '얼굴', emojis: ['😀','😂','🤣','😊','😍','🤔','😢','😭','😡','🤯','🥳','😴','🤓','🤗','😱','😬'] },
+  { id: 'gestures',  label: '✋', name: '제스처', emojis: ['👏','🙌','✊','🤝','👋','🫶','🤘','✌️','🤞','🤙','👇','👉','👆','👌','🖐️','🙏'] },
+  { id: 'objects',   label: '💡', name: '오브젝트', emojis: ['💡','📌','📝','📚','📊','📈','📉','🔧','🛠️','⚡','💥','🔍','🔒','🔓','🚨','🚧'] },
+  { id: 'symbols',   label: '✨', name: '기호', emojis: ['✨','⭐','🌟','💫','💢','🆘','🆗','☑️','🔁','↩️','⏰','⏳','🟢','🟡','🔴','🐛'] },
+];
+const EMOJI_KEYWORDS = {
+  '👍':'like good ok thumbsup 좋아요 굿','👎':'bad dislike 싫어요','❤️':'heart love 하트 사랑',
+  '🎉':'party celebration 축하','🚀':'rocket launch 발사 출시','🔥':'fire hot 핫 불',
+  '👀':'eyes look 봐 확인','🎯':'target 정확 적중','💯':'hundred perfect 100',
+  '✅':'check yes 확인 통과','❌':'x no 실패','⚠️':'warning 경고','🙏':'pray thanks 감사 부탁',
+  '💪':'muscle strong 화이팅','🤝':'handshake agree 동의','👏':'clap applause 박수',
+  '😀':'smile happy 웃음','😂':'lol laugh 웃겨','🤣':'rofl 빵터짐','😊':'blush smile 미소',
+  '😍':'love heart eyes 사랑','🤔':'thinking 생각','😢':'cry sad 슬픔','😭':'crying 울음',
+  '😡':'angry mad 화남','🤯':'mind blown 충격','🥳':'party 파티','😴':'sleep 잠',
+  '🤓':'nerd 너드 책벌레','🤗':'hug 포옹','😱':'shock scream 놀람','😬':'grimace 어색',
+  '💡':'idea 아이디어','📌':'pin 고정','📝':'memo 메모','📚':'books 책','📊':'chart 차트',
+  '🔧':'wrench fix 수리','🛠️':'tools 도구','⚡':'fast quick 빠른','💥':'boom impact',
+  '🔍':'search find 검색','🔒':'lock secure 잠금','🚨':'alert siren 경보','🚧':'wip 작업중',
+  '✨':'sparkle nice 반짝','⭐':'star 별','🌟':'star glow','🔁':'repeat 반복','↩️':'undo 되돌리기',
+  '⏰':'alarm time 시간','⏳':'hourglass 진행중','🐛':'bug 버그',
+};
+let pickerTargetCommentId = null;
+let pickerActiveCategory = 'reactions';
+
+function openEmojiPicker(anchorBtn, commentId) {
+  pickerTargetCommentId = commentId;
+  const picker = $('#emojiPicker');
+  const backdrop = $('#emojiBackdrop');
+  // 위치 계산 — anchor 의 우상단을 기준으로 띄움
+  const r = anchorBtn.getBoundingClientRect();
+  const pickerW = 320, pickerH = 380;
+  let left = r.left;
+  let top = r.bottom + 6;
+  if (left + pickerW > innerWidth - 8) left = innerWidth - pickerW - 8;
+  if (top + pickerH > innerHeight - 8) top = r.top - pickerH - 6;
+  picker.style.left = left + 'px';
+  picker.style.top = top + 'px';
+  renderEmojiPicker('');
+  picker.classList.add('show');
+  backdrop.classList.add('show');
+  setTimeout(() => $('#emojiSearch').focus(), 30);
+}
+
+function closeEmojiPicker() {
+  $('#emojiPicker').classList.remove('show');
+  $('#emojiBackdrop').classList.remove('show');
+  $('#emojiSearch').value = '';
+  $('#emojiCustom').value = '';
+  pickerTargetCommentId = null;
+}
+
+function mineEmojisFor(commentId) {
+  const c = findComment(commentId);
+  if (!c) return new Set();
+  return new Set((c.reactions || []).filter(r => r.reactedByMe).map(r => r.emoji));
+}
+
+function renderEmojiPicker(query) {
+  const q = (query || '').trim().toLowerCase();
+  const tabs = EMOJI_CATEGORIES.map(cat =>
+    `<button class="emojiPickerTab ${cat.id === pickerActiveCategory ? 'active' : ''}" data-cat="${cat.id}" title="${esc(cat.name)}">${cat.label}</button>`
+  ).join('');
+  $('#emojiTabs').innerHTML = tabs;
+  $$('.emojiPickerTab').forEach(t => t.onclick = () => {
+    pickerActiveCategory = t.dataset.cat;
+    renderEmojiPicker($('#emojiSearch').value);
+  });
+
+  const mine = mineEmojisFor(pickerTargetCommentId);
+  let categories = EMOJI_CATEGORIES;
+
+  if (q) {
+    // 검색: 키워드 매핑 + 직접 입력 모두 검사. 매칭된 이모지만 한 카테고리로 묶음.
+    const matched = new Set();
+    for (const [em, kw] of Object.entries(EMOJI_KEYWORDS)) {
+      if (em.includes(q) || kw.toLowerCase().includes(q)) matched.add(em);
+    }
+    for (const cat of EMOJI_CATEGORIES) {
+      for (const em of cat.emojis) {
+        if (em.includes(q) || (EMOJI_KEYWORDS[em] || '').toLowerCase().includes(q)) matched.add(em);
+      }
+    }
+    categories = [{ id: 'search', name: '검색 결과', emojis: [...matched] }];
+  } else {
+    // 활성 카테고리만 표시 (좀 더 깔끔)
+    categories = EMOJI_CATEGORIES.filter(c => c.id === pickerActiveCategory);
+  }
+
+  const body = categories.map(cat => `
+    <div class="emojiCategory">
+      <h5>${esc(cat.name)}${q ? ` · ${cat.emojis.length}개` : ''}</h5>
+      <div class="emojiGrid">
+        ${cat.emojis.map(em =>
+          `<button class="emojiCell ${mine.has(em) ? 'mine' : ''}" data-pick="${esc(em)}" title="${esc(EMOJI_KEYWORDS[em] || em)}${mine.has(em) ? ' · 클릭으로 해제' : ''}">${em}</button>`
+        ).join('') || '<div class="mini" style="grid-column:1/-1;padding:8px">매칭된 이모지가 없습니다 — 아래 "직접 입력" 사용</div>'}
+      </div>
+    </div>
+  `).join('');
+  $('#emojiBody').innerHTML = body;
+  $$('.emojiCell').forEach(c => c.onclick = () => pickEmoji(c.dataset.pick));
+}
+
+async function pickEmoji(emoji) {
+  if (!emoji || !pickerTargetCommentId || !currentCase) { closeEmojiPicker(); return; }
+  const mine = mineEmojisFor(pickerTargetCommentId);
+  const cid = pickerTargetCommentId;
+  const isMine = mine.has(emoji);
+  try {
+    if (isMine) {
+      await api(`/error-cases/${currentCase.id}/comments/${cid}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' });
+      toast(`${emoji} 해제됨`);
+    } else {
+      await api(`/error-cases/${currentCase.id}/comments/${cid}/reactions`, { method: 'POST', body: JSON.stringify({ emoji }) });
+      toast(`${emoji} 추가됨`);
+    }
+    closeEmojiPicker();
+    await loadComments();
+  } catch (e) { toast(e.message, true); }
+}
+
+$('#emojiBackdrop').onclick = closeEmojiPicker;
+$('#emojiSearch').addEventListener('input', e => renderEmojiPicker(e.target.value));
+$('#emojiSearch').addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeEmojiPicker();
+  if (e.key === 'Enter') {
+    const v = e.target.value.trim();
+    if (v && v.length <= 16) pickEmoji(v);
+  }
+});
+$('#emojiCustomAdd').onclick = () => {
+  const v = $('#emojiCustom').value.trim();
+  if (v) pickEmoji(v);
+};
+$('#emojiCustom').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#emojiCustomAdd').click(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#emojiPicker').classList.contains('show')) closeEmojiPicker();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @멘션 자동완성 — composer textarea 의 caret 위치에서 @토큰 감지 → core-api 호출
+// ─────────────────────────────────────────────────────────────────────────────
+const MENTION_TOKEN_RE = /@([A-Za-z0-9_.가-힣-]*)$/;
+
+function getCaretCoords(textarea) {
+  // textarea 의 caret 위치 (시각적) 를 *근사* 로 구함 — div mirror 트릭 사용
+  const m = document.createElement('div');
+  const cs = getComputedStyle(textarea);
+  ['fontFamily','fontSize','fontWeight','letterSpacing','lineHeight','padding','border','width','whiteSpace','wordWrap','boxSizing'].forEach(k => m.style[k] = cs[k]);
+  m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap';
+  m.textContent = textarea.value.substring(0, textarea.selectionStart);
+  const span = document.createElement('span');
+  span.textContent = '|';
+  m.appendChild(span);
+  document.body.appendChild(m);
+  const rectTa = textarea.getBoundingClientRect();
+  const rectSpan = span.getBoundingClientRect();
+  const x = rectTa.left + (rectSpan.left - m.getBoundingClientRect().left) + window.scrollX;
+  const y = rectTa.top + (rectSpan.top - m.getBoundingClientRect().top) + window.scrollY + 18;
+  document.body.removeChild(m);
+  return { x, y };
+}
+
+const mentionDD = $('#mentionDropdown');
+let mentionState = { active: false, items: [], selected: 0, tokenStart: -1, target: null };
+
+function closeMentionDD() {
+  mentionDD.style.display = 'none';
+  mentionState.active = false;
+}
+
+function renderMentionDD() {
+  if (mentionState.items.length === 0) {
+    mentionDD.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:11px">매칭되는 사용자 없음</div>';
+    return;
+  }
+  mentionDD.innerHTML = mentionState.items.map((u, i) => {
+    const sel = i === mentionState.selected ? 'background:var(--accent2)' : '';
+    const initial = u.displayName.slice(0, 2).toUpperCase();
+    const avatar = u.avatarUrl
+      ? `<img src="${u.avatarUrl}" style="width:24px;height:24px;border-radius:999px;object-fit:cover">`
+      : `<div style="width:24px;height:24px;border-radius:999px;background:linear-gradient(135deg,#c7d2fe,#a7f3d0);color:white;display:grid;place-items:center;font-size:10px;font-weight:600">${initial}</div>`;
+    const badgeText = ({
+      'in-discussion': '대화 참여',
+      'owner': '케이스 owner',
+      'workspace-member': '워크스페이스',
+      'search': '검색',
+    })[u.badge] || '';
+    return `<div data-idx="${i}" class="mentionItem" style="display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer;${sel}">
+      ${avatar}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${u.displayName}</div>
+        ${badgeText ? `<div style="font-size:10px;color:var(--muted)">${badgeText}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  [...mentionDD.querySelectorAll('.mentionItem')].forEach(el => {
+    el.onmouseenter = () => { mentionState.selected = Number(el.dataset.idx); renderMentionDD(); };
+    el.onclick = () => applyMention(Number(el.dataset.idx));
+  });
+}
+
+async function fetchMentionCandidates(q) {
+  if (!currentCase) return [];
+  try {
+    const r = await api(`/error-cases/${currentCase.id}/mention-candidates?q=${encodeURIComponent(q)}&limit=8`);
+    return Array.isArray(r) ? r : [];
+  } catch (e) { return []; }
+}
+
+function applyMention(idx) {
+  const target = mentionState.target;
+  const u = mentionState.items[idx];
+  if (!target || !u) return;
+  const value = target.value;
+  const before = value.substring(0, mentionState.tokenStart);
+  const afterCaret = value.substring(target.selectionStart);
+  const inserted = `@${u.displayName} `;
+  target.value = before + inserted + afterCaret;
+  const newPos = before.length + inserted.length;
+  target.setSelectionRange(newPos, newPos);
+  closeMentionDD();
+  target.focus();
+}
+
+async function maybeOpenMentionDD(target) {
+  mentionState.target = target;
+  const value = target.value;
+  const upto = value.substring(0, target.selectionStart);
+  const m = upto.match(MENTION_TOKEN_RE);
+  if (!m) { closeMentionDD(); return; }
+  mentionState.tokenStart = upto.length - m[0].length;   // @ 위치
+  const q = m[1];
+  const items = await fetchMentionCandidates(q);
+  if (items.length === 0 && q === '') { closeMentionDD(); return; }
+  mentionState.items = items;
+  mentionState.selected = 0;
+  mentionState.active = true;
+  const { x, y } = getCaretCoords(target);
+  mentionDD.style.left = x + 'px';
+  mentionDD.style.top = y + 'px';
+  mentionDD.style.display = 'block';
+  renderMentionDD();
+}
+
+// 댓글 본 composer + 답글 composer 양쪽에 wiring
+function attachMentionListeners(textarea) {
+  if (!textarea || textarea.dataset.mentionWired) return;
+  textarea.dataset.mentionWired = '1';
+  textarea.addEventListener('input', () => maybeOpenMentionDD(textarea));
+  textarea.addEventListener('keydown', e => {
+    if (!mentionState.active) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionState.selected = (mentionState.selected + 1) % mentionState.items.length;
+      renderMentionDD();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionState.selected = (mentionState.selected - 1 + mentionState.items.length) % mentionState.items.length;
+      renderMentionDD();
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      applyMention(mentionState.selected);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeMentionDD();
+    }
+  });
+  textarea.addEventListener('blur', () => setTimeout(closeMentionDD, 150));
+}
+
+attachMentionListeners($('#commentInput'));
+
+// 답글 composer 가 동적으로 만들어질 때 — MutationObserver 로 textarea 발견시 자동 wiring
+const moBody = document.querySelector('.discussionBody') || document.body;
+new MutationObserver(muts => {
+  muts.forEach(m => {
+    m.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
+      n.querySelectorAll && n.querySelectorAll('textarea').forEach(t => attachMentionListeners(t));
+      if (n.tagName === 'TEXTAREA') attachMentionListeners(n);
+    });
+  });
+}).observe(moBody, { childList: true, subtree: true });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+loadCaseList();
+</script>
+</body>
+</html>

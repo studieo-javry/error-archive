@@ -1,0 +1,57 @@
+# ===================================================================
+# core-api 공통 베이스 — 모든 환경에서 동일한 값만.
+# 환경별 차이는 application-{local|dev|stg|prod}.yml 에 분리.
+# ===================================================================
+
+spring:
+  application:
+    name: core-api
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+server:
+  forward-headers-strategy: framework
+  # service-to-service internal endpoint (`/internal/error-cases/{id}/full-data`) 와
+  # 공개 검색 API 의 JSON 응답이 수십 KB 까지 커질 수 있어 gzip 활성화.
+  # 1 KB 미만은 압축 비용 > 절약 byte 라 skip.
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/html,text/css,text/javascript,application/javascript
+    min-response-size: 1024
+
+iam:
+  jwt:
+    # 모든 환경 공통 (iam-api 가 발급한 토큰 검증용)
+    audience: ${IAM_JWT_AUDIENCE:local-clients}
+
+core:
+  attachment:
+    storage-path: ${CORE_ATTACHMENT_STORAGE_PATH:./var/attachments}
+    public-base-url: ${CORE_ATTACHMENT_PUBLIC_BASE_URL:http://localhost:8080/api/v1/error-attachments}
+  iam-api:
+    base-url: ${CORE_IAM_API_BASE_URL:http://localhost:8080}
+
+# 알림 publisher 기본값 — 명시 안 하면 `http` (직접 RestClient). local 은 yml override 로 kafka.
+# default 가 없으면 어느 adapter 도 활성화되지 않아 createCommentUseCase 가 깨진다.
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:http}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    org.springframework.security: DEBUG

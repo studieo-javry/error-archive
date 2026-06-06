@@ -50,7 +50,9 @@ class HeaderInjectionFilter(
     }
 
     private fun resolveAudience(uri: String): String = when {
-        uri.startsWith("/api/v1/error-cases") || uri.startsWith("/api/v1/error-attachments") -> AUDIENCE_CORE_API
+        uri.startsWith("/api/v1/error-cases") ||
+                uri.startsWith("/api/v1/error-attachments") ||
+                uri.startsWith("/api/v1/error-snippets") -> AUDIENCE_CORE_API
         else -> AUDIENCE_IAM_API
     }
 

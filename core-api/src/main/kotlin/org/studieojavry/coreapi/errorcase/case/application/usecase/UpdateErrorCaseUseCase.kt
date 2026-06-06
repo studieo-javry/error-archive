@@ -55,13 +55,12 @@ class UpdateErrorCaseUseCase(
         val newMeta = Meta.create(
             workspaceId = errorCase.meta.workspaceId, // 워크스페이스 이동은 불가(범위 밖)
             severityCode = command.severityCode ?: errorCase.meta.severity?.code,
-            environment = command.environment ?: errorCase.meta.environment
         )
         val newSnapshot = if (command.paste != null) buildSnapshot(command.paste) else errorCase.snapshot
 
         errorCase.update(
             title = command.title ?: errorCase.title,
-            scope = command.scope ?: errorCase.scope,
+            project = command.project ?: errorCase.project,
             snapshot = newSnapshot,
             description = command.description ?: errorCase.description,
             meta = newMeta,

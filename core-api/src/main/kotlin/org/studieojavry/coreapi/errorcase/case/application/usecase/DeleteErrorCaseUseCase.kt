@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentDeleter
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.SnippetDeleter
@@ -34,6 +35,7 @@ class DeleteErrorCaseUseCase(
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
     private val commentRepository: CommentRepositoryPort,
+    private val tagRepository: ErrorCaseTagRepositoryPort,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -59,6 +61,9 @@ class DeleteErrorCaseUseCase(
             commentRepository.deleteAllMentionsByCommentId(it.id)
         }
         commentRepository.deleteAllByErrorCaseId(errorCaseId)
+
+        // 태그 cascade (DB FK 가 ON DELETE CASCADE 라 자동 정리되지만 안전망)
+        tagRepository.deleteAllByErrorCaseId(errorCaseId)
 
         errorCaseRepository.deleteById(errorCaseId)
         log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments) by user=$requesterUserId" }

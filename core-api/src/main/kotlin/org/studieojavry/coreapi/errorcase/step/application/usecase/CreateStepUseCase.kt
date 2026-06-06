@@ -7,8 +7,10 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotF
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import org.studieojavry.coreapi.errorcase.step.application.command.CreateStepCommand
+import org.studieojavry.coreapi.errorcase.step.application.port.StepAttemptTypeCatalogPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
+import org.studieojavry.coreapi.errorcase.step.domain.model.vo.AttemptType
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
 
 
@@ -17,13 +19,18 @@ import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
  *
  * 자동 상태 전이:
  *  - 케이스가 `OPEN` 이고 첫 step 이면 → `IN_PROGRESS` 로 전환(같은 트랜잭션).
- *  - 추가된 step.status == SUCCESS 이고 케이스가 IN_PROGRESS 면 → 응답에 `suggestResolve=true` hint.
+ *  - 추가된 step.status == RESOLVED 이고 케이스가 IN_PROGRESS 면 → 응답에 `suggestResolve=true` hint.
  *    (실제 RESOLVED 전환은 사용자가 확인 후 PATCH 로 별도 호출.)
+ *
+ * 자동 카탈로그 등록:
+ *  - `attemptType` 값이 system(`AttemptType.SYSTEM`) 도 본인 custom 도 아니면, 본인 커스텀 카탈로그에 멱등 add.
+ *    → 같은 사용자의 다음 step 작성 시 자동 완성 후보로 노출.
  */
 @Service
 class CreateStepUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val stepRepository: StepRepositoryPort,
+    private val attemptTypeCatalog: StepAttemptTypeCatalogPort,
     private val access: ErrorCaseAccess,
 ) {
     @Transactional
@@ -32,6 +39,8 @@ class CreateStepUseCase(
             ?: throw ErrorCaseNotFoundException(command.errorCaseId)
         access.requireWrite(errorCase, command.authorUserId)
 
+        val normalizedAttemptType = command.attemptType?.let { AttemptType.normalize(it) }
+
         val existingCount = stepRepository.countByErrorCaseId(command.errorCaseId).toInt()
         val step = Step.create(
             errorCaseId = command.errorCaseId,
@@ -39,7 +48,7 @@ class CreateStepUseCase(
             orderIndex = existingCount,
             title = command.title,
             status = command.status,
-            attemptType = command.attemptType,
+            attemptType = normalizedAttemptType,
             body = command.body,
             insight = command.insight,
         )
@@ -51,10 +60,19 @@ class CreateStepUseCase(
             errorCaseRepository.update(errorCase)
         }
 
-        // IN_PROGRESS 에서 SUCCESS step → RESOLVED 추천(전환은 사용자 확인)
-        val suggestResolve = command.status == StepStatus.SUCCESS && errorCase.status == ErrorCaseStatus.IN_PROGRESS
+        normalizedAttemptType?.let { registerCustomIfNew(command.authorUserId, it) }
+
+        // IN_PROGRESS 에서 RESOLVED step → 케이스 RESOLVED 추천(전환은 사용자 확인)
+        val suggestResolve = command.status == StepStatus.RESOLVED && errorCase.status == ErrorCaseStatus.IN_PROGRESS
 
         return Result(step = saved, caseStatus = errorCase.status, suggestResolve = suggestResolve)
+    }
+
+    private fun registerCustomIfNew(userId: Long, attemptType: String) {
+        val key = AttemptType.normalizedKey(attemptType)
+        if (AttemptType.SYSTEM.any { AttemptType.normalizedKey(it) == key }) return
+        if (attemptTypeCatalog.exists(userId, key)) return
+        attemptTypeCatalog.add(userId, attemptType, key)
     }
 
     data class Result(val step: Step, val caseStatus: ErrorCaseStatus, val suggestResolve: Boolean)

@@ -53,7 +53,9 @@ class ErrorCaseController(
     private val getErrorCaseUseCase: GetErrorCaseUseCase,
     private val updateErrorCaseUseCase: UpdateErrorCaseUseCase,
     private val deleteErrorCaseUseCase: DeleteErrorCaseUseCase,
-    private val listErrorCasesUseCase: ListErrorCasesUseCase
+    private val listErrorCasesUseCase: ListErrorCasesUseCase,
+    private val addErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase,
+    private val removeErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase,
 ) {
 
     @Operation(
@@ -106,14 +108,14 @@ class ErrorCaseController(
                 CreateErrorCaseCommand(
                     userId = userId,
                     title = request.title,
-                    scope = request.scope,
+                    project = request.project,
                     paste = request.paste,
                     description = request.description,
                     snippetMarkerIds = request.snippetMarkerIds,
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     workspaceId = request.workspaceId,
                     severityCode = request.severity,
-                    environment = request.environment,
+                    tags = request.tags,
                     occurredAt = request.occurredAt,
                     visibility = request.visibility,
                 )
@@ -269,11 +271,10 @@ class ErrorCaseController(
                     errorCaseId = id,
                     requesterUserId = userId,
                     title = request.title,
-                    scope = request.scope,
+                    project = request.project,
                     paste = request.paste,
                     description = request.description,
                     severityCode = request.severity,
-                    environment = request.environment,
                     snippetMarkerIds = request.snippetMarkerIds,
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     status = request.status,
@@ -322,5 +323,72 @@ class ErrorCaseController(
         } catch (e: ErrorCaseDeleteForbiddenException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         }
+    }
+
+    @Operation(
+        summary = "케이스 태그 추가 (멱등)",
+        description = """
+            자유 태그 1건 추가. **trim·소문자** 자동 정규화. 케이스당 최대 20개.
+            UI 의 *"엔터 입력 → 칩 생성"* 동작에 1:1 매핑.
+            **권한**: 케이스 WRITE (owner 또는 워크스페이스 WRITE+).
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "추가됨(또는 이미 있음). 응답에 케이스의 전체 태그 목록."),
+        ApiResponse(responseCode = "400", description = "빈 태그 / max 20개 초과", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "쓰기 권한 없음", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "케이스 없음", content = [Content()]),
+    )
+    @PostMapping("/{id}/tags")
+    fun addTag(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable id: Long,
+        @Valid @RequestBody request: org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request.AddTagRequest,
+    ): org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.TagsResponse {
+        val r = try {
+            addErrorCaseTagUseCase.invoke(id, userId, request.tag)
+        } catch (e: ErrorCaseNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: ErrorCaseAccessDeniedException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        } catch (e: ErrorCaseLinkException) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+        } catch (e: IllegalArgumentException) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+        }
+        return org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.TagsResponse(
+            tag = r.tag, added = r.added, removed = false, allTags = r.allTags
+        )
+    }
+
+    @Operation(
+        summary = "케이스 태그 제거 (멱등)",
+        description = "UI 의 *칩 X 버튼* 1회 클릭에 1:1 매핑. 권한: 케이스 WRITE."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "제거됨(또는 원래 없음)"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "쓰기 권한 없음", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "케이스 없음", content = [Content()]),
+    )
+    @DeleteMapping("/{id}/tags/{tag}")
+    fun removeTag(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable id: Long,
+        @Parameter(description = "태그(URL-encoded)") @PathVariable tag: String,
+    ): org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.TagsResponse {
+        val r = try {
+            removeErrorCaseTagUseCase.invoke(id, userId, tag)
+        } catch (e: ErrorCaseNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: ErrorCaseAccessDeniedException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        } catch (e: IllegalArgumentException) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+        }
+        return org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.TagsResponse(
+            tag = r.tag, added = false, removed = r.removed, allTags = r.allTags
+        )
     }
 }

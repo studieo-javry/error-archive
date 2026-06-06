@@ -36,6 +36,7 @@ import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.request.Crea
 import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.request.UpdateStepRequest
 import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.response.CreateStepResponse
 import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.response.StepResponse
+import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.response.UpdateStepResponse
 
 
 @Tag(
@@ -146,8 +147,8 @@ class StepController(
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
         @Parameter(description = "step ID") @PathVariable stepId: Long,
         @Valid @RequestBody request: UpdateStepRequest,
-    ): StepResponse {
-        val updated = try {
+    ): UpdateStepResponse {
+        val r = try {
             updateStepUseCase.invoke(
                 UpdateStepCommand(
                     stepId = stepId,
@@ -165,7 +166,11 @@ class StepController(
         } catch (e: StepAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         }
-        return StepResponse.from(updated)
+        return UpdateStepResponse(
+            step = StepResponse.from(r.step),
+            caseStatus = r.caseStatus,
+            suggestResolve = r.suggestResolve,
+        )
     }
 
     @Operation(

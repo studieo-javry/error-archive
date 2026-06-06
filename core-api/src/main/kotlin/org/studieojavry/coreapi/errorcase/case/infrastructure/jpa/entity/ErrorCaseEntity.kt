@@ -32,7 +32,7 @@ class ErrorCaseEntity(
     var title: String,
 
     @Column(length = 200)
-    var scope: String? = null,
+    var project: String? = null,
 
     @Column(columnDefinition = "TEXT")
     var description: String? = null,

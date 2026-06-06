@@ -1,12 +1,13 @@
 package org.studieojavry.coreapi.errorcase.step.domain.model
 
-import org.studieojavry.coreapi.errorcase.step.domain.model.vo.AttemptType
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
 import java.time.LocalDateTime
 
 /**
  * 에러케이스 해결 시도(타임라인 한 칸). 본문은 자유 마크다운, 메타는 구조화(필터·요약용).
  * `insight` 는 한두 문장 요약 — UI 카드에 항상 표시.
+ *
+ * `attemptType` 은 자유 String — system 상수(`AttemptType.SYSTEM`) 또는 사용자가 추가한 커스텀.
  */
 class Step private constructor(
     val id: Long?,
@@ -15,7 +16,7 @@ class Step private constructor(
     var orderIndex: Int,
     var title: String,
     var status: StepStatus,
-    var attemptType: AttemptType?,
+    var attemptType: String?,
     var body: String?,
     var insight: String?,
     val createdAt: LocalDateTime,
@@ -31,7 +32,7 @@ class Step private constructor(
     fun update(
         title: String? = null,
         status: StepStatus? = null,
-        attemptType: AttemptType? = null,
+        attemptType: String? = null,
         clearAttemptType: Boolean = false,
         body: String? = null,
         insight: String? = null
@@ -61,7 +62,7 @@ class Step private constructor(
             orderIndex: Int,
             title: String,
             status: StepStatus,
-            attemptType: AttemptType?,
+            attemptType: String?,
             body: String?,
             insight: String?,
         ): Step {
@@ -88,7 +89,7 @@ class Step private constructor(
             orderIndex: Int,
             title: String,
             status: StepStatus,
-            attemptType: AttemptType?,
+            attemptType: String?,
             body: String?,
             insight: String?,
             createdAt: LocalDateTime,

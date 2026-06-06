@@ -31,6 +31,7 @@ class ErrorCaseRepositoryAdapter(
     private val errorCaseRepo: ErrorCaseJpaRepository,
     private val snippetRepo: CodeSnippetJpaRepository,
     private val attachmentRepo: AttachmentJpaRepository,
+    private val tagRepo: org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.ErrorCaseTagJpaRepository,
     private val em: EntityManager
 ) : ErrorCaseRepositoryPort {
 
@@ -43,7 +44,8 @@ class ErrorCaseRepositoryAdapter(
         val entity = errorCaseRepo.findById(errorCaseId).orElse(null) ?: return null
         val snippets = snippetRepo.findAllByErrorCaseId(errorCaseId).map { it.toDomain() }
         val attachments = attachmentRepo.findAllByErrorCaseId(errorCaseId).map { it.toDomain() }
-        return entity.toDomain(snippets, attachments)
+        val tags = tagRepo.findAllByErrorCaseIdOrderByCreatedAtAscIdAsc(errorCaseId).map { it.tag }
+        return entity.toDomain(snippets, attachments, tags)
     }
 
     /** 코어 엔티티만 갱신(id 존재 → update). 스니펫·첨부 연결은 그대로 둔다. */
@@ -133,13 +135,12 @@ class ErrorCaseRepositoryAdapter(
     private fun ErrorCase.toEntity(): ErrorCaseEntity = ErrorCaseEntity(
         id = id,
         title = title,
-        scope = scope,
+        project = project,
         description = description,
         snapshot = snapshot?.toEmbeddable(),
         meta = MetaEmbeddable(
             workspaceId = meta.workspaceId,
             severityCode = meta.severity?.code,
-            environment = meta.environment
         ),
         status = status,
         visibility = visibility,
@@ -195,24 +196,25 @@ class ErrorCaseRepositoryAdapter(
 
     private fun ErrorCaseEntity.toDomain(
         snippets: List<CodeSnippet>,
-        attachments: List<Attachment>
+        attachments: List<Attachment>,
+        tags: List<String> = emptyList(),
     ): ErrorCase {
         val m: MetaEmbeddable? = meta // 전 컬럼 null 이면 embedded 가 null 일 수 있음
         return ErrorCase.reconstitute(
             id = id!!,
             ownerUserId = ownerUserId,
             title = title,
-            scope = scope,
+            project = project,
             snapshot = snapshot?.toDomain(),
             description = description,
             meta = Meta(
                 workspaceId = m?.workspaceId,
                 severity = m?.severityCode?.let { Severity.fromCode(it) },
-                environment = m?.environment
             ),
             visibility = visibility,
             snippets = snippets,
             attachments = attachments,
+            tags = tags,
             status = status,
             occurredAt = occurredAt,
             createdAt = createdAt,

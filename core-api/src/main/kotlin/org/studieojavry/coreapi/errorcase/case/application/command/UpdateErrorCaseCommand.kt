@@ -9,11 +9,10 @@ data class UpdateErrorCaseCommand(
     val errorCaseId: Long,
     val requesterUserId: Long,
     val title: String?,
-    val scope: String?,
+    val project: String?,
     val paste: String?,
     val description: String?,
     val severityCode: Int?,
-    val environment: String?,
     val snippetMarkerIds: List<String>? = null,
     val attachmentMarkerIds: List<String>? = null,
     /** 상태 전이(예: IN_PROGRESS → RESOLVED). null=변경 없음. 도메인 transition 규칙 적용. */

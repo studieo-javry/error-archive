@@ -1,5 +1,133 @@
 # error-archive Implementation Changelog
 
+## 2026-06-07 01:10 KST · core-api + gateway · feat: Step `attemptType` enum → 자유 String + per-user 커스텀 카탈로그 (자동 등록)
+
+**요청 한 줄**: step 의 `attemptType` 을 enum 에서 자유 String 으로 풀고, 현재 7개 값은 system 기본 카탈로그로 모두에게 제공, 사용자 커스텀 값은 본인만 보이게 분리. 한 번 추가한 커스텀은 이후 같은 사용자의 step 작성 시 자동 완성 후보로 재활용.
+
+**한 줄 요약 (model)**: `AttemptType` 을 `enum class` → `object` 로 전환 — `SYSTEM: List<String>` 상수(`CODE_CHANGE/CONFIG/DEPENDENCY/ENV/ROLLBACK/INVESTIGATION/OTHER`), `isSystem()`, `normalize()`(trim·≤64), `normalizedKey()`(lowercase) 노출. `Step.attemptType`·`StepEntity.attemptType`·`CreateStepCommand`·`UpdateStepCommand`·`CreateStepRequest`·`UpdateStepRequest`·`StepResponse` 전부 `String?` 로 변경. DB `error_case_step.attempt_type` CHECK 제약 DROP + `VARCHAR(64)` 로 확장.
+
+**한 줄 요약 (catalog)**: per-user 커스텀 테이블 `step_attempt_type_custom(user_id, name, normalized) UNIQUE(user_id, normalized)` 신설. 도메인 분리하지 않고 entity 만 두고 port `StepAttemptTypeCatalogPort`(findAllByUserId/add/remove/exists) 가 어댑터를 통해 직접 접근. system 값과 충돌하는 name 은 add/remove 모두 400.
+
+**한 줄 요약 (자동 등록)**: `CreateStepUseCase`·`UpdateStepUseCase` 가 step 저장 후 `attemptType` 이 *system 도 본인 custom 도 아니면* port 로 멱등 add — 별도 명시 호출 불필요. 멱등 키는 `normalizedKey()`(lowercase). step 의 attemptType String 값은 카탈로그와 *느슨 결합* — custom 삭제해도 기존 step 의 값은 그대로 유지(자동완성 후보에서만 사라짐).
+
+**새 endpoint 3개** (`/api/v1/step-attempt-types`, AUDIENCE_CORE_API):
+- `GET` → `[{name, isSystem}]` system + 본인 custom 평탄 list (system 먼저, custom 은 createdAt ASC)
+- `POST {"name":"..."}` → 201 멱등 add. system 값이면 400, 빈 값/>64자 400
+- `DELETE /{name}` → 204. system 값 400, 본인 카탈로그에 없으면 404 (lowercase 비교)
+
+**Gateway 라우팅**: `HeaderInjectionFilter.resolveAudience()` 와 `RouteConfig.coreApiRoute` 둘 다 `/api/v1/step-attempt-types` 를 core-api 로 매핑(기존 audience 매핑 누락 패턴 반복 회피).
+
+**변경/신규 파일**: 도메인(`AttemptType` rewrite, `Step` String 화) · application(`StepCommands`, `CreateStepUseCase`·`UpdateStepUseCase` port 주입 + 자동 등록 로직, 신규 `StepAttemptTypeUseCases`, 신규 port `StepAttemptTypeCatalogPort`) · infrastructure(신규 `StepAttemptTypeCustomEntity`·`Jpa`·`Adapter`, `StepEntity` `@Enumerated` 제거 + length 64) · presentation(`StepRequests`·`StepResponses` 자유 String, 신규 `StepAttemptTypeRequest`·`StepAttemptTypeResponse`, 신규 `StepAttemptTypeController`) · gateway(`HeaderInjectionFilter`, `RouteConfig`) · DB(DROP CHECK + ALTER TYPE + CREATE TABLE step_attempt_type_custom 수동 실행 완료).
+
+**검증 (gateway:8000 user=777 JWT, e2e 7건)**:
+- GET `/step-attempt-types` (초기) → system 7개만 ✓
+- POST `/error-cases/33/steps {attemptType:"DB-Migration"}` → 201 → GET catalog 에 `DB-Migration isSystem:false` 자동 등장 ✓
+- POST `/step-attempt-types {"name":"infra tweak"}` → 201 ✓
+- POST `/step-attempt-types {"name":"INFRA TWEAK"}` (멱등) → 201, 기존 표시 유지 ✓
+- POST `/step-attempt-types {"name":"CODE_CHANGE"}` → 400 (system 충돌) ✓
+- DELETE `/step-attempt-types/CODE_CHANGE` → 400 (system) ✓
+- DELETE `/step-attempt-types/DB-Migration` → 204 ✓ / 없는 값 → 404 ✓
+
+빌드 `:core-api:compileKotlin` · `:gateway:compileKotlin` 통과 · core-api/gateway 재시작 · e2e 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree 변경 (commit 사용자 직접).
+
+
+## 2026-06-06 17:36:11 KST · core-api · feat: 자유 태그 시스템 + Step status rename(RESOLVED/IN_PROGRESS/FAILED) + Step PATCH 자동 추천
+
+**요청 한 줄**: (A) `environment` 단일 필드를 자유 태그 리스트로 일반화, 생성/상세 양쪽에서 단건 add/remove 가능. (B) Step status `SUCCESS/PARTIAL/FAILURE` → `RESOLVED/IN_PROGRESS/FAILED`. (C) Step 을 RESOLVED 로 PATCH 하고 케이스가 IN_PROGRESS 면 응답에 `suggestResolve=true` hint.
+
+**한 줄 요약 (A 태그)**: 별도 테이블 `error_case_tag(error_case_id, tag) UNIQUE` + `ix_error_case_tag_tag` + ON DELETE CASCADE 신설. 정규화 = trim·소문자·≤32자·distinct, 케이스당 max 20개. **새 endpoint 2개**: `POST /error-cases/{id}/tags {"tag":"k8s"}` (멱등 추가, 응답에 전체 태그) · `DELETE /error-cases/{id}/tags/{tag}` (멱등 삭제). 케이스 생성 시 `tags:["..","K8S","  java  "]` 배열도 받아 일괄 정규화·저장. 권한 = 케이스 WRITE. `Meta.environment` · `meta_environment` 컬럼 · `MetaEmbeddable.environment` 제거.
+
+**한 줄 요약 (B Step status)**: enum `StepStatus = RESOLVED/IN_PROGRESS/FAILED`. DB 마이그레이션 `error_case_step` (7 row): SUCCESS→RESOLVED, PARTIAL→IN_PROGRESS, FAILURE→FAILED + CHECK 제약 갱신. RESOLVED 추천 트리거 (`existsSuccessByErrorCaseId`·`CreateStepUseCase.suggestResolve`) 도 `StepStatus.RESOLVED` 로.
+
+**한 줄 요약 (C Step PATCH 자동 추천)**: `UpdateStepUseCase` 가 `Step` 단일 반환 → `Result(step, caseStatus, suggestResolve)` 로 확장. case 다시 조회 + `step.status == RESOLVED && case.status == IN_PROGRESS` 시 true. 응답 DTO `UpdateStepResponse` 신설. `StepController.update` 응답 형태 변경(Breaking — 기존은 StepResponse 단일). 자동 전이 X — 사용자가 확인 후 별도 PATCH /error-cases/{id} `{status:"RESOLVED"}` 호출.
+
+**변경 파일 (~20)**: 도메인(`ErrorCase`·`Meta`·`StepStatus`) · port·adapter(`ErrorCaseTagRepositoryPort`·`Adapter` 신설, `ErrorCaseRepositoryAdapter` 가 `findById` 시 태그 조회) · entity·jpa(`ErrorCaseTagEntity`·`Jpa`, `MetaEmbeddable` env 제거) · use case(`Create/UpdateErrorCaseUseCase` env 제거+tags 정규화/저장, `Add/RemoveErrorCaseTagUseCase` 신설, `UpdateStepUseCase` caseStatus/suggestResolve, `DeleteErrorCaseUseCase` 태그 cascade, `Create/StepRepositoryAdapter` RESOLVED 매핑) · DTO(`CreateErrorCaseRequest.tags`/`AddTagRequest`/`TagsResponse`/`UpdateStepResponse` 신설, `ErrorCaseDetailResponse.environment` → `tags`, `UpdateErrorCaseRequest.environment` 제거, `StepRequests` example RESOLVED/FAILED) · 컨트롤러(`ErrorCaseController` 신규 2 endpoint + env 매핑 제거, `StepController.update` 응답 갱신) · DB(`CREATE TABLE error_case_tag` + `DROP meta_environment` + step UPDATE + CHECK 갱신).
+
+**검증 (gateway:8000 사용자 JWT)**:
+- `POST {"title":"x","tags":["K8s","  java  ","prod","K8S"]}` → 201 → GET 응답 `"tags":["k8s","java","prod"]` ✓
+- `POST /tags {"tag":"Postgres"}` → `{tag:"postgres", added:true, allTags:[..."postgres"]}` ✓
+- `DELETE /tags/k8s` → `{tag:"k8s", removed:true, allTags:[...없음]}` ✓
+- Step PATCH `{status:"RESOLVED"}` → `{step:{...,status:"RESOLVED"}, caseStatus:"IN_PROGRESS", suggestResolve:true}` ✓
+- Step 생성 시 `status:"FAILED"` 정상 (enum rename OK) ✓
+
+**UX 추천 (FE 적용 권고)**: 상세 페이지 메타 영역에 *인라인* 태그 위젯(별도 편집 모드 X) — 칩 리스트 + 끝에 `+` 인풋. enter→`POST /tags` (낙관적 UI 로 즉시 칩 추가, 실패시 토스트), 칩 hover X→`DELETE`. 동일 위젯을 생성 페이지에선 *로컬 state* 로 사용해 submit 시 한꺼번에 전송. Phase 2 에서 인기 태그 dropdown 추가 가능(별도 endpoint 필요).
+
+빌드 통과 · core-api 재시작 · e2e 5건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree 변경 (commit 직접).
+
+
+## 2026-06-06 17:07:30 KST · core-api · refactor: ErrorCase `scope` → `project` rename + `paste`/`project` nullable
+
+**요청 한 줄**: ErrorCase 생성 API 에서 `scope` 필드명을 `project` 로 바꾸고, `paste`·`project` 를 nullable 로.
+
+**한 줄 요약**: 전체 stack 일관(API → Command → Domain → Entity → DB) 으로 **`scope` → `project`** rename. 동시에 `paste`·`project` 의 *Bean Validation `@NotBlank` 제거 + 코틀린 nullable* 로 전환 — *둘 다 없는 최소 요청* `{"title":"x"}` 도 201 통과 가능. paste 가 null/blank 이면 `buildSnapshot` 호출 자체를 건너뛰고 snapshot=null 로 저장. 변경 11 파일 + DB 1 컬럼.
+
+**변경 파일** (한 PR 분량):
+- DTO: `CreateErrorCaseRequest`(`scope:String` non-null → `project:String?`, `paste:String` non-null → `paste:String?`. `@NotBlank` 제거. 설명/example 갱신) · `UpdateErrorCaseRequest`(`scope` → `project`)
+- Command: `CreateErrorCaseCommand`(`scope:String → project:String?`, `paste:String → paste:String?`) · `UpdateErrorCaseCommand`(rename)
+- UseCase: `CreateErrorCaseUseCase`(paste null-safe `command.paste?.takeIf{it.isNotBlank()}?.let{buildSnapshot(it)}`, `command.project` 매핑) · `UpdateErrorCaseUseCase`(`command.project ?: errorCase.project`)
+- Domain: `ErrorCase`(field·create·reconstitute·update 시그니처 6곳 rename)
+- Infra: `ErrorCaseEntity`(`var project: String?`) · `ErrorCaseRepositoryAdapter`(toEntity/toDomain 2곳)
+- Response: `ErrorCaseDetailResponse`(필드 + from 매핑)
+- Controller: `ErrorCaseController` request→command 매핑 2곳
+- DB: `ALTER TABLE error_case RENAME COLUMN scope TO project` (수동 실행 완료)
+
+**검증** (gateway:8000 거쳐 사용자 JWT 흐름):
+- `POST {"title":"test rename","project":"order-service"}` → 201
+- `POST {"title":"minimal"}` (project·paste 둘 다 미포함) → 201
+- `GET /error-cases/{id}` 응답에 `"project":null` 노출
+
+빌드(`./gradlew :core-api:compileKotlin`) 통과 · core-api 재시작 후 e2e 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree 변경 (commit 은 사용자 직접).
+
+
+## 2026-06-06 16:30:00 KST · gateway · fix: `/api/v1/error-snippets` audience 매핑 누락 — 401 → 201
+
+**요청 한 줄**: code-snippet 생성 API 가 gateway 통해 동작하는지 점검.
+
+**한 줄 요약**: 점검 중 버그 발견. `gateway/HeaderInjectionFilter.resolveAudience` 가 `/api/v1/error-cases` · `/api/v1/error-attachments` 만 `aud=core-api` 로 매핑하고 **`/api/v1/error-snippets` 는 `else` 분기로 떨어져 `aud=iam-api`** 로 internal JWT 발급 → core-api 가 `expectedAudience=core-api` 와 mismatch → **HTTP 401**. (라우팅 자체는 core-api 로 정상 forward 되지만 토큰 audience 가 틀려 차단). 수정: `resolveAudience` 매칭에 `/api/v1/error-snippets` 추가 + 주석 "*새 endpoint 추가 시 여기 갱신 필수*" 박아둠. 재빌드+gateway 재시작 후 동일 요청 → **HTTP 201** + markerId 발급 정상.
+
+**검증**: 사용자 JWT(HS256) → gateway:8000 → audience 결정 → internal JWT(RS256, gateway 키, aud=core-api) 발급 → core-api:8081 → InternalTokenAuthenticationFilter 검증(gateway 공개키, aud=core-api 일치, exp 통과) → CreateSnippetUseCase 실행 → 201. 사전 키 쌍 정합도 modulus 비교로 확인됨(`871B05B3AAE67D...646BF9`).
+
+**잠재 우려 (다음 라운드)**: audience 매핑이 *gateway routing 규칙과 분리* 되어 있어 새 endpoint 추가 시 *두 곳을 모두 갱신* 해야 — Spring Cloud Gateway route metadata 에 audience 명시해서 *routing 한 곳에서 audience 도 결정* 하는 리팩토링 권고.
+
+
+## 2026-06-05 15:44:10 KST · iam-api · docs+refactor: 클라이언트 → 서버 입력 필드 종합표 + Swagger 보완
+
+**요청 한 줄**: core-api 외 *모든 API* (iam-api 포함) 에도 같은 입력 필드 종합표 작성 — Swagger 명시 + 문서 기록.
+
+**한 줄 요약**: 새 문서 `iam-api/docs/api-input-fields.md` 작성 — **29 endpoint × 모든 입력 필드** (auth-oauth 2 / auth-token 2 / users-me 6 / social-follow 5 / workspaces 5 / workspace-invitations 5 / workspace-members 4) 를 위치(path/query/body/cookie/header) · 타입 · 필수 · null · 검증 · 예시 · 비고 컬럼으로 정리. iam-api 특유의 인증 패턴(Bearer JWT + refresh 쿠키 + OAuth 공개 + 일부 viewer-aware public GET) 도 명시.
+
+**코드 보완 (HIGH)**: DTO 6개에 `@Schema` 어노테이션 추가:
+- `StartOAuthRequest` — `redirectUri`/`returnUrl` (open-redirect 방어 규칙 swagger 노출 + `@field:Size(max=512)`)
+- `OAuthCallbackRequest` — `code`/`state`/`redirectUri`/`rememberMe` 모두 description/example/requiredMode
+- `CreateWorkspaceRequest` — `name`
+- `UpdateWorkspaceRequest` — `name`/`notificationEnabled`/`defaultTimezone`
+- `CreateInvitationRequest` — `type`/`role`/`email`/`expiresInHours`. **enum-as-String** 두 필드(`type`, `role`)에 `allowableValues=["EMAIL","LINK"]` / `["READ","WRITE"]` 명시 → Swagger UI 에 dropdown 노출
+- `AcceptInvitationRequest` — `token`
+- `ChangeMemberRoleRequest` — `role` 에 `allowableValues=["READ","WRITE","ADMIN"]` 명시
+
+**LOW 보완 (문서에만 등재, 다음 라운드)**: `FollowController.followers/following` 의 `page`/`size` 에 `@Min/@Max` 검증 / `OAuthController.authorize` 의 `provider` path 에 `@Parameter(allowableValues=...)` 명시.
+
+**모노레포 점검 결과**: insight-api/noti-api/publish-api 는 controller 0개(scaffolding 단계), gateway 의 1 controller 는 circuit breaker fallback handler (클라이언트 직접 호출 endpoint 아님) — 실제 정리 대상은 **core-api(이미 어제 완료) + iam-api(이번)**.
+
+빌드 통과(`./gradlew :iam-api:compileKotlin`). cross-link: core-api 의 같은 종합표.
+
+
+## 2026-06-05 15:10:14 KST · core-api · docs+refactor: 클라이언트 → 서버 입력 필드 종합표 + Swagger 보완
+
+**요청 한 줄**: 모든 API 의 클라이언트 입력 필드를 한 눈에 (필수/null/타입/검증) — 가능하면 Swagger 에 명시 + 문서로도 기록.
+
+**한 줄 요약**: 새 문서 `core-api/docs/api-input-fields.md` 작성 — **26 endpoint × 모든 입력 필드** 를 위치(path/query/body/multipart) · 타입 · 필수 여부 · null 허용 · 검증 제약 · 예시 · 비고 컬럼으로 정리. 6 controller (error-cases·error-snippets·error-attachments·steps·solutions·comments) 별 섹션 + 공통 인증 + enum 값 set + Swagger 보완 우선순위표.
+
+**코드 보완 (HIGH/MED)**:
+- (HIGH) `attachment/.../AttachmentUploadRequest.kt` **삭제** — dead code (컨트롤러가 `@RequestPart` 직접 사용. `size: Long` 에 `@field:NotBlank`(String 전용) 잘못 적용된 상태). 사용처 grep 0건 확인.
+- (MED) `step/.../UpdateStepRequest` 의 5 필드(`title`/`status`/`attemptType`/`body`/`insight`)에 `@field:Schema(description=..., example=...)` 추가 — Swagger UI 에 설명 노출.
+- (MED) `solution/.../CreateSolutionRequest.stepIds` 에 `@field:NotEmpty` + `@Schema(minLength=1)` — 빈 배열 금지를 *Bean Validation 단* 에서도 강제 + Swagger 에 명시.
+
+**LOW 보완 (문서에만 등재)**: `CreateErrorCaseRequest` 의 nullable 필드 `requiredMode=NOT_REQUIRED` 명시 / list endpoint 의 `severity` query 에 `@Min/@Max` / comment list 의 `sort`/`quoteKind` 가 `String` 대신 enum 으로 받아 dropdown 지원. 우선순위 낮아 다음 라운드.
+
+빌드 통과(`./gradlew :core-api:compileKotlin`). 문서 cross-link: 댓글 시스템·첨부 라이프사이클·도메인 모델.
+
+
 이 문서는 `error-archive` 모노레포(core-api / iam-api / insight-api / noti-api / publish-api 통합) 안의 **모든 서브 프로젝트**에서 일어난 코드 추가/변경을 시간순으로 기록한다. 커밋 메시지보다 한 단계 위의 "구현 의도와 범위"를 사람이 읽을 수 있게 정리하는 게 목적.
 
 작성 규칙:

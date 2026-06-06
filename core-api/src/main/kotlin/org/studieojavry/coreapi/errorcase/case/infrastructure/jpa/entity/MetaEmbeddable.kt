@@ -10,7 +10,4 @@ data class MetaEmbeddable(
 
     @Column(name = "meta_severity")
     val severityCode: Int? = null,
-
-    @Column(name = "meta_environment", length = 200)
-    val environment: String? = null
 )

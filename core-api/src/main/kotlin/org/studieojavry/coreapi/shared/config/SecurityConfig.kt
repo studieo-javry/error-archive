@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.shared.config
 
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpStatus
@@ -28,6 +29,7 @@ class SecurityConfig {
     fun securityFilterChain(
         http: HttpSecurity,
         internalTokenFilter: InternalTokenAuthenticationFilter,
+        devHeaderAuthFilter: ObjectProvider<DevHeaderAuthFilter>,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
@@ -37,10 +39,17 @@ class SecurityConfig {
                     .requestMatchers("/error").permitAll()
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람. (실제 API 호출은 X-Internal-Auth 필요)
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                    // 로컬 테스트 페이지 — 정적 리소스(같은 origin). API 호출은 여전히 X-Test-User-Id 필요.
+                    .requestMatchers("/comment-tester.html", "/comment-tester/**").permitAll()
                     .anyRequest().authenticated()
             }
             .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
             .addFilterBefore(internalTokenFilter, UsernamePasswordAuthenticationFilter::class.java)
+
+        // local 프로필이면 X-Test-User-Id 헤더 인증 필터를 앞에 추가(헤더 없으면 통과)
+        devHeaderAuthFilter.ifAvailable { filter ->
+            http.addFilterBefore(filter, InternalTokenAuthenticationFilter::class.java)
+        }
         return http.build()
     }
 }

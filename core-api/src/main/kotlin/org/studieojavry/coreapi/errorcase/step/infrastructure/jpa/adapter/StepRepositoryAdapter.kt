@@ -22,7 +22,7 @@ class StepRepositoryAdapter(
     override fun countByErrorCaseId(errorCaseId: Long): Long = jpa.countByErrorCaseId(errorCaseId)
 
     override fun existsSuccessByErrorCaseId(errorCaseId: Long): Boolean =
-        jpa.existsByErrorCaseIdAndStatus(errorCaseId, StepStatus.SUCCESS)
+        jpa.existsByErrorCaseIdAndStatus(errorCaseId, StepStatus.RESOLVED)
 
     override fun delete(id: Long) = jpa.deleteById(id)
     override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }

@@ -17,13 +17,11 @@ data class CreateErrorCaseRequest(
     @field:Size(max = 200)
     val title: String,
 
-    @field:Schema(description = "스코프 식별자(현재는 자유 문자열; PERSONAL/WORKSPACE 등)", example = "PERSONAL", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotBlank
-    val scope: String,
+    @field:Schema(description = "프로젝트 식별자(자유 문자열). 선택.", example = "order-service")
+    val project: String? = null,
 
-    @field:Schema(description = "에러 원문(스택트레이스 포함). 서버가 클래스/메시지/스택/지문 추출.", example = "java.lang.NullPointerException at OrderService.calc(OrderService.kt:42)", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotBlank
-    val paste: String,
+    @field:Schema(description = "에러 원문(스택트레이스 포함). 보내면 서버가 클래스/메시지/스택/지문 추출. 선택.", example = "java.lang.NullPointerException at OrderService.calc(OrderService.kt:42)")
+    val paste: String? = null,
 
     @field:Schema(description = "본문(마크다운). `@snippet(markerId)`/`@attach(markerId)` 토큰으로 인라인 임베드", example = "원인은 캐시 만료 처리. @snippet(7a7d35e9) 참고.")
     val description: String?,
@@ -43,8 +41,8 @@ data class CreateErrorCaseRequest(
     @field:Max(4)
     val severity: Int?,
 
-    @field:Schema(description = "환경 식별자", example = "prod")
-    val environment: String?,
+    @field:Schema(description = "자유 태그 목록(예: 환경/언어/스택). trim·소문자·중복 제거. 케이스당 최대 20개. 생성 후에는 POST /tags 로 1건씩 추가 가능.", example = "[\"k8s\",\"java\",\"prod\"]")
+    val tags: List<String>? = null,
 
     @field:Schema(description = "에러 발생 시각(미입력 시 null)", example = "2026-05-27T19:42:00")
     val occurredAt: LocalDateTime?,

@@ -10,7 +10,6 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
-import org.studieojavry.coreapi.errorcase.step.domain.model.vo.AttemptType
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
 import java.time.LocalDateTime
 
@@ -43,9 +42,9 @@ class StepEntity(
     @Column(name = "status", nullable = false, length = 16)
     var status: StepStatus,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "attempt_type", length = 24)
-    var attemptType: AttemptType?,
+    /** 자유 String — system 카탈로그(`AttemptType.SYSTEM`) 또는 사용자 커스텀. */
+    @Column(name = "attempt_type", length = 64)
+    var attemptType: String?,
 
     /** 자유 마크다운, `@snippet(...)`/`@attach(...)` 토큰 임베드 가능. 비어도 됨. */
     @Column(name = "body", columnDefinition = "TEXT")

@@ -6,6 +6,7 @@ import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCa
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
@@ -23,7 +24,8 @@ class CreateErrorCaseUseCase(
     private val attachmentRepository: ErrorCaseAttachmentRepositoryPort,
     private val snippetRepository: CodeSnippetRepositoryPort,
     private val workspaceQuery: WorkspaceQueryPort,
-    private val errorSnapshotExtractor: ErrorSnaphostExtractorPort
+    private val errorSnapshotExtractor: ErrorSnaphostExtractorPort,
+    private val tagRepository: ErrorCaseTagRepositoryPort,
 ) {
 
     @Transactional
@@ -52,27 +54,37 @@ class CreateErrorCaseUseCase(
 
         val attachments = resolveAttachments(command.attachmentMarkerIds, command.userId)
         val snippets = resolveSnippets(command.snippetMarkerIds, command.userId)
-        val snapshot = buildSnapshot(command.paste)
+        val snapshot = command.paste?.takeIf { it.isNotBlank() }?.let { buildSnapshot(it) }
         val meta = Meta.create(
             workspaceId = command.workspaceId,
             severityCode = command.severityCode,
-            environment = command.environment
         )
+
+        // 태그 정규화: trim·소문자·distinct, 빈 값 제거, max 20개 컷
+        val normalizedTags = command.tags
+            ?.mapNotNull { ErrorCase.normalizeTag(it) }
+            ?.distinct()
+            ?.take(ErrorCase.TAGS_MAX_PER_CASE)
+            .orEmpty()
 
         val saved = errorCaseRepository.save(
             ErrorCase.create(
                 ownerUserId = command.userId,
                 title = command.title,
-                scope = command.scope,
+                project = command.project,
                 snapshot = snapshot,
                 description = command.description,
                 meta = meta,
                 visibility = command.visibility,
                 snippets = snippets,
                 attachments = attachments,
+                tags = normalizedTags,
                 occurredAt = command.occurredAt
             )
         )
+
+        // 태그를 별도 테이블에 멱등 저장
+        normalizedTags.forEach { tagRepository.add(saved.id!!, it) }
 
         return Result(
             id = requireNotNull(saved.id) { "saved error case must have id" },

@@ -19,8 +19,8 @@ data class UpdateErrorCaseRequest(
     @field:Size(max = 200)
     val title: String?,
 
-    @field:Schema(description = "스코프")
-    val scope: String?,
+    @field:Schema(description = "프로젝트 식별자. null=유지.")
+    val project: String?,
 
     @field:Schema(description = "새 paste — 보내면 스냅샷/지문 재추출")
     val paste: String?,
@@ -33,8 +33,7 @@ data class UpdateErrorCaseRequest(
     @field:Max(4)
     val severity: Int?,
 
-    @field:Schema(description = "환경")
-    val environment: String?,
+    // environment 는 자유 태그로 일반화됨 — POST/DELETE /tags 단건 endpoint 사용.
 
     @field:Schema(description = "최종 스니펫 marker 집합. **null=유지, []=전부 해제, [..]=그 집합으로 맞춤**", example = "[\"7a7d35e9\",\"b2468aca\"]")
     val snippetMarkerIds: List<String>? = null,

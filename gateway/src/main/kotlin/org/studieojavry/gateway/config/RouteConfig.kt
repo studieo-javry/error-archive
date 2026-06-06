@@ -49,7 +49,8 @@ class RouteConfig {
             .route(
                 path("/api/v1/error-cases/**")
                     .or(path("/api/v1/error-attachments/**"))
-                    .or(path("/api/v1/error-snippets/**")),
+                    .or(path("/api/v1/error-snippets/**"))
+                    .or(path("/api/v1/step-attempt-types/**")),
                 http()
             )
             .before(uri("http://localhost:8081"))

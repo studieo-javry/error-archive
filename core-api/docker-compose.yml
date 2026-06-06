@@ -1,0 +1,23 @@
+# ===================================================================
+# core-api 의 로컬 의존성 (PostgreSQL).
+# 비밀값(POSTGRES_USER / POSTGRES_PASSWORD)은 env 주입.
+#   $ docker compose --env-file .env.local up -d
+# ===================================================================
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: core-api-postgres
+    environment:
+      POSTGRES_USER: ${CORE_DB_USERNAME}
+      POSTGRES_PASSWORD: ${CORE_DB_PASSWORD}
+      POSTGRES_DB: core_db
+    ports:
+      - "5433:5432"   # iam-api 가 5432 점유 → core-api 는 5433 으로 노출
+    volumes:
+      - core_pg_data:/var/lib/postgresql/data
+
+volumes:
+  core_pg_data:

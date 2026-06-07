@@ -1,0 +1,63 @@
+# ===================================================================
+# local — 로컬 개발용
+# - gateway: 8000   (외부 진입)
+# - iam-api: 8080
+# - core-api: 8081
+#
+# ⚠️  필수 환경변수 (없으면 부팅 실패):
+#     IAM_JWT_SECRET                          (≥ 64자, iam-api 와 동일 — 사용자 JWT 검증용)
+#     GATEWAY_INTERNAL_AUTH_PRIVATE_KEY_PEM   (RSA 비밀키, multiline — downstream 으로 보낼 internal JWT 서명)
+# ===================================================================
+
+server:
+  port: 8000
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+# 라우트는 RouteConfig.kt 의 @Bean 으로 정의됨 (yml 키 호환성 이슈로 코드 정의가 더 안전)
+
+# Swagger UI aggregator — gateway 가 한 화면에서 다운스트림 서비스 스펙을 dropdown 으로 노출.
+# 각 URL 은 RouteConfig 의 iam/core-docs 라우트로 다운스트림 /v3/api-docs 에 same-origin 프록시.
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+    urls:
+      - name: iam-api
+        url: /api-docs/iam-api
+      - name: core-api
+        url: /api-docs/core-api
+      - name: noti-api
+        url: /api-docs/noti-api
+      - name: insight-api
+        url: /api-docs/insight-api
+
+logging:
+  level:
+    org.studieojavry.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.local"
+    audience: "local-clients"
+
+# 내부 서비스 인증 — gateway 는 발급자(issuer). downstream 으로 보낼 단명 internal JWT 를 서명한다.
+# 비밀키는 env 주입 — 평문 보관 X.
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: gateway
+    key-id: gateway-local
+    private-key-pem: ${GATEWAY_INTERNAL_AUTH_PRIVATE_KEY_PEM}
+
+gateway:
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
+    allow-credentials: true

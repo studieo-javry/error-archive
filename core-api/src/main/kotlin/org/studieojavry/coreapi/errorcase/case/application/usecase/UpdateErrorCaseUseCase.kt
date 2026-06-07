@@ -6,6 +6,7 @@ import org.studieojavry.coreapi.errorcase.case.application.command.UpdateErrorCa
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorSnapshot
@@ -30,6 +31,7 @@ class UpdateErrorCaseUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val snippetRepository: CodeSnippetRepositoryPort,
     private val attachmentRepository: ErrorCaseAttachmentRepositoryPort,
+    private val tagRepository: ErrorCaseTagRepositoryPort,
     private val errorSnapshotExtractor: ErrorSnaphostExtractorPort,
     private val access: ErrorCaseAccess,
 ) {
@@ -70,9 +72,10 @@ class UpdateErrorCaseUseCase(
         command.status?.let { errorCase.transitionTo(it) }
         errorCaseRepository.update(errorCase)
 
-        // 스니펫·첨부 선언형 재연결(diff). 같은 트랜잭션.
+        // 스니펫·첨부·태그 선언형 재설정(diff). 같은 트랜잭션.
         reconcileSnippets(command.snippetMarkerIds, command.errorCaseId, command.requesterUserId)
         reconcileAttachments(command.attachmentMarkerIds, command.errorCaseId, command.requesterUserId)
+        reconcileTags(command.tags, command.errorCaseId)
 
         // 재연결이 반영된 최신 애그리거트를 다시 로드해 반환(벌크 UPDATE 후 영속성 컨텍스트는 clear 됨).
         return errorCaseRepository.findById(command.errorCaseId)
@@ -138,6 +141,24 @@ class UpdateErrorCaseUseCase(
         if (toRemove.isNotEmpty()) {
             attachmentRepository.unlinkFromCase(toRemove.toList())
         }
+    }
+
+    /**
+     * 태그 선언형 재설정. snippet/attachment 와 동일한 diff 패턴 — null=유지, []=전부 제거, [..]=치환.
+     * 각 raw tag 는 `ErrorCase.normalizeTag` 로 정규화(trim·소문자·≤32, blank 무시). 결과 집합 크기 max 20 검증.
+     */
+    private fun reconcileTags(desired: List<String>?, caseId: Long) {
+        if (desired == null) return
+
+        val want: Set<String> = desired
+            .mapNotNull { ErrorCase.normalizeTag(it) }
+            .toSet()
+        if (want.size > ErrorCase.TAGS_MAX_PER_CASE) {
+            throw ErrorCaseLinkException("tag count exceeded: max ${ErrorCase.TAGS_MAX_PER_CASE} per case (got ${want.size})")
+        }
+        val current = tagRepository.findAllByErrorCaseId(caseId).toSet()
+        (current - want).forEach { tagRepository.remove(caseId, it) }
+        (want - current).forEach { tagRepository.add(caseId, it) }
     }
 
     private fun buildSnapshot(paste: String): ErrorSnapshot? {

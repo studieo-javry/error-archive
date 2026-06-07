@@ -275,6 +275,7 @@ class ErrorCaseController(
                     paste = request.paste,
                     description = request.description,
                     severityCode = request.severity,
+                    tags = request.tags,
                     snippetMarkerIds = request.snippetMarkerIds,
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     status = request.status,

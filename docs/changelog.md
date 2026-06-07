@@ -1,5 +1,23 @@
 # error-archive Implementation Changelog
 
+## 2026-06-07 01:35 KST · core-api · feat: PATCH /error-cases 에 `tags` 선언형 일괄 재설정 추가
+
+**요청 한 줄**: 에러 케이스 *수정* request 에 tag 필드가 없어 일괄 변경이 안 되는 문제. 단건 endpoint 와 공존하는 *선언형* 필드 추가.
+
+**한 줄 요약**: `UpdateErrorCaseRequest.tags: List<String>?` 신설 — snippet/attachment 와 동일한 *선언형 재설정* 패턴(null=유지, []=전부 제거, [..]=그 집합으로 diff). UseCase 에 `ErrorCaseTagRepositoryPort` 주입 + `reconcileTags()` 추가 — `ErrorCase.normalizeTag()` 로 각 element trim·소문자·≤32 정규화, 결과 집합 크기 max 20 검증, current ∩ want 기준으로 add/remove diff 수행. 단건 `POST/DELETE /tags` endpoint(1.6/1.7)는 그대로 유지 — 칩 UI 의 단건 toggle 과 settings 페이지의 일괄 저장이 자연스럽게 공존.
+
+**변경 파일**:
+- DTO: `UpdateErrorCaseRequest`(tags 필드 + @Schema)
+- Command: `UpdateErrorCaseCommand`(tags 필드)
+- UseCase: `UpdateErrorCaseUseCase`(`tagRepository` 주입, `reconcileTags()` 추가 — snippet/attachment 패턴과 동형)
+- Controller: `ErrorCaseController.update` request→command 매핑 1 line
+- 문서: `core-api/docs/api-input-fields.md` §1.4 PATCH 표에 tags 행 추가(`environment` 취소선 옆에 일괄 옵션 안내)
+
+**의미론**: snippet/attachment 와 동일하게 *원본이 무엇이든 desired 가 진실* — `current ∩ want` 외의 current 는 제거. 단건 endpoint 의 멱등성은 그대로(현재 멤버에 의존하지 않음). max 20 초과는 400 (`ErrorCaseLinkException`).
+
+빌드 `:core-api:compileKotlin` 통과. e2e 별도 진행. `feature/#5-iam-auth-baseline` 브랜치 working tree 변경.
+
+
 ## 2026-06-07 01:10 KST · core-api + gateway · feat: Step `attemptType` enum → 자유 String + per-user 커스텀 카탈로그 (자동 등록)
 
 **요청 한 줄**: step 의 `attemptType` 을 enum 에서 자유 String 으로 풀고, 현재 7개 값은 system 기본 카탈로그로 모두에게 제공, 사용자 커스텀 값은 본인만 보이게 분리. 한 번 추가한 커스텀은 이후 같은 사용자의 step 작성 시 자동 완성 후보로 재활용.

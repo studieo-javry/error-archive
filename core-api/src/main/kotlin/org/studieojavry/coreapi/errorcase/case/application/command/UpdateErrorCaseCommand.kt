@@ -13,6 +13,11 @@ data class UpdateErrorCaseCommand(
     val paste: String?,
     val description: String?,
     val severityCode: Int?,
+    /**
+     * 태그 선언형 재설정. null=유지, []=전부 제거, [..]=그 집합으로 diff.
+     * 각 element 는 서버가 정규화(trim·소문자·≤32). 케이스당 max 20.
+     */
+    val tags: List<String>? = null,
     val snippetMarkerIds: List<String>? = null,
     val attachmentMarkerIds: List<String>? = null,
     /** 상태 전이(예: IN_PROGRESS → RESOLVED). null=변경 없음. 도메인 transition 규칙 적용. */

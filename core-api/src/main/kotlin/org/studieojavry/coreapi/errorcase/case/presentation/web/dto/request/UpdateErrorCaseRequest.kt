@@ -33,7 +33,17 @@ data class UpdateErrorCaseRequest(
     @field:Max(4)
     val severity: Int?,
 
-    // environment 는 자유 태그로 일반화됨 — POST/DELETE /tags 단건 endpoint 사용.
+    // environment 는 자유 태그로 일반화됨 — 아래 tags 필드(일괄 교체) 또는 POST/DELETE /tags 단건 endpoint 사용.
+
+    @field:Schema(
+        description = """
+            자유 태그 집합 **선언형 재설정**. 각 ≤32자, 케이스당 max 20개.
+            - null=유지(건드리지 않음) · []=전부 제거 · [..]=그 집합이 되도록 diff(추가/제거).
+            정규화: 서버에서 trim·소문자·중복 제거. 단건 추가/삭제는 `POST/DELETE /tags` 도 사용 가능.
+        """,
+        example = "[\"k8s\",\"java\",\"prod\"]"
+    )
+    val tags: List<String>? = null,
 
     @field:Schema(description = "최종 스니펫 marker 집합. **null=유지, []=전부 해제, [..]=그 집합으로 맞춤**", example = "[\"7a7d35e9\",\"b2468aca\"]")
     val snippetMarkerIds: List<String>? = null,

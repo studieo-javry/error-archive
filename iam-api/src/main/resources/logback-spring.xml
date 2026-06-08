@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  iam-api 로그 설정.
+  - 패턴은 yml 의 logging.pattern.{console,file} 로 환경별 override 가능 (Spring Boot 가 CONSOLE_LOG_PATTERN / FILE_LOG_PATTERN 에 주입).
+  - traceId/spanId 는 micrometer-tracing-bridge-brave 가 자동으로 MDC 에 채움.
+  - 레벨은 yml 의 logging.level.* 가 우선 (Spring Boot LoggingSystem 이 런타임에 적용).
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="iam-api"/>
+
+    <property name="DEFAULT_PATTERN"
+              value="%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN:-${DEFAULT_PATTERN}}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- stg / prod 는 파일로도 적재 (rolling, gzip, 30 일 / 3GB cap) -->
+    <springProfile name="stg | prod">
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>logs/${appName}.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>logs/${appName}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>3GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_LOG_PATTERN:-${DEFAULT_PATTERN}}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="local | dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="test">
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>

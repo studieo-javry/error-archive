@@ -1,6 +1,7 @@
 rootProject.name = "error-archive"
 
 includeBuild("shared-internal-auth")
+includeBuild("shared-error")
 includeBuild("gateway")
 includeBuild("core-api")
 includeBuild("iam-api")

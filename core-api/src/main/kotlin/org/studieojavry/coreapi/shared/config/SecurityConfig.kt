@@ -3,13 +3,13 @@ package org.studieojavry.coreapi.shared.config
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.http.HttpStatus
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.studieojavry.internalauth.InternalTokenAuthenticationFilter
+import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
+import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
 
 /**
  * core-api 의 인증은 게이트웨이가 보낸 internal JWT (X-Internal-Auth) 검증에 의존한다.
@@ -30,6 +30,8 @@ class SecurityConfig {
         http: HttpSecurity,
         internalTokenFilter: InternalTokenAuthenticationFilter,
         devHeaderAuthFilter: ObjectProvider<DevHeaderAuthFilter>,
+        authEntryPoint: ProblemDetailAuthenticationEntryPoint,
+        accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
@@ -43,7 +45,11 @@ class SecurityConfig {
                     .requestMatchers("/comment-tester.html", "/comment-tester/**").permitAll()
                     .anyRequest().authenticated()
             }
-            .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
+            .exceptionHandling {
+                // shared-error 의 enriched ProblemDetail 핸들러 — 401/403 도 모든 4xx 와 일관 응답
+                it.authenticationEntryPoint(authEntryPoint)
+                it.accessDeniedHandler(accessDeniedHandler)
+            }
             .addFilterBefore(internalTokenFilter, UsernamePasswordAuthenticationFilter::class.java)
 
         // local 프로필이면 X-Test-User-Id 헤더 인증 필터를 앞에 추가(헤더 없으면 통과)

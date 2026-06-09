@@ -2,7 +2,6 @@ package org.studieojavry.iamapi.auth.infrastructure.security
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.http.HttpStatus
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -11,9 +10,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter
+import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
+import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
 
 @Configuration
 class SecurityConfig {
@@ -23,6 +23,8 @@ class SecurityConfig {
         http: HttpSecurity,
         jwtDecoder: JwtDecoder,
         bearerTokenResolver: BearerTokenResolver,
+        authEntryPoint: ProblemDetailAuthenticationEntryPoint,
+        accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
@@ -60,7 +62,11 @@ class SecurityConfig {
                     .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/following").permitAll()
                     .anyRequest().authenticated()
             }
-            .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
+            .exceptionHandling {
+                // shared-error 의 enriched ProblemDetail 핸들러 — 401 의 세부 사유 매핑 + 403 의 일관 응답
+                it.authenticationEntryPoint(authEntryPoint)
+                it.accessDeniedHandler(accessDeniedHandler)
+            }
             .oauth2ResourceServer { rs ->
                 rs.bearerTokenResolver(bearerTokenResolver)
                 rs.jwt { jwt ->

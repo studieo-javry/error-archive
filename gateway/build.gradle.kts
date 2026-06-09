@@ -48,6 +48,7 @@ dependencies {
 
   // 내부 서비스 인증 — composite build 가 로컬 shared-internal-auth 로 substitute.
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
+  implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
 
   testImplementation("org.springframework.boot:spring-boot-starter-test")
   testImplementation("org.springframework.security:spring-security-test")

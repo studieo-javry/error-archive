@@ -39,6 +39,7 @@ dependencies {
 
   // 내부 서비스 인증 — composite build 가 로컬 shared-internal-auth 로 substitute.
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
+  implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
   implementation("io.micrometer:micrometer-tracing-bridge-brave")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
   // CircuitBreaker (외부 호출 격리: iam-api)

@@ -44,6 +44,7 @@ dependencies {
 
   // 내부 서비스 인증 — composite build 가 로컬 shared-internal-auth 로 substitute.
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
+  implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
   // CircuitBreaker (외부 호출 격리: GitHub OAuth)
   implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
   implementation("org.jetbrains.kotlin:kotlin-reflect")

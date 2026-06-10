@@ -11,8 +11,6 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
-import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -103,11 +101,10 @@ class TokenController(
     fun logout(
         @Parameter(hidden = true) request: HttpServletRequest,
         @Parameter(hidden = true) response: HttpServletResponse,
-        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt?
     ): ResponseEntity<Void> {
         val refreshToken = readRefreshTokenCookie(request)
-        val userId = jwt?.subject?.toLongOrNull()
-        logoutUseCase.invoke(refreshToken = refreshToken, userId = userId)
+        // 현재 디바이스의 family 만 revoke (전체 sign-out 은 POST /me/sessions/revoke-all)
+        logoutUseCase.invoke(refreshToken = refreshToken)
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookieFactory.expiredRefreshTokenCookie().toString())
         return ResponseEntity.noContent().build()

@@ -9,6 +9,8 @@ import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.studieojavry.iamapi.auth.application.usecase.RefreshAccessTokenUseCase
+import org.studieojavry.iamapi.auth.domain.model.exception.AccountNotActiveException
+import org.studieojavry.iamapi.auth.domain.model.vo.UserStatus
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
 import org.studieojavry.sharederror.trace.TraceIdAccessor
 
@@ -41,6 +43,38 @@ class AuthExceptionHandler(
             status = HttpStatus.UNAUTHORIZED,
             detail = "Refresh token is invalid or expired. Please sign in again.",
             code = "INVALID_REFRESH_TOKEN",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 토큰은 valid 하지만 user 상태가 sign-in 을 허용 안 함.
+     *  - DELETED: 영구 삭제 → 410 Gone (자원 사라짐)
+     *  - 그 외 비활성 상태 (확장): 403 Forbidden
+     *
+     * InvalidRefreshTokenException 과 의미 분리 — 토큰 자체의 invalidity 가 아닌 *계정 상태* 원인.
+     */
+    @ExceptionHandler(AccountNotActiveException::class)
+    fun handleAccountNotActive(
+        ex: AccountNotActiveException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail {
+        val (status, code, detail) = when (ex.userStatus) {
+            UserStatus.DELETED -> Triple(HttpStatus.GONE, "ACCOUNT_DELETED", "This account has been deleted. Please sign up again.")
+            else -> Triple(HttpStatus.FORBIDDEN, "ACCOUNT_NOT_ACTIVE", "This account is not active.")
+        }
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn {
+            "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=$code] [userStatus=${ex.userStatus}]"
+        }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = status,
+            detail = detail,
+            code = code,
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

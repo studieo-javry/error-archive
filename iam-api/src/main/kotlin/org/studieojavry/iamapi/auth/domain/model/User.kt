@@ -34,7 +34,9 @@ class User private constructor(
     }
 
     fun ensureSignInAllowed() {
-        check(status.canSignIn()) { "user is not allowed to sign in: status=$status" }
+        if (!status.canSignIn()) {
+            throw org.studieojavry.iamapi.auth.domain.model.exception.AccountNotActiveException(status)
+        }
     }
 
     fun changeDisplayName(newDisplayName: String) {

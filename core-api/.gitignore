@@ -38,3 +38,8 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Local env (절대 commit 금지 — 비밀값 보관 파일) ###
+.env
+.env.*
+!.env.example

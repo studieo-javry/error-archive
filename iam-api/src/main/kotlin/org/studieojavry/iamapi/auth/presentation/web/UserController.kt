@@ -389,7 +389,12 @@ class UserController(
     ): List<ConnectionResponse> {
         val userId = currentUserId(jwt)
         return listMyConnectionsUseCase.invoke(userId).map {
-            ConnectionResponse(provider = it.provider.name, providerEmail = it.providerEmail, linkedAt = it.linkedAt)
+            ConnectionResponse(
+                provider = it.provider,
+                providerEmail = it.providerEmail,
+                profileUrl = it.profileUrl,
+                linkedAt = it.linkedAt,
+            )
         }
     }
 

@@ -4,11 +4,13 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import org.studieojavry.coreapi.errorcase.solution.application.command.CreateSolutionCommand
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
+import java.time.Instant
 
 
 /**
@@ -21,6 +23,7 @@ class CreateSolutionUseCase(
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
     private val access: ErrorCaseAccess,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
     @Transactional
     fun invoke(command: CreateSolutionCommand): Solution {
@@ -46,7 +49,20 @@ class CreateSolutionUseCase(
             title = command.title,
             stepIds = command.stepIds,
         )
-        return solutionRepository.save(solution)
+        val saved = solutionRepository.save(solution)
+
+        // 잔디용 activity event 발행 (fire-and-forget)
+        activityEventPublisher.publish(
+            ActivityEventPublisherPort.ActivityEvent(
+                userId = command.authorUserId,
+                type = ActivityEventPublisherPort.Type.SOLUTION_ADDED,
+                occurredAt = Instant.now(),
+                idempotencyKey = "solution:${saved.id}",
+                meta = mapOf("errorCaseId" to command.errorCaseId),
+            )
+        )
+
+        return saved
     }
 }
 

@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import org.studieojavry.coreapi.errorcase.step.application.command.CreateStepCommand
 import org.studieojavry.coreapi.errorcase.step.application.port.StepAttemptTypeCatalogPort
@@ -12,6 +13,7 @@ import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPo
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.AttemptType
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
+import java.time.Instant
 
 
 /**
@@ -32,6 +34,7 @@ class CreateStepUseCase(
     private val stepRepository: StepRepositoryPort,
     private val attemptTypeCatalog: StepAttemptTypeCatalogPort,
     private val access: ErrorCaseAccess,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
     @Transactional
     fun invoke(command: CreateStepCommand): Result {
@@ -61,6 +64,17 @@ class CreateStepUseCase(
         }
 
         normalizedAttemptType?.let { registerCustomIfNew(command.authorUserId, it) }
+
+        // 잔디용 activity event 발행 (fire-and-forget)
+        activityEventPublisher.publish(
+            ActivityEventPublisherPort.ActivityEvent(
+                userId = command.authorUserId,
+                type = ActivityEventPublisherPort.Type.STEP_ADDED,
+                occurredAt = Instant.now(),
+                idempotencyKey = "step:${saved.id}",
+                meta = mapOf("errorCaseId" to command.errorCaseId),
+            )
+        )
 
         // IN_PROGRESS 에서 RESOLVED step → 케이스 RESOLVED 추천(전환은 사용자 확인)
         val suggestResolve = command.status == StepStatus.RESOLVED && errorCase.status == ErrorCaseStatus.IN_PROGRESS

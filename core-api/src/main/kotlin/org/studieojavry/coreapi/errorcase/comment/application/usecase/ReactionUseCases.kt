@@ -6,7 +6,9 @@ import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseReposit
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentReaction
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
+import java.time.Instant
 
 /**
  * 이모지 리액션 추가 — Slack 스타일. 같은 사용자가 같은 이모지를 또 누르면 멱등(UNIQUE 위반 → no-op).
@@ -17,6 +19,7 @@ class AddReactionUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val commentRepository: CommentRepositoryPort,
     private val access: ErrorCaseAccess,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
     @Transactional
     fun invoke(commentId: Long, requesterUserId: Long, emoji: String): ReactionAggregate {
@@ -32,6 +35,16 @@ class AddReactionUseCase(
         val alreadyMine = all.any { it.userId == requesterUserId && it.emoji == emoji }
         if (!alreadyMine) {
             commentRepository.saveReaction(CommentReaction.create(commentId, requesterUserId, emoji))
+            // 잔디용 activity event — *추가될 때만* 발행 (멱등 호출 시 잔디 중복 가산 방지)
+            activityEventPublisher.publish(
+                ActivityEventPublisherPort.ActivityEvent(
+                    userId = requesterUserId,
+                    type = ActivityEventPublisherPort.Type.COMMENT_REACTION,
+                    occurredAt = Instant.now(),
+                    idempotencyKey = "react:$commentId:$requesterUserId:$emoji",
+                    meta = mapOf("commentId" to commentId, "emoji" to emoji),
+                )
+            )
         }
         val after = commentRepository.findReactionsByCommentIds(listOf(commentId)).filter { it.emoji == emoji }
         return ReactionAggregate(

@@ -8,7 +8,9 @@ import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseA
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
+import java.time.Instant
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
 import org.studieojavry.coreapi.errorcase.snippet.domain.model.CodeSnippet
@@ -26,6 +28,7 @@ class CreateErrorCaseUseCase(
     private val workspaceQuery: WorkspaceQueryPort,
     private val errorSnapshotExtractor: ErrorSnaphostExtractorPort,
     private val tagRepository: ErrorCaseTagRepositoryPort,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
 
     @Transactional
@@ -85,6 +88,17 @@ class CreateErrorCaseUseCase(
 
         // 태그를 별도 테이블에 멱등 저장
         normalizedTags.forEach { tagRepository.add(saved.id!!, it) }
+
+        // 잔디용 activity event 발행 (fire-and-forget, 실패는 swallow)
+        activityEventPublisher.publish(
+            ActivityEventPublisherPort.ActivityEvent(
+                userId = command.userId,
+                type = ActivityEventPublisherPort.Type.CASE_CREATED,
+                occurredAt = Instant.now(),
+                idempotencyKey = "case:${saved.id}",
+                meta = mapOf("visibility" to command.visibility.name),
+            )
+        )
 
         return Result(
             id = requireNotNull(saved.id) { "saved error case must have id" },

@@ -10,10 +10,12 @@ import org.studieojavry.coreapi.errorcase.comment.domain.model.Comment
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentMention
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentSuggestion
 import org.studieojavry.coreapi.errorcase.comment.domain.model.vo.QuoteSourceKind
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.IamUserQueryPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.NotificationPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
+import java.time.Instant
 
 /**
  * 댓글 작성. 정책:
@@ -32,6 +34,7 @@ class CreateCommentUseCase(
     private val access: ErrorCaseAccess,
     private val iamUserQuery: IamUserQueryPort,
     private val notificationPublisher: NotificationPublisherPort,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
     @Transactional
     fun invoke(command: CreateCommentCommand): Comment {
@@ -100,6 +103,17 @@ class CreateCommentUseCase(
             )
             commentRepository.saveSuggestion(suggestion)
         }
+
+        // 잔디용 activity event 발행 (fire-and-forget). 댓글 자체 발행만 가산 — 멘션·답글 가산 가중치 정책은 yml.
+        activityEventPublisher.publish(
+            ActivityEventPublisherPort.ActivityEvent(
+                userId = command.authorUserId,
+                type = ActivityEventPublisherPort.Type.COMMENT_POSTED,
+                occurredAt = Instant.now(),
+                idempotencyKey = "comment:${saved.id}",
+                meta = mapOf("errorCaseId" to command.errorCaseId),
+            )
+        )
 
         return saved
     }

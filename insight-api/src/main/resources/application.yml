@@ -1,0 +1,45 @@
+# ===================================================================
+# insight-api 공통 베이스 — 모든 환경에서 동일한 값만.
+# 환경별 차이는 application-{local|dev|stg|prod}.yml 에 분리.
+# ===================================================================
+
+spring:
+  application:
+    name: insight-api
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+server:
+  forward-headers-strategy: framework
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+insight:
+  iam-api:
+    base-url: ${INSIGHT_IAM_API_BASE_URL:http://localhost:8080}
+  # 데이터 보존 정책 — raw event TTL + cleanup batch size.
+  # 잔디 노출 12개월 + 월말 정책 변경/rebuild 여유 1개월 = 13개월(395일).
+  # daily 집계는 영구 보존 (column 적고 backfill 용도).
+  retention:
+    event-ttl-days: 395
+    delete-batch-size: 5000
+  activity:
+    # 가중치 정책 — 정책 변경 시 publish 시점의 score 컬럼은 그대로 두고 daily 만 재계산
+    weights:
+      CASE_CREATED:     5
+      CASE_PUBLISHED:   3
+      STEP_ADDED:       2
+      SOLUTION_ADDED:   5
+      COMMENT_POSTED:   2
+      COMMENT_REACTION: 1
+      COMMENT_HELPFUL:  1
+      FOLLOWED_USER:    1

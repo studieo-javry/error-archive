@@ -1,5 +1,6 @@
-# insight-api 전용 인프라 — PostgreSQL 만.
-# Kafka broker 는 noti-api/docker-compose.yml 의 것을 *공유* (localhost:9094) — 같이 띄울 것.
+# insight-api 인프라 — PostgreSQL + Kafka.
+# noti-api 가 dev 에 아직 없으므로 kafka broker 도 *여기서* 함께 띄운다.
+# 향후 noti-api 가 dev 에 도입되면 노티의 docker-compose 와 broker 정의 중복 정리.
 services:
   insight-postgres:
     image: postgres:16-alpine
@@ -20,6 +21,44 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Kafka (KRaft 모드 — Zookeeper 불요). Apache 공식 이미지.
+  # core-api 가 publish (user-activity.v1), insight-api 가 consume.
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: insight-kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094"   # 외부(호스트) 접근 — spring-kafka 가 localhost:9094 로 붙음
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      # PLAINTEXT: docker network 내부 (kafka-ui 등) / EXTERNAL: 호스트 접근
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+
+  # Kafka 토픽/메시지 브라우저 — http://localhost:8027
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: insight-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8027:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: insight-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
 
 volumes:
   insight-postgres-data:

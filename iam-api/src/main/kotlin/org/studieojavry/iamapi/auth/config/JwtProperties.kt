@@ -24,6 +24,14 @@ data class JwtProperties(
     val accessTokenTtlSeconds: Long = 900,
 
     /**
+     * SSE ticket ttl — `EventSource` 가 URL query 로 첨부하는 단명 토큰.
+     * 짧게 (10~60s) 유지해 URL 로그/proxy 캐시에 노출돼도 위험 최소화.
+     * FE 는 매 SSE 연결 직전 새 ticket 발급 (재연결 포함).
+     */
+    @field:Min(10)
+    val sseTicketTtlSeconds: Long = 30,
+
+    /**
      * rememberMe = true (자동 로그인 ON). 영속 쿠키.
      */
     @field:Min(3600)

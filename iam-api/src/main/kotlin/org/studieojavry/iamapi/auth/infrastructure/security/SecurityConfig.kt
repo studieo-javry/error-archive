@@ -2,6 +2,7 @@ package org.studieojavry.iamapi.auth.infrastructure.security
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.Environment
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -12,11 +13,35 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter
+import org.springframework.web.cors.CorsConfiguration
+import org.springframework.web.cors.CorsConfigurationSource
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
 import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
 
 @Configuration
 class SecurityConfig {
+
+    /**
+     * CORS — local 한정 모든 origin 허용 (playground HTML 이 `file://` 또는 임의 localhost 에서 호출).
+     * dev/stg/prod 는 빈 config = 모두 거부 → 게이트웨이 경유 강제.
+     */
+    @Bean
+    fun corsConfigurationSource(environment: Environment): CorsConfigurationSource {
+        val isLocal = environment.activeProfiles.contains("local") ||
+            (environment.activeProfiles.isEmpty() && environment.defaultProfiles.contains("local"))
+        val config = CorsConfiguration().apply {
+            if (isLocal) {
+                addAllowedOriginPattern("*")
+                addAllowedMethod("*")
+                addAllowedHeader("*")
+                allowCredentials = false   // pattern("*") + credentials=true 는 충돌, 우린 헤더만
+            }
+        }
+        // *dev fixture (`/__dev/**`) 만* CORS 응답. production endpoint 는 gateway 책임 —
+        // 둘 다 응답하면 Allow-Origin 헤더 중복으로 browser 가 차단.
+        return UrlBasedCorsConfigurationSource().apply { registerCorsConfiguration("/__dev/**", config) }
+    }
 
     @Bean
     fun securityFilterChain(
@@ -25,7 +50,12 @@ class SecurityConfig {
         bearerTokenResolver: BearerTokenResolver,
         authEntryPoint: ProblemDetailAuthenticationEntryPoint,
         accessDeniedHandler: ProblemDetailAccessDeniedHandler,
+        environment: Environment,
     ): SecurityFilterChain {
+        // local profile 한정 — /actuator/** 전체 permitAll.
+        // 검증/디버깅 편의 (Micrometer Gauge 즉시 호출). dev/stg/prod 는 internal-auth 보호 유지.
+        val isLocal = environment.activeProfiles.contains("local") ||
+            (environment.activeProfiles.isEmpty() && environment.defaultProfiles.contains("local"))
         http
             .csrf { it.disable() }
             .cors(Customizer.withDefaults())
@@ -39,6 +69,12 @@ class SecurityConfig {
                     .httpStrictTransportSecurity { it.includeSubDomains(true).maxAgeInSeconds(31_536_000) }
             }
             .authorizeHttpRequests { auth ->
+                // local profile 만 /actuator/** + /__dev/** 전체 permitAll.
+                // dev fixture (OAuth 우회 access token 발급 등) 호출에 인증 우회.
+                if (isLocal) {
+                    auth.requestMatchers("/actuator/**").permitAll()
+                    auth.requestMatchers("/__dev/**").permitAll()
+                }
                 auth.requestMatchers(
                     // OAuth 시작 / 콜백 — 로그인 *전* 이라 인증 없이 호출돼야 함
                     "/api/v1/auth/oauth/**",

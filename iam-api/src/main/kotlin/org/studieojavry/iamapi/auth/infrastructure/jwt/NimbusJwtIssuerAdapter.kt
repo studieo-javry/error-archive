@@ -20,7 +20,13 @@ class NimbusJwtIssuerAdapter(
 
     private val signer = MACSigner(jwtProperties.secret.toByteArray(Charsets.UTF_8))
 
-    override fun issueAccessToken(userId: Long, expiresAt: Instant): String {
+    override fun issueAccessToken(userId: Long, expiresAt: Instant): String =
+        sign(userId, expiresAt, typ = "access")
+
+    override fun issueSseTicket(userId: Long, expiresAt: Instant): String =
+        sign(userId, expiresAt, typ = "sse")
+
+    private fun sign(userId: Long, expiresAt: Instant, typ: String): String {
         val now = Instant.now()
         val claims = JWTClaimsSet.Builder()
             .issuer(jwtProperties.issuer)
@@ -30,7 +36,7 @@ class NimbusJwtIssuerAdapter(
             .notBeforeTime(Date.from(now))
             .expirationTime(Date.from(expiresAt))
             .jwtID(UUID.randomUUID().toString())
-            .claim("typ", "access")
+            .claim("typ", typ)
             .build()
 
         val header = JWSHeader.Builder(JWSAlgorithm.HS256)

@@ -2,15 +2,20 @@ package org.studieojavry.iamapi.social.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.iamapi.shared.notification.application.port.NotificationPublisherPort
 import org.studieojavry.iamapi.social.application.command.FollowUserCommand
+import org.studieojavry.iamapi.social.application.port.ActivityEventPublisherPort
 import org.studieojavry.iamapi.social.application.port.FollowRepositoryPort
 import org.studieojavry.iamapi.social.application.port.UserSummaryReaderPort
 import org.studieojavry.iamapi.social.domain.model.Follow
+import java.time.Instant
 
 @Service
 class FollowUserUseCase(
     private val followRepository: FollowRepositoryPort,
-    private val userSummaryReader: UserSummaryReaderPort
+    private val userSummaryReader: UserSummaryReaderPort,
+    private val activityEventPublisher: ActivityEventPublisherPort,
+    private val notificationPublisher: NotificationPublisherPort,
 ) {
 
     /**
@@ -28,7 +33,26 @@ class FollowUserUseCase(
             return Result(created = false)
         }
         followRepository.save(Follow.create(command.followerId, command.followeeId))
-        // TODO: 추후 noti-api 연동 — 도메인 이벤트(UserFollowed) 발행
+
+        // 잔디용 activity event — outbox INSERT (도메인 트랜잭션과 atomic). 새로 생성된 경우만.
+        activityEventPublisher.publish(
+            ActivityEventPublisherPort.ActivityEvent(
+                userId = command.followerId,
+                type = ActivityEventPublisherPort.Type.FOLLOWED_USER,
+                occurredAt = Instant.now(),
+                idempotencyKey = "follow:${command.followerId}:${command.followeeId}",
+                meta = mapOf("followeeId" to command.followeeId),
+            )
+        )
+
+        // 새 팔로워 알림 — followee 에게 in-app + email (mention 과 다른 토글).
+        notificationPublisher.publishNewFollower(
+            NotificationPublisherPort.NewFollowerEvent(
+                recipientUserId = command.followeeId,
+                followerUserId = command.followerId,
+            )
+        )
+
         return Result(created = true)
     }
 

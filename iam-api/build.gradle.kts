@@ -42,6 +42,12 @@ dependencies {
   implementation("io.micrometer:micrometer-tracing-bridge-brave")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
 
+  // Kafka producer (outbox → relayer 가 KafkaTemplate 사용).
+  implementation("org.springframework.kafka:spring-kafka")
+  // ShedLock — 다중 인스턴스 시 OutboxRelayer / CleanupJob 의 leader election.
+  implementation("net.javacrumbs.shedlock:shedlock-spring:6.10.0")
+  implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.10.0")
+
   // 내부 서비스 인증 — composite build 가 로컬 shared-internal-auth 로 substitute.
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
   implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")

@@ -2,6 +2,7 @@ package org.studieojavry.iamapi.workspace.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.iamapi.shared.notification.application.port.NotificationPublisherPort
 import org.studieojavry.iamapi.shared.util.HashUtils
 import org.studieojavry.iamapi.workspace.application.command.InviteMemberCommand
 import org.studieojavry.iamapi.workspace.application.port.InvitationEmailSenderPort
@@ -24,7 +25,8 @@ class InviteMemberUseCase(
     private val tokenGenerator: InvitationTokenGeneratorPort,
     private val emailSender: InvitationEmailSenderPort,
     private val memberSummaryReader: MemberSummaryReaderPort,
-    private val properties: WorkspaceProperties
+    private val properties: WorkspaceProperties,
+    private val notificationPublisher: NotificationPublisherPort,
 ) {
 
     @Transactional
@@ -45,6 +47,9 @@ class InviteMemberUseCase(
         val rawToken = tokenGenerator.generate()
         val tokenHash = HashUtils.sha256(rawToken)
 
+        // EMAIL type + 기존 활성 회원 인 경우 *userId 매핑* — in-app 알림 발화 대상.
+        // 비등록 이메일은 userId 없어 발화 불가 (transactional invitation email 만 도달).
+        var invitedUserId: Long? = null
         if (command.type == InvitationType.EMAIL) {
             require(!command.email.isNullOrBlank()) { "email is required for EMAIL invitation" }
 
@@ -54,6 +59,7 @@ class InviteMemberUseCase(
                     if (memberRepository.findByWorkspaceIdAndUserId(command.workspaceId, existing.userId) != null) {
                         throw IllegalStateException("user is already a member: ${existing.userId}")
                     }
+                    invitedUserId = existing.userId
                 }
         }
 
@@ -79,6 +85,19 @@ class InviteMemberUseCase(
                 invitedByDisplayName = inviter?.displayName ?: "iam",
                 role = command.role,
                 acceptUrl = acceptUrl
+            )
+        }
+
+        // in-app 알림 — 등록된 사용자에게만 (userId 매핑 가능 시). email 채널은 기존 invitation email 이 책임.
+        invitedUserId?.let { uid ->
+            notificationPublisher.publishWorkspaceInvitation(
+                NotificationPublisherPort.WorkspaceInvitationEvent(
+                    recipientUserId = uid,
+                    workspaceId = command.workspaceId,
+                    workspaceName = workspace.name.value,
+                    invitationId = saved.id!!,
+                    invitedByUserId = command.actorUserId,
+                )
             )
         }
 

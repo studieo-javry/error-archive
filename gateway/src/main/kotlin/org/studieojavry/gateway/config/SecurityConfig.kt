@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
 import org.springframework.security.web.SecurityFilterChain
 import org.studieojavry.gateway.filter.HeaderInjectionFilter
+import org.studieojavry.gateway.filter.SseAwareBearerTokenResolver
 import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
 import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
 
@@ -29,6 +30,7 @@ class SecurityConfig {
         http: HttpSecurity,
         jwtDecoder: JwtDecoder,
         headerInjectionFilter: HeaderInjectionFilter,
+        sseAwareBearerTokenResolver: SseAwareBearerTokenResolver,
         authEntryPoint: ProblemDetailAuthenticationEntryPoint,
         accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
@@ -57,7 +59,10 @@ class SecurityConfig {
                 it.authenticationEntryPoint(authEntryPoint)
                 it.accessDeniedHandler(accessDeniedHandler)
             }
-            .oauth2ResourceServer { rs -> rs.jwt { it.decoder(jwtDecoder) } }
+            .oauth2ResourceServer { rs ->
+                rs.bearerTokenResolver(sseAwareBearerTokenResolver)
+                rs.jwt { it.decoder(jwtDecoder) }
+            }
             .addFilterAfter(headerInjectionFilter, BearerTokenAuthenticationFilter::class.java)
         return http.build()
     }

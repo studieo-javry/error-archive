@@ -29,8 +29,11 @@ class JwtDecoderConfig {
             JwtClaimValidator("iss") { iss: String? -> iss == jwtProperties.issuer }
         val audienceValidator: OAuth2TokenValidator<Jwt> =
             JwtClaimValidator<List<String>>("aud") { aud -> aud != null && jwtProperties.audience in aud }
+        // typ=access (일반 API) + typ=sse (EventSource 가 URL query 로 첨부하는 단명 ticket) 둘 다 허용.
+        // SseAwareBearerTokenResolver 가 typ=sse 토큰을 *SSE path 의 query 로만* 추출하므로
+        // 다른 endpoint 에 흘러가도 resolver 가 받지 않아 사실상 path 별 격리.
         val typeValidator: OAuth2TokenValidator<Jwt> =
-            JwtClaimValidator("typ") { typ: String? -> typ == "access" }
+            JwtClaimValidator("typ") { typ: String? -> typ == "access" || typ == "sse" }
 
         decoder.setJwtValidator(
             DelegatingOAuth2TokenValidator(

@@ -3,10 +3,6 @@
 # - gateway: 8000   (외부 진입)
 # - iam-api: 8080
 # - core-api: 8081
-#
-# ⚠️  필수 환경변수 (없으면 부팅 실패):
-#     IAM_JWT_SECRET                          (≥ 64자, iam-api 와 동일 — 사용자 JWT 검증용)
-#     GATEWAY_INTERNAL_AUTH_PRIVATE_KEY_PEM   (RSA 비밀키, multiline — downstream 으로 보낼 internal JWT 서명)
 # ===================================================================
 
 server:
@@ -42,18 +38,46 @@ logging:
 
 iam:
   jwt:
-    secret: ${IAM_JWT_SECRET}
+    secret: "local-dev-secret-local-dev-secret-local-dev-secret-local-dev-secret-local-dev"
     issuer: "https://iam.local"
     audience: "local-clients"
 
-# 내부 서비스 인증 — gateway 는 발급자(issuer). downstream 으로 보낼 단명 internal JWT 를 서명한다.
-# 비밀키는 env 주입 — 평문 보관 X.
+# 내부 서비스 인증 — 게이트웨이는 발급자(issuer). downstream 으로 보낼 단명 internal JWT 를 서명한다.
+# 아래 키는 로컬 개발용 테스트 키. 운영에선 INTERNAL_AUTH_GATEWAY_PRIVATE_KEY 등 ENV 로 주입.
 internal-auth:
   ttl-seconds: 60
   issuer:
     name: gateway
     key-id: gateway-local
-    private-key-pem: ${GATEWAY_INTERNAL_AUTH_PRIVATE_KEY_PEM}
+    private-key-pem: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCHGwWzquZ93L6b
+      2vRgk/IdUfTlYczmBwwD9j6ZucGttKvVZwq5A5REJKh00wJDqLG2vEUPZbu2wUqe
+      0BsRcwO6OztM6DsHuEcn1L2U2m2Q9kNiaALVTEC7fHXbYHNMSKBtvg4Ob+efWrQK
+      WhQOMCPhp4HrGiMEitR9Cmw2voy7a2//ZGqDV/lTRPMqEXv7vePzjWt8wQryVfoa
+      4EiLXiLBg6UrCKIYXs1KMGDV7UIKiOBjDyeDZI+oC/PVxPLWhRTyrlNQvEkV4nLP
+      ebERwR5F2tU6JP+5fmRKMxsKSAc61nO3wLFwy/6mq1/pu4dtodQiq6l8uqfs62g6
+      VqnWZGv5AgMBAAECggEAN9vcR6RpF7CkvhuQ3j1M5QJ1lkERTimrthehWj2K7h68
+      zMaFkGkCbAob+/EiBodAsqS0iOEu8yiHiZHRHy3GZMEIi4uYnGB8SuOSXnDQzBaF
+      VbJbOYUFXn7e24zNHsUIT1c8yItL4H7H4V/M2vDcZPe0p1dvEvmzUN92TkwKM5Jm
+      NQzuqYZiAa0HbF1hS6HXqLA56QXjiVmY+zqdVV2JzgRUyTYSfxTmjeLOnA6O3g+w
+      4yYO6NcgjmLguYGKzeQOFCwFfOiMYwYm90+4iX1uwl41xNJjF9SxAu1GTvmIDtY5
+      n/isny4joJoJai05+fH+li4ckgyf0gYS9REfNb8x4QKBgQC9QqYxNBvFt9zz4Uos
+      Ts7n96UYlzQWFXy0TjeO4PvpJBHWuS/uZ78B96l70KS3/hofBZ8jOvmoLK6XPlV9
+      SMuKjwMVAHL6KY5AUIv+6P8Hx6Bh6uGZUIAqwslG7XqdyqN4g5EDUF/Bnz37EihK
+      9yzNNCvvfKu2FT3l0tzaMOAHnwKBgQC2v5XnKk2NZjRwa0ZQHpS0/NDK/IefYqhs
+      hyoK6uePvwVkzYB2Hdj1F+/ppFZEi0ZUC4Pzg4rJf7dQYZlKoLT31N9hTMCkTF78
+      oQdlR52A1ySHsDwlFdqKohxExEvLxLegEVIaSZbqlGlxzXW4Mznqgr+k1d8ok9Lz
+      mRhrbxzFZwKBgBQUQx+LQLsMU7PIHh9vSQJRQsHGIO+K3g0fE0PkWLWWbxIR2aT4
+      espRpTiOnTssCUdrSEPrmNsfynIfWeCN3ZJYs+IBhzFFQWNPaFrmC1Ce/EQHMGIc
+      qUxgGAyfW1fsTMWXZ8YrO82GAIRnm8DAUo9+zn59Apax0DxWz7mSX+JPAoGAd0Nc
+      /vnaltcGjf9UaeErR1peoLphgCEQrZMgWvOmn2cYjAqZNXyRJJK0nZQEQMNr6FmD
+      iZ5lKs9QwQKQ2eU7dSnVhlhiuFam/tPQUcaFAZpmWq8m8UTr1OGq9S3uEVOWSr5D
+      CKjR9tFYZ06g7s9vkp41l8uD0aV3XEajaymeay0CgYBUuKCfQLYs6s22yXx2ntLS
+      aPoEizQqb59reNKP6qETvQwln9J1dYlXLcWVzYRBA8C8ewSmpEgAizhw2v8ZRbhP
+      rAGPYy9nDooIrrfYMQ9E5iLg4Di1iwBBQYAx/wYjVZM6GjURQsJAOPlC+8QR20pw
+      3d6wLAY9yfaRyCZjoiXTFA==
+      -----END PRIVATE KEY-----
 
 gateway:
   cors:

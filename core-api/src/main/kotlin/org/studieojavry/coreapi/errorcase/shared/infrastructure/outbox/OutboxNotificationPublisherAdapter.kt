@@ -50,6 +50,54 @@ class OutboxNotificationPublisherAdapter(
         }
     }
 
+    override fun publishReplies(event: NotificationPublisherPort.ReplyEvent) {
+        try {
+            val msg = ReplyMessage(
+                recipientUserId = event.recipientUserId,
+                actorUserId = event.actorUserId,
+                errorCaseId = event.errorCaseId,
+                commentId = event.commentId,
+                parentCommentId = event.parentCommentId,
+                snippet = event.snippet,
+            )
+            val payload = objectMapper.writeValueAsString(msg)
+            outboxRepo.save(
+                OutboxEventEntity(
+                    aggregateType = "COMMENT_REPLY",
+                    aggregateId = "reply:comment-${event.commentId}",
+                    topic = REPLY_TOPIC,
+                    kafkaKey = event.recipientUserId.toString(),
+                    payload = payload,
+                )
+            )
+        } catch (ex: Exception) {
+            log.warn(ex) { "outbox reply INSERT failed (silently dropped): recipient=${event.recipientUserId}" }
+        }
+    }
+
+    override fun publishCommentOnErrorCase(event: NotificationPublisherPort.CommentOnErrorCaseEvent) {
+        try {
+            val msg = CommentOnCaseMessage(
+                recipientUserId = event.recipientUserId,
+                actorUserId = event.actorUserId,
+                errorCaseId = event.errorCaseId,
+                commentId = event.commentId,
+                snippet = event.snippet,
+            )
+            outboxRepo.save(
+                OutboxEventEntity(
+                    aggregateType = "COMMENT_ON_ERROR_CASE",
+                    aggregateId = "comment-on-case:comment-${event.commentId}",
+                    topic = COMMENT_ON_CASE_TOPIC,
+                    kafkaKey = event.recipientUserId.toString(),
+                    payload = objectMapper.writeValueAsString(msg),
+                )
+            )
+        } catch (ex: Exception) {
+            log.warn(ex) { "outbox comment-on-case INSERT failed (silently dropped): recipient=${event.recipientUserId}" }
+        }
+    }
+
     /** Kafka 메시지 페이로드 — noti-api `MentionEventConsumer` 와 동일 스키마. */
     data class MentionMessage(
         val recipientUserId: Long,
@@ -59,7 +107,28 @@ class OutboxNotificationPublisherAdapter(
         val snippet: String,
     )
 
+    /** Kafka reply 메시지 — noti-api `ReplyEventConsumer` 와 동일 스키마. */
+    data class ReplyMessage(
+        val recipientUserId: Long,
+        val actorUserId: Long,
+        val errorCaseId: Long,
+        val commentId: Long,
+        val parentCommentId: Long,
+        val snippet: String,
+    )
+
+    /** Kafka comment-on-case 메시지 — noti-api `CommentOnCaseEventConsumer` 와 동일 스키마. */
+    data class CommentOnCaseMessage(
+        val recipientUserId: Long,
+        val actorUserId: Long,
+        val errorCaseId: Long,
+        val commentId: Long,
+        val snippet: String,
+    )
+
     companion object {
         const val TOPIC = "notification-events.mentions.v1"
+        const val REPLY_TOPIC = "notification-events.replies.v1"
+        const val COMMENT_ON_CASE_TOPIC = "notification-events.comments-on-case.v1"
     }
 }

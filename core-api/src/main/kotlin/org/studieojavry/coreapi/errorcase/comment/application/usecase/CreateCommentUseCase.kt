@@ -90,6 +90,51 @@ class CreateCommentUseCase(
             }
         }
 
+        // 답글 알림 — *원래 사용자가 답글 대상으로 지정한* parent comment 의 author 에게.
+        // depth=1 강제로 resolvedParentId 는 top-level 로 바뀔 수 있지만, 알림 대상은
+        // *사용자가 답글하려 했던 그 댓글* 의 author 가 자연스러움.
+        // 스킵 조건: (a) 본인의 댓글에 답글 (b) 이미 mention 으로 알림 가는 경우 (중복 방지)
+        command.parentCommentId?.let { originalParentId ->
+            val parentAuthor = runCatching { commentRepository.findById(originalParentId)?.authorUserId }.getOrNull()
+            if (parentAuthor != null &&
+                parentAuthor != command.authorUserId &&
+                parentAuthor !in recipients
+            ) {
+                runCatching {
+                    notificationPublisher.publishReplies(
+                        NotificationPublisherPort.ReplyEvent(
+                            recipientUserId = parentAuthor,
+                            actorUserId = command.authorUserId,
+                            errorCaseId = command.errorCaseId,
+                            commentId = saved.id!!,
+                            parentCommentId = originalParentId,
+                            snippet = command.body.take(140),
+                        )
+                    )
+                }
+            }
+        }
+
+        // 내 글 댓글 알림 — *최상위* 댓글 (parentCommentId == null) 한정으로 ErrorCase author 에게.
+        // 답글이면 reply 알림이 책임지므로 skip. 스킵 조건:
+        //  (a) 본인 글에 본인 댓글  (b) mention recipient 에 owner 이미 포함  (c) 답글이면 발화 안 함
+        if (command.parentCommentId == null &&
+            errorCase.ownerUserId != command.authorUserId &&
+            errorCase.ownerUserId !in recipients
+        ) {
+            runCatching {
+                notificationPublisher.publishCommentOnErrorCase(
+                    NotificationPublisherPort.CommentOnErrorCaseEvent(
+                        recipientUserId = errorCase.ownerUserId,
+                        actorUserId = command.authorUserId,
+                        errorCaseId = command.errorCaseId,
+                        commentId = saved.id!!,
+                        snippet = command.body.take(140),
+                    )
+                )
+            }
+        }
+
         // Diff 제안 첨부 (있으면)
         command.suggestion?.let { s ->
             val suggestion = CommentSuggestion.create(

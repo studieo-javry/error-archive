@@ -3,17 +3,17 @@ package org.studieojavry.insightapi.shared.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
-import org.springframework.http.HttpStatus
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.studieojavry.internalauth.InternalTokenAuthenticationFilter
+import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
+import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
 
 /**
  * insight-api 인증 — gateway 의 internal JWT(aud=insight-api) 검증.
@@ -28,6 +28,8 @@ class SecurityConfig {
         http: HttpSecurity,
         internalTokenFilter: InternalTokenAuthenticationFilter,
         environment: Environment,
+        authEntryPoint: ProblemDetailAuthenticationEntryPoint,
+        accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
         // local profile 한정 — /actuator/** + 잔디 API 전체 permitAll.
         // 목적: (1) playground (activity-grass.html) 가 토큰 없이 직접 호출,
@@ -51,7 +53,11 @@ class SecurityConfig {
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     .anyRequest().authenticated()
             }
-            .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
+            .exceptionHandling {
+                // shared-error 의 enriched ProblemDetail — traceId / code / type / retryable 포함.
+                it.authenticationEntryPoint(authEntryPoint)
+                it.accessDeniedHandler(accessDeniedHandler)
+            }
             .addFilterBefore(internalTokenFilter, UsernamePasswordAuthenticationFilter::class.java)
         return http.build()
     }

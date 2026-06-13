@@ -41,6 +41,8 @@ dependencies {
 
   // gateway / core-api / iam-api 발급 internal JWT 검증 + iam-api 호출용 발급
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
+  // 공용 예외 처리 — GlobalExceptionHandler + ProblemDetailAuthenticationEntryPoint + masking + traceId
+  implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
 
   // Kafka consumer — user-activity.v1 토픽 수신

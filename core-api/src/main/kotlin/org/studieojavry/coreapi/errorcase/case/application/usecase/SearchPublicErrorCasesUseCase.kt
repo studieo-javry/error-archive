@@ -2,6 +2,8 @@ package org.studieojavry.coreapi.errorcase.case.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
@@ -18,10 +20,14 @@ import java.util.Base64
  *  - 향후 본 endpoint 에 *공개 한정 기능*(인기/추천/정렬 옵션)이 붙기 좋게
  *
  * 정렬: `createdAt DESC, id DESC`. cursor 인코딩은 ListUseCase 와 호환.
+ *
+ * 응답 hydration: 항목마다 작성자(avatar/displayName/bio/isFollowing) 를 함께 반환.
+ * ownerUserId 들을 모아 iam-api 로 *한 번* batch 호출 (N+1 회피).
  */
 @Service
 class SearchPublicErrorCasesUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
+    private val authorSummaryReader: AuthorSummaryReaderPort,
 ) {
     @Transactional(readOnly = true)
     fun invoke(input: Input): Result {
@@ -44,11 +50,17 @@ class SearchPublicErrorCasesUseCase(
 
         val hasNext = rows.size > size
         val items = if (hasNext) rows.take(size) else rows
+
+        val authorIds = items.map { it.ownerUserId }.toSet()
+        val authors: Map<Long, AuthorSummary> =
+            if (authorIds.isEmpty()) emptyMap()
+            else authorSummaryReader.read(authorIds, input.viewerUserId)
+
         val nextCursor = items.lastOrNull()
             ?.takeIf { hasNext }
             ?.let { encodeCursor(it.createdAt, it.id) }
 
-        return Result(items = items, nextCursor = nextCursor, hasNext = hasNext)
+        return Result(items = items, authors = authors, nextCursor = nextCursor, hasNext = hasNext)
     }
 
     private fun encodeCursor(createdAt: LocalDateTime, id: Long): String =
@@ -72,10 +84,13 @@ class SearchPublicErrorCasesUseCase(
         val fingerprint: String?,
         val cursor: String?,
         val size: Int,
+        /** 현재 사용자 — author 의 isFollowing 매핑용. 인증 안 됐으면 null. */
+        val viewerUserId: Long?,
     )
 
     data class Result(
         val items: List<ErrorCaseSummary>,
+        val authors: Map<Long, AuthorSummary>,
         val nextCursor: String?,
         val hasNext: Boolean,
     )

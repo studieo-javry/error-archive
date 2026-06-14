@@ -228,6 +228,7 @@ class ƒErrorCaseController(
     )
     @GetMapping("/search")
     fun searchPublic(
+        @Parameter(hidden = true) @AuthenticationPrincipal viewerUserId: Long?,
         @Parameter(description = "케이스 상태 (OPEN/IN_PROGRESS/RESOLVED 등)", example = "OPEN") @RequestParam(required = false) status: String?,
         @Parameter(description = "심각도 코드 1(S1)~4(S4)", example = "2") @RequestParam(required = false) severity: Int?,
         @Parameter(description = "fingerprint(SHA-256 hex)") @RequestParam(required = false) fingerprint: String?,
@@ -245,10 +246,11 @@ class ƒErrorCaseController(
                 fingerprint = fingerprint,
                 cursor = cursor,
                 size = size,
+                viewerUserId = viewerUserId,
             )
         )
         return ErrorCaseListResponse(
-            items = result.items.map { ErrorCaseSummaryResponse.from(it) },
+            items = result.items.map { ErrorCaseSummaryResponse.from(it, result.authors[it.ownerUserId]) },
             nextCursor = result.nextCursor,
             hasNext = result.hasNext,
         )

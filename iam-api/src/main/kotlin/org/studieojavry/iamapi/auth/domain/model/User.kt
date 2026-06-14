@@ -1,5 +1,6 @@
 package org.studieojavry.iamapi.auth.domain.model
 
+import org.studieojavry.iamapi.auth.domain.model.exception.AccountNotActiveException
 import org.studieojavry.iamapi.auth.domain.model.vo.Email
 import org.studieojavry.iamapi.auth.domain.model.vo.Theme
 import org.studieojavry.iamapi.auth.domain.model.vo.UserStatus
@@ -8,6 +9,12 @@ import java.time.Instant
 class User private constructor(
     val id: Long?,
     var email: Email?,
+    /**
+     * 사용자 unique 식별자(== GitHub login 매핑).
+     * MVP 정책: **불변** (변경 endpoint 없음). 검색/멘션 자동완성의 보조 매칭 + URL slug 후보.
+     * mention token 은 userId 기반이므로 handle 변경 정책이 추후 도입돼도 멘션 깨지지 않음.
+     */
+    val handle: String,
     var displayName: String,
     var avatarUrl: String?,
     var bio: String?,
@@ -26,6 +33,7 @@ class User private constructor(
     var updatedAt: Instant
 ) {
     init {
+        validateHandle(handle)
         validateDisplayName(displayName)
         validateAvatarUrl(avatarUrl)
         validateBio(bio)
@@ -35,7 +43,7 @@ class User private constructor(
 
     fun ensureSignInAllowed() {
         if (!status.canSignIn()) {
-            throw org.studieojavry.iamapi.auth.domain.model.exception.AccountNotActiveException(status)
+            throw AccountNotActiveException(status)
         }
     }
 
@@ -142,20 +150,28 @@ class User private constructor(
     }
 
     companion object {
+        const val HANDLE_MAX_LENGTH = 39
         const val DISPLAY_NAME_MAX_LENGTH = 100
         const val AVATAR_URL_MAX_LENGTH = 1024
         const val BIO_MAX_LENGTH = 280
         const val LANGUAGE_MAX_LENGTH = 16
         const val TIMEZONE_MAX_LENGTH = 64
 
+        /**
+         * handle 형식 — GitHub login 과 동일.
+         * 영문 소문자 + 숫자 + 하이픈 (`a-z 0-9 -`), 시작은 영문/숫자, 끝은 하이픈 불가, 1-39자.
+         */
+        private val HANDLE_REGEX = Regex("^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$")
+
         /** 탈퇴 확정 사용자의 표시명. UI 가 status=DELETED 를 보고 "탈퇴한 사용자" 로 렌더해도 됨. */
         fun anonymizedDisplayName(userId: Long?): String = "deleted_user_${userId ?: "unknown"}"
 
-        fun create(email: Email?, displayName: String, avatarUrl: String?): User {
+        fun create(email: Email?, handle: String, displayName: String, avatarUrl: String?): User {
             val now = Instant.now()
             return User(
                 id = null,
                 email = email,
+                handle = handle,
                 displayName = displayName,
                 avatarUrl = avatarUrl,
                 bio = null,
@@ -173,6 +189,7 @@ class User private constructor(
         fun rehydrate(
             id: Long,
             email: Email?,
+            handle: String,
             displayName: String,
             avatarUrl: String?,
             bio: String?,
@@ -185,10 +202,20 @@ class User private constructor(
             createdAt: Instant,
             updatedAt: Instant
         ): User = User(
-            id, email, displayName, avatarUrl, bio, status, pendingDeletionAt,
+            id, email, handle, displayName, avatarUrl, bio, status, pendingDeletionAt,
             language, timezone, theme, defaultWorkspaceId,
             createdAt, updatedAt
         )
+
+        private fun validateHandle(value: String) {
+            require(value.isNotBlank()) { "handle must not be blank" }
+            require(value.length <= HANDLE_MAX_LENGTH) {
+                "handle must be $HANDLE_MAX_LENGTH chars or less: ${value.length}"
+            }
+            require(HANDLE_REGEX.matches(value)) {
+                "handle must match ^[a-z0-9][a-z0-9-]*[a-z0-9]?$ (lowercase / digit / hyphen): $value"
+            }
+        }
 
         private fun validateDisplayName(value: String) {
             require(value.isNotBlank()) { "displayName must not be blank" }

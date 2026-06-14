@@ -9,6 +9,16 @@ import java.time.Instant
 interface UserJpaRepository : JpaRepository<UserEntity, Long> {
     fun findFirstByEmailIgnoreCase(email: String): UserEntity?
 
+    /** OAuth 매핑 시 handle 충돌 검사. */
+    fun existsByHandleIgnoreCase(handle: String): Boolean
+
+    /** handle prefix 검색 (대소문자 무시), ACTIVE 만. — 멘션 자동완성에서 handle 매칭용. */
+    fun findByStatusAndHandleStartingWithIgnoreCaseOrderByHandleAsc(
+        status: UserStatus,
+        prefix: String,
+        pageable: Pageable,
+    ): List<UserEntity>
+
     /**
      * 회원 탈퇴 finalize 배치용. status + pendingDeletionAt < threshold 인 사용자를 오래된 순으로.
      */

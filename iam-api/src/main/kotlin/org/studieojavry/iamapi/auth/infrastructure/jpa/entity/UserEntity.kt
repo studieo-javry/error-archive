@@ -18,7 +18,10 @@ import java.time.Instant
 @Entity
 @Table(
     name = "iam_user",
-    indexes = [Index(name = "ix_iam_user_email", columnList = "email")]
+    indexes = [
+        Index(name = "ix_iam_user_email", columnList = "email"),
+        Index(name = "ux_iam_user_handle", columnList = "handle", unique = true),
+    ]
 )
 class UserEntity(
     @Id
@@ -27,6 +30,14 @@ class UserEntity(
 
     @Column(name = "email", length = 254)
     var email: String?,
+
+    /**
+     * 사용자 unique handle (GitHub login 매핑). MVP 정책: 변경 불가.
+     * 저장은 소문자 정규화, 검색은 case-insensitive — `LOWER(handle)` functional unique index 가 더 정확하지만
+     * JPA 표준은 simple unique 만 지원해 인덱스로 보강.
+     */
+    @Column(name = "handle", nullable = false, length = 39, unique = true, updatable = false)
+    var handle: String,
 
     @Column(name = "display_name", nullable = false, length = 100)
     var displayName: String,
@@ -73,6 +84,7 @@ class UserEntity(
     fun toDomain(): User = User.Companion.rehydrate(
         id = id!!,
         email = email?.let { Email(it) },
+        handle = handle,
         displayName = displayName,
         avatarUrl = avatarUrl,
         bio = bio,
@@ -90,6 +102,7 @@ class UserEntity(
         fun fromDomain(user: User): UserEntity = UserEntity(
             id = user.id,
             email = user.email?.value,
+            handle = user.handle,
             displayName = user.displayName,
             avatarUrl = user.avatarUrl,
             bio = user.bio,

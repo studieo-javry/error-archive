@@ -5,6 +5,8 @@ import java.time.Instant
 data class MyProfileResponse(
     val userId: Long,
     val email: String?,
+    /** GitHub login 매핑된 unique handle. MVP 정책: 불변. */
+    val handle: String,
     val displayName: String,
     val avatarUrl: String?,
     val bio: String?,

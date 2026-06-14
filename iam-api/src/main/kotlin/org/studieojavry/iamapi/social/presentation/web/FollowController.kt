@@ -121,7 +121,7 @@ class FollowController(
     ): FollowListResponse {
         val r = getFollowersUseCase.invoke(userId, page, size)
         return FollowListResponse(
-            items = r.items.map { UserSummaryResponse(it.userId, it.displayName, it.avatarUrl) },
+            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl) },
             page = r.page,
             size = r.size,
             totalElements = r.totalElements,
@@ -140,7 +140,7 @@ class FollowController(
     ): FollowListResponse {
         val r = getFollowingUseCase.invoke(userId, page, size)
         return FollowListResponse(
-            items = r.items.map { UserSummaryResponse(it.userId, it.displayName, it.avatarUrl) },
+            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl) },
             page = r.page,
             size = r.size,
             totalElements = r.totalElements,

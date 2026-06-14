@@ -48,6 +48,7 @@ class UpdateMyProfileUseCase(
         return Result(
             userId = saved.id!!,
             email = saved.email?.value,
+            handle = saved.handle,
             displayName = saved.displayName,
             avatarUrl = saved.avatarUrl,
             bio = saved.bio,
@@ -64,6 +65,7 @@ class UpdateMyProfileUseCase(
     data class Result(
         val userId: Long,
         val email: String?,
+        val handle: String,
         val displayName: String,
         val avatarUrl: String?,
         val bio: String?,

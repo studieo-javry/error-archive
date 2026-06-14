@@ -43,6 +43,7 @@ class InternalUserContactController(
         return UserContactResponse(
             userId = user.id!!,
             email = user.email?.value,
+            handle = user.handle,
             displayName = user.displayName,
             status = user.status.name,
             active = user.status == UserStatus.ACTIVE,
@@ -52,6 +53,7 @@ class InternalUserContactController(
     data class UserContactResponse(
         val userId: Long,
         val email: String?,
+        val handle: String,
         val displayName: String,
         val status: String,
         val active: Boolean,

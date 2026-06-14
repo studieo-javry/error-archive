@@ -19,6 +19,7 @@ class UserSummaryReaderAdapter(
         return userJpa.findAllById(userIds).map {
             UserSummary(
                 userId = it.id!!,
+                handle = it.handle,
                 displayName = it.displayName,
                 avatarUrl = it.avatarUrl
             )

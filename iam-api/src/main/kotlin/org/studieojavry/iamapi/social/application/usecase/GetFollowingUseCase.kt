@@ -21,7 +21,7 @@ class GetFollowingUseCase(
         val byId = summaries.associateBy { it.userId }
         val ordered = ids.items.mapNotNull { byId[it] }
         return Page(
-            items = ordered.map { Item(it.userId, it.displayName, it.avatarUrl) },
+            items = ordered.map { Item(it.userId, it.handle, it.displayName, it.avatarUrl) },
             page = ids.page,
             size = ids.size,
             totalElements = ids.totalElements,
@@ -29,7 +29,7 @@ class GetFollowingUseCase(
         )
     }
 
-    data class Item(val userId: Long, val displayName: String, val avatarUrl: String?)
+    data class Item(val userId: Long, val handle: String, val displayName: String, val avatarUrl: String?)
     data class Page(
         val items: List<Item>,
         val page: Int,

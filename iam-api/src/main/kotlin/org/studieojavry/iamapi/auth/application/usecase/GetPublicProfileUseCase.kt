@@ -21,6 +21,7 @@ class GetPublicProfileUseCase(
             ?: throw NoSuchElementException("user not found: $userId")
         return Result(
             userId = user.id!!,
+            handle = user.handle,
             displayName = user.displayName,
             avatarUrl = user.avatarUrl,
             bio = user.bio,
@@ -31,6 +32,7 @@ class GetPublicProfileUseCase(
 
     data class Result(
         val userId: Long,
+        val handle: String,
         val displayName: String,
         val avatarUrl: String?,
         val bio: String?,

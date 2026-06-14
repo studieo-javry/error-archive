@@ -16,6 +16,7 @@ class GetMyProfileUseCase(
         return Result(
             userId = user.id!!,
             email = user.email?.value,
+            handle = user.handle,
             displayName = user.displayName,
             avatarUrl = user.avatarUrl,
             bio = user.bio,
@@ -32,6 +33,7 @@ class GetMyProfileUseCase(
     data class Result(
         val userId: Long,
         val email: String?,
+        val handle: String,
         val displayName: String,
         val avatarUrl: String?,
         val bio: String?,

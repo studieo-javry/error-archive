@@ -12,6 +12,7 @@ interface UserSummaryReaderPort {
 
     data class UserSummary(
         val userId: Long,
+        val handle: String,
         val displayName: String,
         val avatarUrl: String?
     )

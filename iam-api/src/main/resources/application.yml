@@ -22,7 +22,15 @@ spring:
 server:
   forward-headers-strategy: framework
 
+spring.servlet.multipart:
+  max-file-size: 6MB
+  max-request-size: 6MB
+
 iam:
+  avatar:
+    storage-path: ./var/avatars
+    public-base-url: http://localhost:8000/avatars
+    max-file-size-bytes: 5242880   # 5MB
   jwt:
     access-token-ttl-seconds: 900              # 15 min — 환경 무관
     remember-me-refresh-ttl-seconds: 2592000   # 30 days

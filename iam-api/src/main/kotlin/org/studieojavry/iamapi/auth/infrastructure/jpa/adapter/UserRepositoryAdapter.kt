@@ -25,4 +25,22 @@ class UserRepositoryAdapter(
         jpa.findByStatusAndPendingDeletionAtBeforeOrderByPendingDeletionAtAsc(
             UserStatus.PENDING_DELETION, threshold, PageRequest.of(0, limit)
         ).map { it.toDomain() }
+
+    override fun searchByDisplayNamePrefix(prefix: String, limit: Int): List<User> {
+        val cap = limit.coerceIn(1, 50)
+        val pageable = PageRequest.of(0, cap)
+        return if (prefix.isBlank()) {
+            jpa.findByStatusOrderByCreatedAtDesc(UserStatus.ACTIVE, pageable)
+        } else {
+            jpa.findByStatusAndDisplayNameStartingWithIgnoreCaseOrderByDisplayNameAsc(
+                UserStatus.ACTIVE, prefix, pageable
+            )
+        }.map { it.toDomain() }
+    }
+
+    override fun findActiveByDisplayName(displayName: String): List<User> =
+        jpa.findByStatusAndDisplayNameIgnoreCase(UserStatus.ACTIVE, displayName).map { it.toDomain() }
+
+    override fun findAllByIds(ids: Collection<Long>): List<User> =
+        if (ids.isEmpty()) emptyList() else jpa.findAllByIdIn(ids).map { it.toDomain() }
 }

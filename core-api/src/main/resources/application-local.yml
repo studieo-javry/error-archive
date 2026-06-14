@@ -30,6 +30,16 @@ spring:
     properties:
       hibernate.format_sql: true
 
+  kafka:
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: "1"
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
 logging:
   level:
     org.studieojavry: DEBUG
@@ -47,6 +57,13 @@ core:
     public-base-url: "http://localhost:8081/api/v1/error-attachments"
   iam-api:
     base-url: "http://localhost:8080"
+  noti-api:
+    base-url: "http://localhost:8082"
+
+# 알림 publisher 모드 — `kafka`(default) 또는 `http`(레거시 직접 호출)
+noti:
+  publisher:
+    mode: "${NOTI_PUBLISHER_MODE:kafka}"
 
 # 내부 서비스 인증.
 #  - verifier: 게이트웨이가 보낸 토큰(iss=gateway, aud=core-api) 검증.

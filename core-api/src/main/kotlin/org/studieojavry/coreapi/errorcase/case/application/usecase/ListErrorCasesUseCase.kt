@@ -45,6 +45,7 @@ class ListErrorCasesUseCase(
                 status = input.status,
                 severityCode = input.severity,
                 fingerprint = input.fingerprint,
+                visibility = null,
                 cursorCreatedAt = cursor?.first,
                 cursorId = cursor?.second,
                 limit = size + 1

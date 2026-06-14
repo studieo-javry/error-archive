@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Comment Tester · Error Archive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa; --bg-elev: #ffffff; --text: #18181b;
+    --muted: #71717a; --sub: #a1a1aa;
+    --line: #e4e4e7; --line-2: #f4f4f5;
+    --indigo: #4f46e5; --indigo-soft: #eef2ff; --indigo-text: #4338ca;
+    --rose: #f43f5e; --emerald: #10b981;
+    --radius: 12px;
+  }
+  .dark {
+    --bg: #18181b; --bg-elev: #27272a; --text: #e4e4e7;
+    --muted: #a1a1aa; --sub: #71717a; --line: #3f3f46; --line-2: #27272a;
+    --indigo: #818cf8; --indigo-soft: #1e1b4b; --indigo-text: #c7d2fe;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--text);
+               font:14px/1.5 "Inter", -apple-system, "Pretendard", sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px;
+          display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+  h1 { font: 600 22px/1 "Merriweather", serif; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--bg-elev); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--muted);
+                 margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+  input, textarea, select { width: 100%; background: var(--line-2);
+                            border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+                            font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--text);
+                            outline: none; resize: vertical; }
+  .dark input, .dark textarea, .dark select { background: var(--line); }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  button { font: inherit; cursor: pointer; padding: 7px 12px; border-radius: 8px;
+           border: 1px solid var(--line); background: var(--line-2); color: var(--text); }
+  button:hover { background: var(--line); }
+  button.primary { background: var(--indigo); color: white; border-color: var(--indigo); }
+  button.primary:hover { background: var(--indigo-text); }
+  button.danger { color: var(--rose); }
+  .comment { display: flex; gap: 12px; padding: 14px; border-radius: 10px;
+             border: 1px solid var(--line); margin-bottom: 10px; position: relative; }
+  .comment .ava { width: 36px; height: 36px; border-radius: 999px;
+                  background: linear-gradient(135deg, #c7d2fe, #a7f3d0);
+                  display: grid; place-items: center; color: white; font-weight: 600; flex-shrink: 0; }
+  .comment .meta { flex: 1; min-width: 0; }
+  .comment .author { font-size: 13px; font-weight: 500; }
+  .comment .when { font-size: 11px; color: var(--sub); margin-left: 6px; }
+  .comment .body { font-size: 13px; color: var(--text); margin-top: 4px;
+                   white-space: pre-wrap; word-break: break-word; }
+  .comment .body .mention { color: var(--indigo-text); background: var(--indigo-soft);
+                            padding: 1px 4px; border-radius: 4px; font-weight: 500; }
+  .comment .actions { display: flex; gap: 6px; margin-top: 6px; }
+  .comment .actions button { padding: 3px 8px; font-size: 11px; }
+  .empty { color: var(--sub); font-size: 12px; padding: 20px 0; text-align: center; font-style: italic; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .hint code { background: var(--line-2); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+  .composer textarea { min-height: 80px; }
+  .badge { background: var(--line); color: var(--muted); border-radius: 999px;
+           padding: 2px 8px; font-size: 11px; }
+
+  /* mention dropdown */
+  .mentionDD { position: absolute; z-index: 50; min-width: 220px;
+               background: var(--bg-elev); border: 1px solid var(--line);
+               border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.08);
+               padding: 4px; }
+  .mentionDD .item { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
+                     border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .mentionDD .item:hover, .mentionDD .item.active { background: var(--indigo-soft); }
+  .mentionDD .item .name { font-weight: 500; }
+  .mentionDD .item .badge { font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <main>
+    <h1>Comment Tester</h1>
+    <div class="sub">댓글 작성 · 멘션 자동완성 · 삭제까지 *gateway 경유* 로 검증. mention-inbox 와 짝.</div>
+
+    <div class="card">
+      <div class="field">
+        <label>Error Case ID</label>
+        <div class="row" style="margin:0;">
+          <input id="caseId" type="number" placeholder="예: 39" style="flex:1" />
+          <button id="loadBtn" class="primary">load comments</button>
+        </div>
+        <div class="hint">case ID 를 모르면 swagger 의 <code>GET /api/v1/error-cases</code> 로 목록 조회.</div>
+      </div>
+    </div>
+
+    <div class="card composer">
+      <div class="field">
+        <label>새 댓글 (@닉네임 입력 시 자동완성)</label>
+        <textarea id="newBody" placeholder="여기에 댓글을 입력. @한 글자 입력 시 멘션 후보가 뜹니다."></textarea>
+      </div>
+      <div class="row" style="justify-content: flex-end;">
+        <button id="postBtn" class="primary">post comment</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:13px;">Comments</strong>
+        <button id="refreshBtn">refresh</button>
+      </div>
+      <div id="list"><div class="empty">case 선택 후 load comments</div></div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:13px;">API creds</h3>
+      <div class="field">
+        <label>Gateway URL</label>
+        <input id="baseUrl" type="text" value="http://localhost:8000" />
+      </div>
+      <div class="field">
+        <label>Bearer JWT</label>
+        <textarea id="jwt" rows="4" placeholder="bash scripts/mint-jwt.sh user 4 USER"></textarea>
+      </div>
+      <div class="row">
+        <button id="saveCreds" style="flex:1">save</button>
+        <button id="themeBtn" style="flex:0 0 auto;padding:7px 10px">🌗</button>
+      </div>
+      <div class="hint">
+        creds 변경 후 save → reload.<br>
+        e2e: user 4 JWT 로 case 39 에 <code>@홍지인</code> 멘션 → mention-inbox 에서 user 3 (홍지인) JWT 로 refresh.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:13px;">호출되는 endpoint</h3>
+      <div class="hint">
+        <code>GET /error-cases/{id}/comments</code><br>
+        <code>POST /error-cases/{id}/comments</code><br>
+        <code>DELETE /error-cases/{id}/comments/{cid}</code><br>
+        <code>GET /error-cases/{id}/mention-candidates?q=</code>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const baseEl = $('#baseUrl'), jwtEl = $('#jwt'), caseEl = $('#caseId');
+  baseEl.value = localStorage.getItem('ct.baseUrl') || baseEl.value;
+  jwtEl.value = localStorage.getItem('ct.jwt') || localStorage.getItem('ia.jwt') || localStorage.getItem('mi.jwt') || '';
+  caseEl.value = localStorage.getItem('ct.caseId') || '';
+
+  function applyTheme(t) { document.body.classList.toggle('dark', t === 'DARK'); }
+  let theme = localStorage.getItem('ct.theme') || 'LIGHT';
+  applyTheme(theme);
+  $('#themeBtn').onclick = () => {
+    theme = document.body.classList.contains('dark') ? 'LIGHT' : 'DARK';
+    localStorage.setItem('ct.theme', theme); applyTheme(theme);
+  };
+
+  $('#saveCreds').onclick = () => {
+    localStorage.setItem('ct.baseUrl', baseEl.value.trim());
+    localStorage.setItem('ct.jwt', jwtEl.value.trim());
+  };
+
+  function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+  function ago(iso) {
+    if (!iso) return '';
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h/24)}d ago`;
+  }
+
+  async function api(method, path, body) {
+    const headers = { 'Accept':'application/json', 'Authorization':'Bearer ' + jwtEl.value.trim() };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(baseEl.value.trim().replace(/\/$/,'') + '/api/v1' + path, {
+      method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = ' ' + (await res.text()).slice(0, 200); } catch {}
+      throw new Error('HTTP ' + res.status + detail);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // load + render
+  // ──────────────────────────────────────────────────────────────────────────
+  async function loadComments() {
+    const cid = Number(caseEl.value);
+    if (!cid) return alert('case ID 를 입력하세요');
+    localStorage.setItem('ct.caseId', cid);
+    try {
+      const r = await api('GET', `/error-cases/${cid}/comments?sort=NEWEST&size=100`);
+      renderList(r.items || []);
+    } catch (e) {
+      $('#list').innerHTML = `<div class="empty">로드 실패: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // @ 앞이 *문자열 시작* 또는 *공백류* 일 때만 멘션으로 인정 — BE 의 MENTION_PATTERN 과 동일 규칙.
+  // (^|\s) 의 공백을 캡처해서 그대로 복원, @ 뒤만 span 처리.
+  function highlightMentions(text) {
+    return esc(text).replace(
+      /(^|\s)@([\w가-힣ㄱ-ㅎㅏ-ㅣ_-]{1,32})/g,
+      '$1<span class="mention">@$2</span>'
+    );
+  }
+
+  function renderList(items) {
+    if (!items.length) {
+      $('#list').innerHTML = '<div class="empty">댓글이 아직 없어요.</div>';
+      return;
+    }
+    $('#list').innerHTML = items.map(c => {
+      const initial = String(c.authorUserId || '?').slice(0,1);
+      const deleted = c.deletedAt != null;
+      const mentionCount = (c.mentions || []).length;
+      return `<div class="comment">
+        <div class="ava">${initial}</div>
+        <div class="meta">
+          <div>
+            <span class="author">user #${c.authorUserId}</span>
+            <span class="when">${ago(c.createdAt)}</span>
+            ${mentionCount ? `<span class="badge" style="margin-left:6px;">@${mentionCount}</span>` : ''}
+            ${deleted ? `<span class="badge" style="margin-left:6px;color:var(--rose);">deleted</span>` : ''}
+          </div>
+          <div class="body">${deleted ? '<i style="color:var(--sub);">(삭제됨)</i>' : highlightMentions(c.body || '')}</div>
+          ${!deleted ? `<div class="actions">
+            <button data-del="${c.id}" class="danger">delete</button>
+          </div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    [...document.querySelectorAll('[data-del]')].forEach(b => b.onclick = async () => {
+      if (!confirm('이 댓글을 삭제할까요?')) return;
+      try {
+        await api('DELETE', `/error-cases/${Number(caseEl.value)}/comments/${b.dataset.del}`);
+        loadComments();
+      } catch (e) { alert('삭제 실패: ' + e.message); }
+    });
+  }
+
+  $('#loadBtn').onclick = loadComments;
+  $('#refreshBtn').onclick = loadComments;
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // post comment
+  // ──────────────────────────────────────────────────────────────────────────
+  $('#postBtn').onclick = async () => {
+    const cid = Number(caseEl.value);
+    if (!cid) return alert('case ID 를 입력하세요');
+    const body = $('#newBody').value.trim();
+    if (!body) return alert('댓글 본문이 비어 있어요');
+    try {
+      await api('POST', `/error-cases/${cid}/comments`, { body });
+      $('#newBody').value = '';
+      loadComments();
+    } catch (e) { alert('실패: ' + e.message); }
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // mention autocomplete dropdown
+  // ──────────────────────────────────────────────────────────────────────────
+  let ddEl = null, ddItems = [], ddIdx = 0, ddRange = null;
+  const ta = $('#newBody');
+
+  function closeDD() { if (ddEl) { ddEl.remove(); ddEl = null; } ddItems = []; ddRange = null; }
+
+  function renderDD() {
+    if (!ddEl) return;
+    ddEl.innerHTML = ddItems.map((u, i) => `
+      <div class="item ${i === ddIdx ? 'active' : ''}" data-i="${i}">
+        <span class="name">@${esc(u.displayName)}</span>
+        <span class="badge">${esc(u.badge || '')}</span>
+      </div>`).join('');
+    [...ddEl.querySelectorAll('[data-i]')].forEach(el => el.onclick = () => applyMention(Number(el.dataset.i)));
+  }
+
+  function applyMention(i) {
+    const u = ddItems[i]; if (!u || ddRange == null) return;
+    const before = ta.value.slice(0, ddRange.start);
+    const after = ta.value.slice(ta.selectionEnd);
+    ta.value = before + '@' + u.displayName + ' ' + after;
+    const pos = (before + '@' + u.displayName + ' ').length;
+    ta.setSelectionRange(pos, pos);
+    ta.focus(); closeDD();
+  }
+
+  async function maybeOpenDD() {
+    const pos = ta.selectionStart;
+    const upto = ta.value.slice(0, pos);
+    const m = upto.match(/(^|\s)@([\w가-힣ㄱ-ㅎㅏ-ㅣ_-]{0,32})$/);
+    if (!m) return closeDD();
+    const q = m[2];
+    const cid = Number(caseEl.value);
+    if (!cid) return;
+    try {
+      const r = await api('GET', `/error-cases/${cid}/mention-candidates?q=${encodeURIComponent(q)}&limit=8`);
+      ddItems = r.items || r || [];
+      if (!ddItems.length) return closeDD();
+      ddIdx = 0;
+      ddRange = { start: pos - m[2].length - 1 };
+      if (!ddEl) {
+        ddEl = document.createElement('div');
+        ddEl.className = 'mentionDD';
+        document.body.appendChild(ddEl);
+      }
+      const rect = ta.getBoundingClientRect();
+      ddEl.style.left = (rect.left + 16) + 'px';
+      ddEl.style.top = (rect.bottom - 4 + window.scrollY) + 'px';
+      renderDD();
+    } catch { closeDD(); }
+  }
+
+  ta.addEventListener('input', maybeOpenDD);
+  ta.addEventListener('click', maybeOpenDD);
+  ta.addEventListener('keydown', e => {
+    if (!ddEl) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); ddIdx = (ddIdx + 1) % ddItems.length; renderDD(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); ddIdx = (ddIdx - 1 + ddItems.length) % ddItems.length; renderDD(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyMention(ddIdx); }
+    else if (e.key === 'Escape') { closeDD(); }
+  });
+  document.addEventListener('click', e => {
+    if (ddEl && !ddEl.contains(e.target) && e.target !== ta) closeDD();
+  });
+
+  // boot
+  if (caseEl.value) loadComments();
+</script>
+</body>
+</html>

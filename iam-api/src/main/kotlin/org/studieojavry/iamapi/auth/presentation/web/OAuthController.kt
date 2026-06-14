@@ -113,6 +113,7 @@ class OAuthController(
         val redirectTo = sanitizeReturnUrl(readReturnCookie(servletRequest))
         response.addHeader(HttpHeaders.SET_COOKIE, cookieFactory.expiredOAuthReturnCookie().toString())
 
+        val ctx = org.studieojavry.iamapi.auth.infrastructure.security.ClientContext.from(servletRequest)
         val result = socialLoginUseCase.invoke(
             SocialLoginCommand(
                 provider = SocialProvider.fromCode(provider),
@@ -120,7 +121,10 @@ class OAuthController(
                     code = request.code,
                     redirectUri = request.redirectUri
                 ),
-                rememberMe = request.rememberMe
+                rememberMe = request.rememberMe,
+                deviceLabel = ctx.deviceLabel,
+                userAgent = ctx.userAgent,
+                ipAddress = ctx.ipAddress,
             )
         )
 

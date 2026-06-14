@@ -50,6 +50,12 @@ class HeaderInjectionFilter(
     }
 
     private fun resolveAudience(uri: String): String = when {
+        // noti-api 가 *서버* 인 경로 — 우선순위 가장 높음 (users/me 의 일부라 iam-api 보다 먼저 매칭).
+        uri.startsWith("/api/v1/users/me/notification-settings") -> AUDIENCE_NOTI_API
+        uri.startsWith("/api/v1/users/me/notifications") -> AUDIENCE_NOTI_API
+        uri.startsWith("/api/v1/users/me/device-tokens") -> AUDIENCE_NOTI_API
+        // insight-api (잔디) — /me 또는 /{userId}/activity-grass
+        uri.contains("/activity-grass") -> AUDIENCE_INSIGHT_API
         // core-api 가 *서버* 인 모든 경로. 새 endpoint 추가 시 여기 갱신 필수
         // (안 그러면 aud=iam-api 로 토큰 발급되어 core-api 가 401 반환).
         uri.startsWith("/api/v1/error-cases") ||
@@ -62,5 +68,7 @@ class HeaderInjectionFilter(
     companion object {
         const val AUDIENCE_CORE_API = "core-api"
         const val AUDIENCE_IAM_API = "iam-api"
+        const val AUDIENCE_NOTI_API = "noti-api"
+        const val AUDIENCE_INSIGHT_API = "insight-api"
     }
 }

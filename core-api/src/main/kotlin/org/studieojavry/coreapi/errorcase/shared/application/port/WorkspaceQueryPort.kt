@@ -10,9 +10,19 @@ interface WorkspaceQueryPort {
      */
     fun getViewerRole(userId: Long, workspaceId: Long): WorkspaceRole?
 
+    /** 워크스페이스 멤버 목록 — 멘션 후보 풀에 활용. iam-api 다운/비멤버 시 빈 리스트. */
+    fun listMembers(workspaceId: Long): List<MemberSummary>
+
     data class WorkspaceSummary(
         val workpaceId: Long,
         val name: String
+    )
+
+    data class MemberSummary(
+        val userId: Long,
+        val displayName: String,
+        val avatarUrl: String?,
+        val role: String,
     )
 
     /**

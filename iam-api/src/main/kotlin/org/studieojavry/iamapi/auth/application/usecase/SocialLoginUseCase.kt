@@ -72,7 +72,10 @@ class SocialLoginUseCase(
         val tokens = issueTokens(
             userId = user.id!!,
             familyId = UUID.randomUUID(),
-            rememberMe = command.rememberMe
+            rememberMe = command.rememberMe,
+            deviceLabel = command.deviceLabel,
+            userAgent = command.userAgent,
+            ipAddress = command.ipAddress,
         )
         return Result(
             userId = user.id,
@@ -84,7 +87,14 @@ class SocialLoginUseCase(
         )
     }
 
-    private fun issueTokens(userId: Long, familyId: UUID, rememberMe: Boolean): IssuedTokens {
+    private fun issueTokens(
+        userId: Long,
+        familyId: UUID,
+        rememberMe: Boolean,
+        deviceLabel: String?,
+        userAgent: String?,
+        ipAddress: String?,
+    ): IssuedTokens {
         val now = Instant.now()
         val accessExpiresAt = now.plusSeconds(jwtProperties.accessTokenTtlSeconds)
         val refreshExpiresAt = now.plusSeconds(jwtProperties.refreshTtlSecondsFor(rememberMe))
@@ -98,7 +108,10 @@ class SocialLoginUseCase(
                 familyId = familyId,
                 tokenHash = HashUtils.sha256(refreshTokenRaw),
                 rememberMe = rememberMe,
-                expiresAt = refreshExpiresAt
+                expiresAt = refreshExpiresAt,
+                deviceLabel = deviceLabel,
+                userAgent = userAgent,
+                ipAddress = ipAddress,
             )
         )
         return IssuedTokens(accessToken, accessExpiresAt, refreshTokenRaw, refreshExpiresAt)

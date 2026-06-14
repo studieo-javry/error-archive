@@ -54,6 +54,7 @@ class ErrorCaseController(
     private val updateErrorCaseUseCase: UpdateErrorCaseUseCase,
     private val deleteErrorCaseUseCase: DeleteErrorCaseUseCase,
     private val listErrorCasesUseCase: ListErrorCasesUseCase,
+    private val searchPublicErrorCasesUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase,
     private val addErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase,
     private val removeErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase,
 ) {
@@ -196,6 +197,56 @@ class ErrorCaseController(
             items = result.items.map { ErrorCaseSummaryResponse.from(it) },
             nextCursor = result.nextCursor,
             hasNext = result.hasNext
+        )
+    }
+
+    @Operation(
+        summary = "공개 에러 케이스 검색 (cursor 무한스크롤)",
+        description = """
+            `visibility=PUBLIC` 인 모든 케이스를 cursor 기반으로 조회. 인증된 사용자라면 누구나.
+
+            **페이징** — `ListErrorCases` 와 동일: `cursor` 생략 = 첫 페이지, 응답의 `nextCursor` 를 다음 `cursor` 로.
+            `size` 기본 20, 상한 100. 정렬 `createdAt DESC, id DESC`.
+
+            **필터** (선택, 모두 AND, 향후 확장)
+            - `status` — `OPEN`/`IN_PROGRESS`/`RESOLVED` 등. 잘못된 값 → 400.
+            - `severity` — 1..4.
+            - `fingerprint` — 같은 지문 묶어보기.
+
+            **응답** — 본인 목록과 동일 schema(`ErrorCaseSummaryResponse`) — `tags`, `descriptionPreview` 포함.
+            `descriptionPreview` 의 마커(`@snippet(..)`/`@attach(..)`)는 `[code]`/`[file]` 로 치환된 max 120자.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "400", description = "잘못된 status 값", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @GetMapping("/search")
+    fun searchPublic(
+        @Parameter(description = "케이스 상태 (OPEN/IN_PROGRESS/RESOLVED 등)", example = "OPEN") @RequestParam(required = false) status: String?,
+        @Parameter(description = "심각도 코드 1(S1)~4(S4)", example = "2") @RequestParam(required = false) severity: Int?,
+        @Parameter(description = "fingerprint(SHA-256 hex)") @RequestParam(required = false) fingerprint: String?,
+        @Parameter(description = "다음 페이지 커서") @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)", example = "20") @RequestParam(required = false, defaultValue = "20") size: Int,
+    ): ErrorCaseListResponse {
+        val parsedStatus = status?.takeIf { it.isNotBlank() }?.let {
+            runCatching { ErrorCaseStatus.valueOf(it.uppercase()) }
+                .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid status: $status") }
+        }
+        val result = searchPublicErrorCasesUseCase.invoke(
+            org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase.Input(
+                status = parsedStatus,
+                severity = severity,
+                fingerprint = fingerprint,
+                cursor = cursor,
+                size = size,
+            )
+        )
+        return ErrorCaseListResponse(
+            items = result.items.map { ErrorCaseSummaryResponse.from(it) },
+            nextCursor = result.nextCursor,
+            hasNext = result.hasNext,
         )
     }
 

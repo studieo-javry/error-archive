@@ -50,15 +50,18 @@ class RefreshAccessTokenUseCase(
         stored.revoke(replacedByHash = newRefreshHash)
         refreshTokenRepository.save(stored)
 
-        refreshTokenRepository.save(
-            RefreshToken.issue(
-                userId = user.id!!,
-                familyId = stored.familyId,
-                tokenHash = newRefreshHash,
-                rememberMe = stored.rememberMe,
-                expiresAt = newRefreshExpiresAt
-            )
-        )
+        // rotation 시 디바이스 메타는 *처음 발급 시 값* 을 유지(컨텍스트 추적). 마지막 사용 시각은 now.
+        val newToken = RefreshToken.issue(
+            userId = user.id!!,
+            familyId = stored.familyId,
+            tokenHash = newRefreshHash,
+            rememberMe = stored.rememberMe,
+            expiresAt = newRefreshExpiresAt,
+            deviceLabel = stored.deviceLabel ?: command.deviceLabel,
+            userAgent = stored.userAgent ?: command.userAgent,
+            ipAddress = stored.ipAddress ?: command.ipAddress,
+        ).apply { touchLastUsed(now) }
+        refreshTokenRepository.save(newToken)
 
         val accessExpiresAt = now.plusSeconds(jwtProperties.accessTokenTtlSeconds)
         val accessToken = jwtIssuer.issueAccessToken(userId = user.id, expiresAt = accessExpiresAt)

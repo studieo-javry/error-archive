@@ -1,0 +1,1679 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Settings IA · /users/me 응답을 어떻게 화면에 풀까</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa; --bg-elev: #ffffff; --text: #18181b;
+    --muted: #71717a; --sub: #a1a1aa;
+    --line: #e4e4e7; --line-2: #f4f4f5;
+    --indigo: #4f46e5; --indigo-soft: #eef2ff; --indigo-text: #4338ca;
+    --emerald: #10b981; --emerald-soft: #d1fae5;
+    --rose: #f43f5e; --rose-soft: #ffe4e6;
+    --amber: #f59e0b; --amber-soft: #fef3c7;
+    --sky: #0ea5e9; --sky-soft: #e0f2fe;
+    --radius: 12px;
+  }
+  .dark {
+    --bg: #18181b; --bg-elev: #27272a; --text: #e4e4e7;
+    --muted: #a1a1aa; --sub: #71717a;
+    --line: #3f3f46; --line-2: #27272a;
+    --indigo: #818cf8; --indigo-soft: #1e1b4b; --indigo-text: #c7d2fe;
+    --emerald: #34d399; --emerald-soft: #064e3b;
+    --rose-soft: #4c0519; --amber-soft: #451a03; --sky-soft: #0c4a6e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+               font: 14px/1.5 "Inter", -apple-system, "Segoe UI", "Pretendard", sans-serif;
+               transition: background-color .3s, color .3s; }
+  .serif { font-family: "Merriweather", serif; }
+  button { font: inherit; cursor: pointer; }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* sidebar */
+  .sidebar { width: 80px; background: var(--bg-elev); border-right: 1px solid var(--line);
+             display: flex; flex-direction: column; align-items: center; padding: 32px 0; }
+  .brand { font: 700 24px/1 "Merriweather", serif; color: var(--emerald); margin-bottom: 40px; }
+  .nav { flex: 1; }
+  .navItem { width: 40px; height: 40px; border-radius: var(--radius); display: grid; place-items: center;
+             color: var(--indigo); background: var(--indigo-soft); }
+  .themeBtn { width: 40px; height: 40px; border-radius: var(--radius); border: none; background: transparent;
+              color: var(--sub); display: grid; place-items: center; }
+
+  .col { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  header.glass { position: sticky; top: 0; z-index: 10; padding: 12px 24px; display: flex;
+                 align-items: center; justify-content: space-between;
+                 background: rgba(255,255,255,.8); backdrop-filter: blur(12px);
+                 border-bottom: 1px solid rgba(0,0,0,.05); }
+  .dark header.glass { background: rgba(39,39,42,.4); border-bottom: 1px solid rgba(255,255,255,.05); }
+  header h1 { font: 600 14px/1 "Inter"; margin: 0; }
+  header h1 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+
+  main { flex: 1; overflow-y: auto; }
+
+  /* ───── settings layout: left sub-nav (240) + content ───── */
+  .settings { display: grid; grid-template-columns: 240px 1fr; max-width: 1200px; margin: 0 auto;
+              padding: 32px 28px 96px; gap: 32px; }
+  @media (max-width: 900px) { .settings { grid-template-columns: 1fr; } }
+
+  .pageHead { grid-column: 1 / -1; margin-bottom: 8px; }
+  .pageHead h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+  .pageHead .sub { color: var(--muted); font-size: 13px; max-width: 720px; }
+
+  /* sub-nav */
+  .subnav { position: sticky; top: 80px; align-self: start; }
+  .subnav .group { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+                   color: var(--sub); font-weight: 600; padding: 12px 12px 6px; }
+  .subnav a { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px;
+              color: var(--muted); font-size: 13px; font-weight: 500; transition: all .15s; text-decoration: none; }
+  .subnav a:hover { background: var(--line-2); color: var(--text); }
+  .subnav a.active { background: var(--indigo-soft); color: var(--indigo-text); }
+  .dark .subnav a:hover { background: var(--line); }
+  .subnav .ico { width: 16px; height: 16px; flex-shrink: 0; opacity: .8; }
+  .subnav a.active .ico { opacity: 1; }
+
+  /* legend (top of content) */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; padding: 12px 14px;
+            background: var(--line-2); border-radius: var(--radius); font-size: 11px; color: var(--muted); }
+  .dark .legend { background: var(--line); }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+                   font-size: 10px; font-weight: 600; letter-spacing: .3px; }
+
+  /* visibility/scope badges (also used inside sections) */
+  .badge.public  { background: var(--sky-soft);     color: #0369a1; }
+  .badge.private { background: var(--line-2);       color: var(--muted); }
+  .badge.danger  { background: var(--rose-soft);    color: #9f1239; }
+  .badge.instant { background: var(--emerald-soft); color: #047857; }
+  .badge.workspace { background: var(--amber-soft); color: #92400e; }
+  .badge.security { background: var(--indigo-soft); color: var(--indigo-text); }
+  .dark .badge.public   { color: #7dd3fc; }
+  .dark .badge.danger   { color: #fb7185; }
+  .dark .badge.instant  { color: #6ee7b7; }
+  .dark .badge.workspace{ color: #fbbf24; }
+  .dark .badge.private  { background: var(--line); }
+
+  /* content */
+  .content { min-width: 0; }
+  section.block { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius);
+                  padding: 24px; margin-bottom: 18px; scroll-margin-top: 100px; }
+  section.block .secHead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
+  section.block h2 { margin: 0; font: 600 16px/1.4 "Inter"; }
+  section.block .secDesc { color: var(--muted); font-size: 12px; margin: 6px 0 18px; line-height: 1.55; }
+  section.block .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; flex-shrink: 0; }
+
+  /* danger variant */
+  section.block.danger-zone { border-color: rgba(244,63,94,.3); }
+  section.block.danger-zone h2 { color: var(--rose); }
+
+  /* row layout — two col content vs preview */
+  .twoCol { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
+  @media (max-width: 880px) { .twoCol { grid-template-columns: 1fr; } }
+
+  /* form fields */
+  .field { margin-bottom: 16px; }
+  .field label.fieldLabel { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+                            margin-bottom: 6px; font-weight: 500; }
+  .field .hint { font-size: 11px; color: var(--sub); margin-top: 4px; }
+  .field .ro { padding: 8px 0; color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+               border-bottom: 1px dashed var(--line); }
+  .raw-input { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--line);
+               padding: 8px 0; color: var(--text); outline: none; font: inherit; transition: border-color .2s; }
+  .raw-input:focus { border-bottom-color: var(--emerald); }
+  .raw-textarea { width: 100%; background: transparent; border: none; border-left: 2px solid var(--line);
+                  padding: 8px 0 8px 14px; color: var(--muted); outline: none; resize: vertical;
+                  min-height: 60px; font: inherit; transition: border-color .2s, color .2s; }
+  .raw-textarea:focus { border-left-color: var(--emerald); color: var(--text); }
+
+  /* save bar */
+  .saveBar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px;
+             padding-top: 16px; border-top: 1px solid var(--line); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius);
+         font-size: 13px; font-weight: 500; border: 1px solid transparent; transition: all .15s; }
+  .btn.primary { background: var(--indigo); color: white; }
+  .btn.primary:hover { background: var(--indigo-text); }
+  .btn.secondary { background: var(--line-2); color: var(--text); border-color: var(--line); }
+  .dark .btn.secondary { background: var(--line); }
+  .btn.danger { background: var(--rose); color: white; }
+  .btn.ghost { background: transparent; color: var(--muted); border-color: var(--line); }
+  .btn.ghost:hover { color: var(--text); background: var(--line-2); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; }
+
+  /* preview card (used on Profile section) — sticky + 다중 컨텍스트 */
+  .preview { background: var(--line-2); border: 1px dashed var(--line); border-radius: var(--radius);
+             padding: 16px; position: sticky; top: 100px; }
+  .dark .preview { background: var(--line); }
+  .preview .lbl { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase;
+                  letter-spacing: 1.5px; margin-bottom: 12px; }
+  .preview .sublbl { font-size: 9px; color: var(--sub); text-transform: uppercase; letter-spacing: 1.5px;
+                     margin: 14px 0 6px; font-weight: 600; }
+  .preview .sublbl:first-child { margin-top: 0; }
+
+  /* 1) 프로필 카드 (기존) */
+  .miniCard { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px;
+              background: var(--bg-elev); border-radius: 8px; border: 1px solid var(--line); }
+  .dark .miniCard { border-color: rgba(255,255,255,.06); }
+  .miniAvatar { width: 44px; height: 44px; border-radius: 999px; flex-shrink: 0;
+                background: linear-gradient(135deg, #c7d2fe, #a7f3d0); display: grid; place-items: center;
+                font: 600 15px/1 "Merriweather", serif; color: white; overflow: hidden; }
+  .miniAvatar img { width: 100%; height: 100%; object-fit: cover; }
+  .miniName { font-weight: 600; font-size: 13px; }
+  .miniBio { color: var(--muted); font-size: 11px; margin-top: 3px; line-height: 1.5;
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+             word-break: break-word; }
+
+  /* 2) 댓글 row */
+  .pvComment { display: flex; gap: 10px; padding: 10px 12px;
+               background: var(--bg-elev); border-radius: 8px; border: 1px solid var(--line); }
+  .dark .pvComment { border-color: rgba(255,255,255,.06); }
+  .pvComment .miniAvatar { width: 28px; height: 28px; font-size: 10px; }
+  .pvComment .cmtMeta { font-size: 11px; }
+  .pvComment .cmtName { font-weight: 600; color: var(--text); }
+  .pvComment .cmtWhen { color: var(--sub); margin-left: 6px; }
+  .pvComment .cmtBody { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.5; }
+
+  /* 3) 멘션 칩 */
+  .pvMention { display: flex; gap: 6px; align-items: center; padding: 8px 12px;
+               background: var(--bg-elev); border-radius: 8px; border: 1px solid var(--line);
+               font-size: 11px; color: var(--muted); }
+  .dark .pvMention { border-color: rgba(255,255,255,.06); }
+  .pvMention .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+                     background: var(--indigo-soft); color: var(--indigo-text); border-radius: 999px;
+                     font-weight: 600; font-size: 11px; }
+
+  /* 4) 검색 결과 row */
+  .pvSearch { display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+              background: var(--bg-elev); border-radius: 8px; border: 1px solid var(--line); }
+  .dark .pvSearch { border-color: rgba(255,255,255,.06); }
+  .pvSearch .miniAvatar { width: 32px; height: 32px; font-size: 11px; }
+  .pvSearch .srMeta { flex: 1; min-width: 0; }
+  .pvSearch .srName { font-weight: 600; font-size: 12px; }
+  .pvSearch .srEmail { color: var(--sub); font-size: 10px; font-family: ui-monospace, Menlo, monospace; margin-top: 2px;
+                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  @media (max-width: 880px) {
+    .preview { position: static; }
+  }
+
+  /* avatar editor */
+  .avatarEditor { display: flex; align-items: center; gap: 16px; padding: 4px 0; }
+  .avatarEditor__view { width: 72px; height: 72px; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+                        background: linear-gradient(135deg, #c7d2fe, #a7f3d0);
+                        display: grid; place-items: center;
+                        font: 600 22px/1 "Merriweather", serif; color: white;
+                        border: 1px solid var(--line); }
+  .avatarEditor__view img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .avatarEditor__actions { display: flex; gap: 8px; }
+
+  /* advanced details (URL escape hatch) */
+  details.advanced { margin-top: 12px; padding: 10px 12px; background: var(--line-2); border-radius: 8px;
+                     font-size: 11px; }
+  .dark details.advanced { background: var(--line); }
+  details.advanced summary { cursor: pointer; color: var(--muted); user-select: none; font-weight: 500; }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced[open] summary::before { content: "▾ "; }
+  details.advanced:not([open]) summary::before { content: "▸ "; }
+  details.advanced .raw-input { margin-top: 8px; }
+  details.advanced .hint { margin-top: 6px; }
+
+  /* segmented (theme) */
+  .segmented { display: inline-flex; padding: 3px; background: var(--line-2); border-radius: 10px; gap: 2px; }
+  .dark .segmented { background: var(--line); }
+  .segmented button { padding: 8px 16px; border-radius: 8px; border: none; background: transparent;
+                      color: var(--muted); font-size: 12px; font-weight: 500; }
+  .segmented button.active { background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .dark .segmented button.active { background: #3f3f46; }
+
+  /* selects */
+  .select { width: 100%; background: transparent; border: 1px solid var(--line); border-radius: var(--radius);
+            padding: 8px 12px; color: var(--text); font: inherit; outline: none; }
+  .select:focus { border-color: var(--emerald); }
+
+  /* toggle switch — iOS style */
+  .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .toggle input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .toggle .track { position: absolute; inset: 0; background: var(--line); border-radius: 999px;
+                   transition: background .15s; }
+  .toggle .thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px;
+                   background: white; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .18s ease; }
+  .toggle input:checked ~ .track { background: var(--emerald); }
+  .toggle input:checked ~ .thumb { transform: translateX(16px); }
+  .toggle input:disabled ~ .track { opacity: .4; }
+
+  /* toggle row (in Notifications) */
+  .togRow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0;
+            border-bottom: 1px solid var(--line); }
+  .togRow:last-child { border-bottom: none; }
+  .togRow .info { flex: 1; min-width: 0; padding-right: 16px; }
+  .togRow .info .t { font-size: 13px; font-weight: 500; }
+  .togRow .info .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .togGroup { padding: 12px 0; border-bottom: 1px dashed var(--line); }
+  .togGroup:last-of-type { border-bottom: none; }
+  .togGroup h3 { font: 600 12px/1.3 "Inter"; margin: 0 0 4px; color: var(--text);
+                 display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .togGroup .note { font-size: 11px; color: var(--muted); margin: 0 0 10px; }
+  .masterRow { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+               background: var(--line-2); border-radius: var(--radius); margin-bottom: 12px; }
+  .dark .masterRow { background: var(--line); }
+
+  /* session row */
+  .sessRow { display: flex; align-items: center; gap: 14px; padding: 14px 0;
+             border-bottom: 1px solid var(--line); }
+  .sessRow:last-child { border-bottom: none; }
+  .sessRow .devIcon { width: 40px; height: 40px; border-radius: var(--radius); background: var(--line-2);
+                      display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }
+  .dark .sessRow .devIcon { background: var(--line); }
+  .sessRow .devIcon.suspect { background: var(--rose-soft); color: #9f1239; }
+  .dark .sessRow .devIcon.suspect { color: #fb7185; }
+  .sessRow .meta { flex: 1; min-width: 0; }
+  .sessRow .nm { font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .sessRow .ds { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .sessRow .actions { flex-shrink: 0; }
+
+  /* last sign-in highlight */
+  .lastSignin { display: flex; gap: 12px; align-items: center; padding: 14px 16px;
+                background: var(--indigo-soft); color: var(--indigo-text); border-radius: var(--radius);
+                margin-bottom: 16px; font-size: 12px; }
+  .lastSignin .ico { width: 18px; height: 18px; flex-shrink: 0; }
+  .lastSignin .when { font-weight: 600; }
+
+  /* 2FA notice */
+  .infoNotice { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--line);
+                border-radius: var(--radius); font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .infoNotice .ico { width: 18px; height: 18px; color: var(--emerald); flex-shrink: 0; }
+
+  /* connection group */
+  .connGroup { padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .connGroup:last-of-type { border-bottom: none; }
+  .connGroupTitle { font: 600 11px/1.3 "Inter"; margin: 0 0 4px; color: var(--muted);
+                    text-transform: uppercase; letter-spacing: 1.5px;
+                    display: flex; align-items: center; gap: 4px; }
+
+  /* connection row */
+  .connRow { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .connRow:last-child { border-bottom: none; }
+  .connRow .pi { width: 40px; height: 40px; border-radius: var(--radius); background: var(--line-2);
+                 display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .dark .connRow .pi { background: var(--line); }
+  /* provider brand swatches */
+  .connRow .pi--gh     { background: #18181b; color: white; }
+  .dark .connRow .pi--gh { background: #0d1117; }
+  .connRow .pi--google { background: white; border: 1px solid var(--line); }
+  .dark .connRow .pi--google { background: #1a1a1a; border-color: var(--line); }
+  .connRow .pi--apple  { background: #000; color: white; }
+
+  .connRow .meta { flex: 1; min-width: 0; }
+  .connRow .nm { font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .connRow .wn { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Coming soon row — visually dim, but still legible */
+  .connRow--soon { opacity: .62; }
+  .connRow--soon .pi { filter: grayscale(.7); }
+  .connRow--soon:hover { opacity: .8; }
+  .badge.soonBadge { font-size: 10px; font-style: italic; }
+
+  .connectMore { margin-top: 14px; padding: 12px; border: 1px dashed var(--line); border-radius: var(--radius);
+                 display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+
+  /* danger row */
+  .dzRow { display: flex; align-items: center; justify-content: space-between; padding: 14px 0;
+           border-bottom: 1px solid var(--line); }
+  .dzRow:last-child { border-bottom: none; padding-bottom: 0; }
+  .dzRow .info .t { font-weight: 500; font-size: 13px; }
+  .dzRow .info .d { font-size: 12px; color: var(--muted); margin-top: 4px; max-width: 540px; line-height: 1.5; }
+
+  /* sub-section divider inside a block */
+  .subSec { padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .subSec:last-of-type { border-bottom: none; }
+  .subSec h3 { font: 500 13px/1.3 "Inter"; margin: 0 0 8px; color: var(--text);
+               display: flex; align-items: center; gap: 8px; }
+  .subSec p.note { font-size: 11px; color: var(--muted); margin: 0 0 12px; }
+
+  /* creds panel (sidebar bottom) */
+  .creds { padding: 12px; border-top: 1px solid var(--line); width: 100%; margin-top: 8px; }
+  .creds details summary { font-size: 10px; color: var(--muted); cursor: pointer; user-select: none;
+                           list-style: none; text-transform: uppercase; letter-spacing: 1px; }
+  .creds details summary::-webkit-details-marker { display: none; }
+  .creds input, .creds textarea { width: 100%; margin-top: 8px; background: var(--line-2); border: 1px solid var(--line);
+                                  border-radius: 6px; padding: 6px 8px; font: 11px/1.4 ui-monospace, Menlo, monospace;
+                                  color: var(--text); outline: none; resize: vertical; }
+  .dark .creds input, .dark .creds textarea { background: var(--line); }
+  .creds .row { display: flex; gap: 6px; margin-top: 6px; }
+  .creds .row button { flex: 1; padding: 5px; font-size: 11px; border-radius: 6px; border: 1px solid var(--line);
+                       background: transparent; color: var(--text); cursor: pointer; }
+
+  /* top status banner */
+  .topBanner { padding: 14px 16px; border-radius: var(--radius); display: flex; gap: 12px; align-items: flex-start;
+               margin-bottom: 20px; font-size: 13px; line-height: 1.5; }
+  .topBanner.warn { background: var(--amber-soft); color: #92400e; border: 1px solid rgba(245,158,11,.25); }
+  .dark .topBanner.warn { color: #fcd34d; }
+  .topBanner.danger { background: var(--rose-soft); color: #9f1239; border: 1px solid rgba(244,63,94,.25); }
+  .dark .topBanner.danger { color: #fda4af; }
+  .topBanner.err { background: var(--rose-soft); color: #9f1239; border: 1px solid rgba(244,63,94,.4); }
+  .topBanner h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+
+  /* timezone modal */
+  .tzBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none;
+                align-items: center; justify-content: center; z-index: 200; opacity: 0;
+                transition: opacity .18s ease; }
+  .tzBackdrop.show { display: flex; opacity: 1; }
+  .tzModal { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius);
+             padding: 28px; max-width: 440px; width: calc(100% - 40px);
+             box-shadow: 0 20px 60px rgba(0,0,0,.3); transform: translateY(8px);
+             transition: transform .22s cubic-bezier(.4,0,.2,1); }
+  .tzBackdrop.show .tzModal { transform: translateY(0); }
+  .tzModal .tzHead { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .tzModal .tzHead .icoWrap { width: 36px; height: 36px; border-radius: 10px; background: var(--indigo-soft);
+                              color: var(--indigo); display: grid; place-items: center; flex-shrink: 0; }
+  .tzModal h2 { margin: 0; font: 600 16px/1.3 "Inter"; }
+  .tzModal .tzDesc { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 4px 0 18px; }
+  .tzModal .tzPreview { background: var(--line-2); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+                       font-size: 13px; }
+  .dark .tzModal .tzPreview { background: var(--line); }
+  .tzModal .tzPreview .tzVal { font-family: ui-monospace, Menlo, monospace; color: var(--text); font-weight: 600; }
+  .tzModal .tzPreview .tzWhen { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .tzModal .tzActions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .tzModal .tzActions .btn.ghost.minor { padding: 8px 10px; font-size: 12px; }
+
+  /* toast */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); opacity: 0;
+           background: var(--bg-elev); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+           padding: 10px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+           transition: opacity .2s, transform .2s; pointer-events: none; z-index: 100; max-width: 380px; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-color: rgba(244,63,94,.5); }
+  #toast.ok { border-color: rgba(16,185,129,.5); }
+
+  /* skeleton */
+  .skeleton-row { color: var(--sub); font-size: 12px; padding: 12px 0; font-style: italic; }
+
+  /* IA explainer accordion at top */
+  details.explainer { background: var(--indigo-soft); color: var(--indigo-text); border-radius: var(--radius);
+                      padding: 12px 16px; margin-bottom: 18px; font-size: 12px; line-height: 1.6; }
+  details.explainer summary { cursor: pointer; font-weight: 600; user-select: none; }
+  details.explainer summary::-webkit-details-marker { display: none; }
+  details.explainer table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 11px; }
+  details.explainer th, details.explainer td { text-align: left; padding: 6px 8px;
+                                                border-bottom: 1px solid rgba(0,0,0,.05); vertical-align: top; }
+  .dark details.explainer th, .dark details.explainer td { border-bottom-color: rgba(255,255,255,.06); }
+  details.explainer code { background: rgba(255,255,255,.4); padding: 1px 6px; border-radius: 4px; }
+  .dark details.explainer code { background: rgba(255,255,255,.06); }
+
+  .icon { width: 16px; height: 16px; stroke-width: 1.6; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <nav class="sidebar">
+    <div class="brand">E</div>
+    <div class="nav"><div class="navItem"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1.1z"/></svg></div></div>
+    <button id="themeBtn" class="themeBtn">
+      <svg id="iconMoon" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      <svg id="iconSun" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="display:none"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <div class="creds">
+      <details>
+        <summary>API creds</summary>
+        <input id="baseUrl" type="text" placeholder="http://localhost:8000" />
+        <textarea id="jwt" rows="3" placeholder="Bearer JWT..."></textarea>
+        <div class="row">
+          <button id="saveCreds">save</button>
+          <button id="reloadBtn">reload</button>
+        </div>
+      </details>
+    </div>
+  </nav>
+
+  <div class="col">
+    <header class="glass">
+      <h1>Settings IA <small>· /users/me 응답 11필드 + connections 를 어떻게 그룹화할지</small></h1>
+    </header>
+
+    <main>
+      <div class="settings">
+
+        <div class="pageHead">
+          <h1 class="serif">Settings</h1>
+          <div class="sub">
+            응답 필드를 4가지 축 — <b>누구에게 보이는가</b>, <b>되돌릴 수 있는가</b>, <b>언제 반영되는가</b>, <b>맥락이 무엇인가</b> 으로 나눠서 5개 섹션으로 묶었습니다. 좌측 sub-nav 에서 이동.
+          </div>
+
+          <details class="explainer" style="margin-top:16px;">
+            <summary>왜 이렇게 나눴나 — 4축 분리 표 ▾</summary>
+            <table>
+              <tr><th>섹션</th><th>필드</th><th>핵심 축</th></tr>
+              <tr><td>Profile</td><td>displayName, avatar (이미지), bio</td><td><span class="badge public">Public</span> 남이 보는 정보 → "다른 사람이 보는 모습" 미리보기와 함께</td></tr>
+              <tr><td>Account</td><td>email(읽기), status, pendingDeletionAt</td><td><span class="badge private">Private</span> 본인만 + <span class="badge danger">Danger</span> 탈퇴/복구는 위험한 액션이라 분리</td></tr>
+              <tr><td>Preferences</td><td>language, timezone, theme</td><td><span class="badge instant">Instant</span> 본인 UI 에만 즉시 영향. theme 은 *지금 페이지가* 즉시 바뀜</td></tr>
+              <tr><td>Workspace</td><td>defaultWorkspaceId</td><td><span class="badge workspace">Context</span> 워크스페이스 라는 다른 맥락 — 별도</td></tr>
+              <tr><td>Notifications</td><td>(신규) 이메일/인앱 채널 × 카테고리별 on/off</td><td><span class="badge private">Private</span> 본인만. Preferences 와 분리한 이유: *외부 발송* 이라 별도 검토 필요</td></tr>
+              <tr><td>Sessions</td><td>(신규) refresh token 단위 — 디바이스/위치/마지막 활동 + revoke</td><td><span class="badge security">Security</span> 의심스러운 로그인 탐지 + sign-out everywhere 액션 허브</td></tr>
+              <tr><td>Connections</td><td>(별도 API) OAuth identity 목록</td><td><span class="badge security">Security</span> 보안 관련 — Account 와 헷갈리기 쉬워 분리</td></tr>
+            </table>
+            <div style="margin-top:8px;">
+              핵심 원칙: <b>"한 카드 안에는 한 종류의 위험·한 종류의 가시성"</b>. 예) 본인만 보는 환경설정(theme) 과 남에게 보이는 displayName 을 같은 폼에 두면, 사용자가 *공개 범위* 를 헷갈림.
+            </div>
+          </details>
+        </div>
+
+        <!-- ─────── LEFT: sub-nav ─────── -->
+        <aside class="subnav">
+          <div class="group">My account</div>
+          <a href="#profile" class="active">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21a8 8 0 0116 0"/></svg>
+            Profile
+          </a>
+          <a href="#account">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path stroke-linecap="round" d="M3 9h18"/></svg>
+            Account
+          </a>
+
+          <div class="group">App</div>
+          <a href="#preferences">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12h12m0 0l-4-4m4 4l-4 4M21 4v16"/></svg>
+            Preferences
+          </a>
+          <a href="#notifications">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0"/></svg>
+            Notifications
+          </a>
+          <a href="#workspace">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Workspace
+          </a>
+
+          <div class="group">Security</div>
+          <a href="#sessions">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path stroke-linecap="round" d="M8 21h8M12 17v4"/></svg>
+            Sessions
+          </a>
+          <a href="#connections">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14a5 5 0 007.1 0l3-3a5 5 0 00-7.1-7.1l-1.5 1.5M14 10a5 5 0 00-7.1 0l-3 3a5 5 0 007.1 7.1l1.5-1.5"/></svg>
+            Connections
+          </a>
+
+          <div class="group">Danger</div>
+          <a href="#danger">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            Delete account
+          </a>
+        </aside>
+
+        <!-- ─────── RIGHT: content ─────── -->
+        <div class="content">
+
+          <!-- status banner (PENDING_DELETION / SUSPENDED) — JS 가 채움 -->
+          <div id="statusBanner"></div>
+
+          <!-- legend -->
+          <div class="legend">
+            <span class="item">의미: </span>
+            <span class="item"><span class="badge public">Public</span> 다른 사용자도 봄</span>
+            <span class="item"><span class="badge private">Private</span> 본인만</span>
+            <span class="item"><span class="badge instant">Instant</span> 즉시 반영</span>
+            <span class="item"><span class="badge workspace">Context</span> 워크스페이스 범위</span>
+            <span class="item"><span class="badge security">Security</span> 보안 관련</span>
+            <span class="item"><span class="badge danger">Danger</span> 되돌리기 어려움</span>
+          </div>
+
+          <!-- 1. PROFILE — public identity -->
+          <section class="block" id="profile">
+            <div class="secHead">
+              <div>
+                <h2>Profile</h2>
+                <div class="secDesc">다른 사용자가 볼 수 있는 정보. 우측 카드는 *그들에게 어떻게 보이는지* 의 실시간 미리보기입니다.</div>
+              </div>
+              <div class="badges"><span class="badge public">Public</span></div>
+            </div>
+
+            <div class="twoCol">
+              <div>
+                <div class="field">
+                  <label class="fieldLabel">Avatar</label>
+                  <div class="avatarEditor">
+                    <div class="avatarEditor__view" id="pf_avatarView">
+                      <img id="pf_avatarImg" src="https://i.pravatar.cc/200?img=33" alt="">
+                    </div>
+                    <div class="avatarEditor__actions">
+                      <label class="btn secondary sm" for="pf_avatarFile" style="cursor:pointer;">Upload new</label>
+                      <input id="pf_avatarFile" type="file" accept="image/*" style="display:none;" />
+                      <button class="btn ghost sm" id="pf_avatarRemove" type="button">Remove</button>
+                    </div>
+                  </div>
+                  <div class="hint">PNG/JPEG/WebP/GIF, ≤5MB. Upload 즉시 <code>POST /users/me/avatar</code> 발사. Remove 는 <code>DELETE /users/me/avatar</code>.</div>
+                  <details class="advanced">
+                    <summary>Advanced — set avatar by URL</summary>
+                    <input id="pf_avatar" class="raw-input" type="text" value="https://i.pravatar.cc/200?img=33" placeholder="https://..." />
+                    <div class="hint">자체 호스팅한 이미지 URL 을 직접 지정. 일반 사용자는 위의 Upload 사용.</div>
+                  </details>
+                </div>
+
+                <div class="field">
+                  <label class="fieldLabel">Display name</label>
+                  <input id="pf_name" class="raw-input" type="text" value="FloralLife" maxlength="100" />
+                  <div class="hint">1~100자. 멘션·검색 결과·댓글 아바타 옆에 표시됨.</div>
+                </div>
+                <div class="field">
+                  <label class="fieldLabel">Bio</label>
+                  <textarea id="pf_bio" class="raw-textarea" maxlength="280">building error-archive · ocard9611@gmail.com</textarea>
+                  <div class="hint">≤280자. 마크다운 X, 줄바꿈 보존.</div>
+                </div>
+              </div>
+
+              <div>
+                <div class="preview">
+                  <span class="lbl">남이 보는 모습</span>
+
+                  <div class="sublbl">▸ Profile card</div>
+                  <div class="miniCard">
+                    <div class="miniAvatar" id="pv_avatar"><img id="pv_avatarImg" src="https://i.pravatar.cc/200?img=33" alt=""></div>
+                    <div style="flex:1;min-width:0;">
+                      <div class="miniName" id="pv_name">FloralLife</div>
+                      <div class="miniBio" id="pv_bio">building error-archive · ocard9611@gmail.com</div>
+                    </div>
+                  </div>
+
+                  <div class="sublbl">▸ Comment row</div>
+                  <div class="pvComment">
+                    <div class="miniAvatar" id="pv_cmtAvatar">··</div>
+                    <div style="flex:1;min-width:0;">
+                      <div class="cmtMeta">
+                        <span class="cmtName" id="pv_cmtName">—</span>
+                        <span class="cmtWhen">· 3h ago</span>
+                      </div>
+                      <div class="cmtBody">이렇게 바꿔보면 어떨까요. cleanup 함수를 useEffect 에 추가하면 메모리 누수가 해소될 것 같습니다.</div>
+                    </div>
+                  </div>
+
+                  <div class="sublbl">▸ Mention chip</div>
+                  <div class="pvMention">
+                    <span class="chip" id="pv_mention">@—</span>
+                    님이 언급되었습니다
+                  </div>
+
+                  <div class="sublbl">▸ Search result</div>
+                  <div class="pvSearch">
+                    <div class="miniAvatar" id="pv_srAvatar">··</div>
+                    <div class="srMeta">
+                      <div class="srName" id="pv_srName">—</div>
+                      <div class="srEmail" id="pv_srEmail">—</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="saveBar">
+              <button class="btn ghost" id="resetProfile">Discard</button>
+              <button class="btn primary" id="saveProfile">Save profile</button>
+            </div>
+          </section>
+
+          <!-- 2. PREFERENCES — instant feedback -->
+          <section class="block" id="preferences">
+            <div class="secHead">
+              <div>
+                <h2>Preferences</h2>
+                <div class="secDesc">본인 UI 에만 영향. theme 은 *지금 페이지가* 즉시 바뀝니다 (서버 저장은 Save 후).</div>
+              </div>
+              <div class="badges"><span class="badge private">Private</span><span class="badge instant">Instant</span></div>
+            </div>
+
+            <div class="subSec">
+              <h3>Appearance</h3>
+              <div class="field">
+                <label class="fieldLabel">Theme</label>
+                <div class="segmented" id="themeSeg">
+                  <button data-theme="LIGHT" class="active">Light</button>
+                  <button data-theme="DARK">Dark</button>
+                  <button data-theme="SYSTEM">System</button>
+                </div>
+                <div class="hint">SYSTEM 은 OS 설정 따름. 선택 즉시 페이지에 반영.</div>
+              </div>
+            </div>
+
+            <div class="subSec">
+              <h3>Language &amp; Region</h3>
+              <p class="note">날짜·숫자·메일 템플릿 등의 로컬라이즈에 사용. 비우면 서버 기본.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="field">
+                  <label class="fieldLabel">Language <span class="hint" style="font-weight:400;">(BCP 47)</span></label>
+                  <select class="select" id="pref_lang">
+                    <option value="ko">한국어 (ko)</option>
+                    <option value="en" disabled>English (en) · Coming soon</option>
+                  </select>
+                  <div class="hint">현재 한국어만 지원. 영어는 추후 도입 예정.</div>
+                </div>
+                <div class="field">
+                  <label class="fieldLabel">Timezone <span class="hint" style="font-weight:400;">(IANA)</span></label>
+                  <select class="select" id="pref_tz">
+                    <option value="">Use system (브라우저 자동 감지)</option>
+                    <optgroup label="자주 쓰는">
+                      <option value="Asia/Seoul">Asia/Seoul (KST · UTC+9)</option>
+                      <option value="UTC">UTC</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo (JST · UTC+9)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (PT)</option>
+                      <option value="America/New_York">America/New_York (ET)</option>
+                      <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    </optgroup>
+                    <optgroup label="아시아 / 태평양">
+                      <option value="Asia/Shanghai">Asia/Shanghai</option>
+                      <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+                      <option value="Asia/Singapore">Asia/Singapore</option>
+                      <option value="Asia/Kolkata">Asia/Kolkata</option>
+                      <option value="Asia/Dubai">Asia/Dubai</option>
+                      <option value="Australia/Sydney">Australia/Sydney</option>
+                      <option value="Pacific/Auckland">Pacific/Auckland</option>
+                    </optgroup>
+                    <optgroup label="유럽 / 아프리카">
+                      <option value="Europe/Paris">Europe/Paris</option>
+                      <option value="Europe/Berlin">Europe/Berlin</option>
+                      <option value="Europe/Moscow">Europe/Moscow</option>
+                      <option value="Africa/Cairo">Africa/Cairo</option>
+                    </optgroup>
+                    <optgroup label="아메리카">
+                      <option value="America/Chicago">America/Chicago (CT)</option>
+                      <option value="America/Denver">America/Denver (MT)</option>
+                      <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                    </optgroup>
+                  </select>
+                  <div class="hint">시각 표시(Member since · Sessions 등) 가 즉시 이 timezone 으로 미리보기. Save 누르면 영구 적용.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="saveBar">
+              <button class="btn ghost" id="resetPrefs">Discard</button>
+              <button class="btn primary" id="savePrefs">Save preferences</button>
+            </div>
+          </section>
+
+          <!-- NEW. NOTIFICATIONS — channels × categories -->
+          <section class="block" id="notifications">
+            <div class="secHead">
+              <div>
+                <h2>Notifications</h2>
+                <div class="secDesc">받을 알림 종류와 채널 선택. *외부 발송* 이라 Preferences 와 분리 — 잘못 켜면 메일함이 쌓일 수 있어 별도 검토 자리.</div>
+              </div>
+              <div class="badges"><span class="badge private">Private</span></div>
+            </div>
+
+            <!-- Master switch — 전부 끄기 -->
+            <div class="masterRow">
+              <div class="info">
+                <div class="t" style="font-weight:500;font-size:13px;">All notifications</div>
+                <div class="d" style="font-size:11px;color:var(--muted);margin-top:2px;">
+                  꺼두면 아래 개별 설정과 무관하게 *어떤 알림도 발송되지 않음* (Do not disturb).
+                </div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="tg_master" checked />
+                <span class="track"></span><span class="thumb"></span>
+              </label>
+            </div>
+
+            <!-- Email channel -->
+            <div class="togGroup">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9 7 9-7"/></svg>
+                Email · <span id="emailLabel">—</span>
+              </h3>
+              <p class="note">중요한 활동만 골라 받기 권장. 약한 알림은 in-app 으로 충분.</p>
+
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Mentions</div>
+                  <div class="d">댓글이나 케이스 본문에서 <code>@나</code> 로 언급됐을 때.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="mentions"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Replies to my cases / comments</div>
+                  <div class="d">내가 작성한 에러 케이스에 새 댓글이 달리거나, 내 댓글에 답글이 달릴 때.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="replies"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">New followers</div>
+                  <div class="d">누군가 나를 팔로우했을 때.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="newFollowers"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Workspace invitations</div>
+                  <div class="d">워크스페이스에 초대됐을 때 — *권장: on*. 초대 만료가 짧음.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="workspaceInvitations"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Weekly digest</div>
+                  <div class="d">한 주 활동 요약을 매주 월요일 아침에 1통.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="weeklyDigest"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Product announcements</div>
+                  <div class="d">새 기능/주요 변경 안내 (드물게).</div>
+                </div>
+                <label class="toggle"><input type="checkbox" data-channel="email" data-cat="productAnnouncements"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info">
+                  <div class="t">Security alerts</div>
+                  <div class="d">새 디바이스 로그인 등 보안 이벤트. <b>끌 수 없음</b>.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" checked disabled data-channel="email" data-cat="securityAlerts"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+            </div>
+
+            <!-- In-app channel -->
+            <div class="togGroup">
+              <h3>
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0"/></svg>
+                In-app
+              </h3>
+              <p class="note">앱 우상단 종 아이콘 + 빨간 카운터. 이메일과 독립적으로 on/off.</p>
+
+              <div class="togRow">
+                <div class="info"><div class="t">Mentions</div></div>
+                <label class="toggle"><input type="checkbox" data-channel="inApp" data-cat="mentions"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info"><div class="t">Replies</div></div>
+                <label class="toggle"><input type="checkbox" data-channel="inApp" data-cat="replies"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info"><div class="t">New followers</div></div>
+                <label class="toggle"><input type="checkbox" data-channel="inApp" data-cat="newFollowers"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+              <div class="togRow">
+                <div class="info"><div class="t">Workspace invitations</div></div>
+                <label class="toggle"><input type="checkbox" data-channel="inApp" data-cat="workspaceInvitations"><span class="track"></span><span class="thumb"></span></label>
+              </div>
+            </div>
+
+            <div class="saveBar">
+              <button class="btn ghost" id="resetNoti">Discard</button>
+              <button class="btn primary" id="saveNoti">Save notifications</button>
+            </div>
+          </section>
+
+          <!-- 3. WORKSPACE — context -->
+          <section class="block" id="workspace">
+            <div class="secHead">
+              <div>
+                <h2>Default workspace</h2>
+                <div class="secDesc">로그인 후 첫 진입 화면을 결정. 비우면 *개인 홈* 으로 시작.</div>
+              </div>
+              <div class="badges"><span class="badge workspace">Context</span></div>
+            </div>
+
+            <div class="field">
+              <label class="fieldLabel">Workspace</label>
+              <select class="select" id="ws_select">
+                <option value="">로딩 중…</option>
+              </select>
+              <div class="hint" id="ws_hint">본인이 소속된 워크스페이스. 비우면 로그인 후 개인 홈으로.</div>
+            </div>
+
+            <div class="saveBar">
+              <button class="btn ghost" id="resetWs">Discard</button>
+              <button class="btn primary" id="saveWs">Save</button>
+            </div>
+          </section>
+
+          <!-- NEW. SESSIONS — active refresh tokens + sign-out everywhere -->
+          <section class="block" id="sessions">
+            <div class="secHead">
+              <div>
+                <h2>Sessions</h2>
+                <div class="secDesc">로그인된 디바이스 목록. 모르는 항목이 보이면 즉시 종료 → 토큰이 해당 디바이스에서 무효화됩니다.</div>
+              </div>
+              <div class="badges"><span class="badge security">Security</span></div>
+            </div>
+
+            <!-- Last sign-in callout -->
+            <div class="lastSignin" id="lastSigninEl">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+              <div style="flex:1;">아직 로드되지 않음.</div>
+            </div>
+
+            <!-- Sessions list (동적 렌더) -->
+            <div class="subSec" style="border-bottom:none;padding-top:0;">
+              <h3>Active sessions <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px;" id="sessCount">— active</span></h3>
+              <p class="note">모르는 디바이스가 있다면 즉시 종료. *Sign out everywhere* 는 현재 디바이스도 포함.</p>
+              <div id="sessionsList">
+                <div class="skeleton-row">로딩 중…</div>
+              </div>
+            </div>
+
+            <!-- Sign out everywhere -->
+            <div class="dzRow" style="border-top:1px solid var(--line);margin-top:8px;padding-top:14px;">
+              <div class="info">
+                <div class="t">Sign out everywhere</div>
+                <div class="d">현재 디바이스를 *포함한* 모든 세션의 refresh token 을 회수. 토큰 탈취 의심 시 핵심 액션 — 모든 디바이스에서 다시 로그인이 필요해집니다.</div>
+              </div>
+              <button class="btn danger" id="revokeAllBtn">Revoke all sessions</button>
+            </div>
+
+            <!-- 2FA notice -->
+            <div class="infoNotice">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 22a10 10 0 100-20 10 10 0 000 20z"/></svg>
+              <div>
+                <b>Two-factor authentication</b> 은 로그인 제공자(GitHub / Google)에서 관리됩니다. 해당 계정의 2FA 가 켜져 있으면 본 서비스 로그인도 자동으로 보호됩니다 — 별도 설정 필요 없음.
+              </div>
+            </div>
+          </section>
+
+          <!-- 4. CONNECTIONS — security -->
+          <section class="block" id="connections">
+            <div class="secHead">
+              <div>
+                <h2>Connected accounts</h2>
+                <div class="secDesc">로그인에 쓰는 외부 OAuth identity. provider 별 1건. 연결 해제는 다른 로그인 수단이 남아 있을 때만 가능.</div>
+              </div>
+              <div class="badges"><span class="badge security">Security</span></div>
+            </div>
+
+            <!-- ── Available now ── -->
+            <div class="connGroup">
+              <h3 class="connGroupTitle">Available now</h3>
+              <div id="connectionsAvailableList">
+                <div class="skeleton-row">로딩 중…</div>
+              </div>
+            </div>
+
+            <!-- ── Coming soon ── -->
+            <div class="connGroup">
+              <h3 class="connGroupTitle">
+                Coming soon
+                <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px;">추후 지원 예정. 출시 시점에 자동으로 활성화됩니다.</span>
+              </h3>
+
+              <div class="connRow connRow--soon">
+                <div class="pi pi--google">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.5 12.27c0-.78-.07-1.53-.2-2.27H12v4.3h5.92a5.07 5.07 0 01-2.2 3.33v2.77h3.56c2.08-1.92 3.28-4.74 3.28-8.13z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.77c-.99.66-2.25 1.05-3.72 1.05-2.86 0-5.29-1.93-6.16-4.53H2.18v2.85A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.84 14.09a6.6 6.6 0 010-4.18V7.07H2.18a11 11 0 000 9.86l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0012 1a11 11 0 00-9.82 6.07l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38z"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="nm">Google <span class="badge mute soonBadge">Coming soon</span></div>
+                  <div class="wn">Sign in with your Google account · 출시 예정</div>
+                </div>
+                <button class="btn secondary sm" disabled>Connect</button>
+              </div>
+
+              <div class="connRow connRow--soon">
+                <div class="pi pi--apple">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="nm">Apple <span class="badge mute soonBadge">Coming soon</span></div>
+                  <div class="wn">Sign in with Apple · iOS 도입과 함께 제공 예정</div>
+                </div>
+                <button class="btn secondary sm" disabled>Connect</button>
+              </div>
+            </div>
+
+            <div class="connectMore">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 22a10 10 0 100-20 10 10 0 000 20z"/></svg>
+              <div>
+                마지막 로그인 수단은 disconnect 할 수 없습니다 — 추가 provider 가 연결된 후에만 기존 연결을 해제할 수 있어요.
+              </div>
+            </div>
+          </section>
+
+          <!-- 5. ACCOUNT (private identity, readonly) -->
+          <section class="block" id="account">
+            <div class="secHead">
+              <div>
+                <h2>Account</h2>
+                <div class="secDesc">본인 식별 정보. <b>읽기 전용</b> — 변경 불가 또는 별도 절차 필요.</div>
+              </div>
+              <div class="badges"><span class="badge private">Private</span></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+              <div class="field">
+                <label class="fieldLabel">Email <span class="hint" style="font-weight:400;">(non-editable)</span></label>
+                <div class="ro" id="acc_email">—</div>
+                <div class="hint">OAuth provider 가 제공한 값. 직접 수정 불가.</div>
+              </div>
+              <div class="field">
+                <label class="fieldLabel">Status</label>
+                <div class="ro" id="acc_status">—</div>
+                <div class="hint">변경은 *Delete account* 또는 운영 관리자만.</div>
+              </div>
+              <div class="field">
+                <label class="fieldLabel">Member since</label>
+                <div class="ro" id="acc_memberSince">—</div>
+                <div class="hint">계정 가입 시각 (불변).</div>
+              </div>
+              <div class="field">
+                <label class="fieldLabel">Pending deletion at</label>
+                <div class="ro" id="acc_pendingDeletion">— (not pending)</div>
+                <div class="hint">PENDING_DELETION 상태일 때만 채워짐.</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 6. DANGER ZONE — irreversible -->
+          <section class="block danger-zone" id="danger">
+            <div class="secHead">
+              <div>
+                <h2>Danger zone</h2>
+                <div class="secDesc">되돌리기 어려운 액션. *Account* 와 분리한 이유: 위험한 버튼을 *별도 시각* 으로 격리해야 실수 클릭이 줄어듭니다.</div>
+              </div>
+              <div class="badges"><span class="badge danger">Danger</span></div>
+            </div>
+
+            <div class="dzRow" id="rowDelete">
+              <div class="info">
+                <div class="t">Delete account</div>
+                <div class="d">탈퇴 요청 시 <b>PENDING_DELETION</b> 으로 전이 → 30일 grace → 만료 시 PII 익명화. grace 중엔 복구 가능.</div>
+              </div>
+              <button class="btn danger" id="btnDelete">Request deletion</button>
+            </div>
+
+            <div class="dzRow" id="rowRestore">
+              <div class="info">
+                <div class="t">Restore account</div>
+                <div class="d">PENDING_DELETION 상태일 때만 활성화. ACTIVE 면 *옵션 자체는 보이지만 비활성*.</div>
+              </div>
+              <button class="btn secondary" id="btnRestore" disabled>Restore (not pending)</button>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- timezone 자동 추정 + 확인 모달 — 본인이 timezone 설정 안 했을 때 1회 -->
+<div class="tzBackdrop" id="tzModal" role="dialog" aria-modal="true" aria-labelledby="tzTitle">
+  <div class="tzModal">
+    <div class="tzHead">
+      <div class="icoWrap">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+      </div>
+      <h2 id="tzTitle">Set your timezone</h2>
+    </div>
+    <div class="tzDesc">
+      브라우저에서 추정한 timezone 으로 시각 표시를 정확히 맞추겠습니까? 다른 디바이스에서도 같은 timezone 으로 표시됩니다.
+    </div>
+    <div class="tzPreview">
+      <div>추정된 timezone: <span class="tzVal" id="tzDetected">—</span></div>
+      <div class="tzWhen">예시: <span id="tzExample">—</span></div>
+    </div>
+    <div class="tzActions">
+      <button class="btn ghost minor" id="tzLater">Later</button>
+      <button class="btn secondary" id="tzUseSystem">Use system (저장 안 함)</button>
+      <button class="btn primary" id="tzApply">Set</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+(() => {
+  const $ = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+  // ───── theme ─────
+  function applyTheme(t) {
+    const d = t === 'DARK';
+    document.body.classList.toggle('dark', d);
+    $('#iconMoon').style.display = d ? 'none' : '';
+    $('#iconSun').style.display = d ? '' : 'none';
+  }
+  let theme = localStorage.getItem('ia.theme') || 'LIGHT';
+  applyTheme(theme);
+  $('#themeBtn').onclick = () => {
+    theme = document.body.classList.contains('dark') ? 'LIGHT' : 'DARK';
+    localStorage.setItem('ia.theme', theme); applyTheme(theme);
+  };
+
+  // ───── creds (사이드바 하단 + 다른 playground 와 fallback 공유) ─────
+  const baseUrlEl = $('#baseUrl'), jwtEl = $('#jwt');
+  baseUrlEl.value = localStorage.getItem('ia.baseUrl') || localStorage.getItem('um.baseUrl') || localStorage.getItem('ac.baseUrl') || 'http://localhost:8000';
+  jwtEl.value = localStorage.getItem('ia.jwt') || localStorage.getItem('um.jwt') || localStorage.getItem('ac.jwt') || '';
+  $('#saveCreds').onclick = () => {
+    localStorage.setItem('ia.baseUrl', baseUrlEl.value.trim());
+    localStorage.setItem('ia.jwt', jwtEl.value.trim());
+    toast('creds saved', 'ok');
+    loadAll();
+  };
+  $('#reloadBtn').onclick = () => loadAll();
+
+  function getBase() { return baseUrlEl.value.trim().replace(/\/$/, ''); }
+  function getJwt()  { return jwtEl.value.trim(); }
+
+  // ───── fetch ─────
+  async function api(method, path, body, isMultipart = false) {
+    const headers = { 'Accept': 'application/json' };
+    const jwt = getJwt();
+    if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
+    if (body !== undefined && !isMultipart) headers['Content-Type'] = 'application/json';
+    const res = await fetch(getBase() + path, {
+      method, headers,
+      body: body !== undefined ? (isMultipart ? body : JSON.stringify(body)) : undefined,
+    });
+    const text = await res.text();
+    let parsed = null; try { parsed = text ? JSON.parse(text) : null; } catch {}
+    if (!res.ok) {
+      const msg = (parsed && (parsed.message || parsed.error || parsed.detail)) || ('HTTP ' + res.status);
+      const err = new Error(msg); err.status = res.status; throw err;
+    }
+    return parsed;
+  }
+
+  // ───── toast ─────
+  const toastEl = $('#toast'); let toastTimer;
+  function toast(msg, kind = '') {
+    toastEl.className = ''; toastEl.classList.add(kind); toastEl.textContent = msg;
+    requestAnimationFrame(() => toastEl.classList.add('show'));
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+  }
+
+  // ───── shared state ─────
+  let me = null;            // /users/me
+  let notiSettings = null;  // /users/me/notification-settings
+  let sessions = null;
+  let connections = null;
+
+  // ───── locale / timezone — *현재 적용된* 사용자 컨텍스트 ─────
+  // 우선순위: Preferences 의 *현재 선택값* (즉시 미리보기) > 저장된 me.* > 브라우저 추정
+  // 영어는 아직 미지원이라 ko 강제.
+  function browserTz() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+    catch { return 'UTC'; }
+  }
+  function currentLang() {
+    // Preferences 의 disabled 옵션이 선택되면 ko 로 폴백
+    const sel = $('#pref_lang')?.value || me?.language || 'ko';
+    return sel === 'en' ? 'ko' : sel;   // en 도입 전까진 ko 강제
+  }
+  function currentTimezone() {
+    const sel = $('#pref_tz')?.value;
+    if (sel === '' || sel == null) return me?.timezone || browserTz();
+    return sel;
+  }
+
+  /**
+   * timestamp 포맷 util — 모든 시간 표시는 이 함수를 통과해야 함.
+   * DOM 에 박을 때 원본 ISO 는 `data-iso` 속성으로 보존 → timezone 변경 시 `reformatAllTimes()` 가 즉시 재렌더.
+   */
+  function fmt(iso, opts = { dateStyle: 'medium', timeStyle: 'short' }) {
+    if (!iso) return '—';
+    try {
+      return new Intl.DateTimeFormat(currentLang(), { ...opts, timeZone: currentTimezone() }).format(new Date(iso));
+    } catch {
+      return new Date(iso).toLocaleString();
+    }
+  }
+  function fmtDate(iso) { return fmt(iso, { dateStyle: 'long' }); }
+
+  /** `<span class="ts" data-iso="..." data-fmt="long|medium|datetime">` 패턴을 일괄 재렌더. */
+  function reformatAllTimes() {
+    $$('.ts[data-iso]').forEach(el => {
+      const f = el.dataset.fmt || 'datetime';
+      if (f === 'long')         el.textContent = fmtDate(el.dataset.iso);
+      else if (f === 'date')    el.textContent = fmt(el.dataset.iso, { dateStyle: 'medium' });
+      else                      el.textContent = fmt(el.dataset.iso, { dateStyle: 'medium', timeStyle: 'short' });
+    });
+  }
+
+  // ─────────────────────── Profile ───────────────────────
+  function initialsOf(name) {
+    const parts = (name || '').trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return (name || '').slice(0, 2).toUpperCase() || '··';
+  }
+  function syncPreview() {
+    const name = $('#pf_name').value || '—';
+    const bio = $('#pf_bio').value;
+    const av = $('#pf_avatar').value.trim();
+    const email = me?.email || '—';
+    const ini = initialsOf(name);
+    const avatarHtml = av ? `<img src="${esc(av)}" alt="">` : ini;
+
+    // 1) Profile card
+    $('#pv_name').textContent = name;
+    $('#pv_bio').textContent = bio || '(no bio)';
+    const side = $('#pv_avatar');
+    if (av) side.innerHTML = `<img src="${esc(av)}" alt="">`;
+    else side.textContent = ini;
+
+    // 2) Comment row — 동일 avatar/name 으로 어떻게 보일지
+    $('#pv_cmtName').textContent = name;
+    const cmtAv = $('#pv_cmtAvatar');
+    if (av) cmtAv.innerHTML = avatarHtml;
+    else cmtAv.textContent = ini;
+
+    // 3) Mention chip
+    // 멘션은 displayName 의 *공백 제거* 한 핸들 형태가 일반적
+    const handle = (name || '').replace(/\s+/g, '');
+    $('#pv_mention').textContent = `@${handle || '—'}`;
+
+    // 4) Search result row
+    $('#pv_srName').textContent = name;
+    $('#pv_srEmail').textContent = email;
+    const srAv = $('#pv_srAvatar');
+    if (av) srAv.innerHTML = avatarHtml;
+    else srAv.textContent = ini;
+
+    // Profile editor 좌측 위젯 미리보기
+    const view = $('#pf_avatarView');
+    if (av) view.innerHTML = `<img id="pf_avatarImg" src="${esc(av)}" alt="">`;
+    else view.textContent = ini;
+  }
+  ['pf_name','pf_bio','pf_avatar'].forEach(id => $('#' + id).addEventListener('input', syncPreview));
+
+  function fillProfileFromMe() {
+    if (!me) return;
+    $('#pf_name').value = me.displayName || '';
+    $('#pf_bio').value = me.bio || '';
+    $('#pf_avatar').value = me.avatarUrl || '';
+    syncPreview();
+  }
+
+  // avatar upload (multipart) & remove
+  $('#pf_avatarFile').addEventListener('change', async ev => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { $('#pf_avatar').value = String(reader.result); syncPreview(); };
+    reader.readAsDataURL(file);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      me = await api('POST', '/api/v1/users/me/avatar', fd, true);
+      fillProfileFromMe();
+      toast('avatar uploaded', 'ok');
+    } catch (e) { toast('upload 실패: ' + e.message, 'err'); }
+    finally { ev.target.value = ''; }
+  });
+  $('#pf_avatarRemove').onclick = async () => {
+    $('#pf_avatar').value = ''; $('#pf_avatarFile').value = ''; syncPreview();
+    try {
+      me = await api('DELETE', '/api/v1/users/me/avatar');
+      fillProfileFromMe();
+      toast('avatar removed', 'ok');
+    } catch (e) { toast('remove 실패: ' + e.message, 'err'); }
+  };
+  $('#resetProfile').onclick = () => fillProfileFromMe();
+  $('#saveProfile').onclick = async () => {
+    if (!me) return;
+    const body = {};
+    const dn = $('#pf_name').value.trim();
+    const bio = $('#pf_bio').value;
+    if (dn && dn !== me.displayName) body.displayName = dn;
+    if (bio !== (me.bio || '')) {
+      if (bio) body.bio = bio; else body.clearBio = true;
+    }
+    if (Object.keys(body).length === 0) { toast('변경사항 없음', ''); return; }
+    try {
+      me = await api('PATCH', '/api/v1/users/me', body);
+      fillProfileFromMe();
+      toast('프로필 저장됨', 'ok');
+    } catch (e) { toast('저장 실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── Preferences (theme / language / timezone) ───────────────────────
+  let pickedTheme = me?.theme || 'LIGHT';
+  function activateThemeButton(t) {
+    $$('#themeSeg button').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
+  }
+  $$('#themeSeg button').forEach(b => b.onclick = () => {
+    pickedTheme = b.dataset.theme;
+    activateThemeButton(pickedTheme);
+    // 즉시 페이지 미리보기
+    if (pickedTheme === 'SYSTEM') {
+      applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'DARK' : 'LIGHT');
+    } else applyTheme(pickedTheme);
+  });
+
+  function fillPrefsFromMe() {
+    if (!me) return;
+    // language: 저장된 게 en 이어도 도입 전이라 ko 로 표시
+    const lang = me.language === 'en' ? 'ko' : (me.language || 'ko');
+    $('#pref_lang').value = lang;
+    // timezone: 저장된 값이 없으면 'Use system' (빈 string) 선택
+    $('#pref_tz').value = me.timezone || '';
+    pickedTheme = me.theme || 'SYSTEM';
+    activateThemeButton(pickedTheme);
+    applyTheme(pickedTheme === 'SYSTEM'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'DARK' : 'LIGHT')
+      : pickedTheme);
+    reformatAllTimes();
+  }
+
+  // timezone/language 변경 → *즉시* 미리보기 (Save 전에도 화면 재렌더)
+  $('#pref_tz').addEventListener('change', reformatAllTimes);
+  $('#pref_lang').addEventListener('change', reformatAllTimes);
+
+  $('#resetPrefs').onclick = () => fillPrefsFromMe();
+  $('#savePrefs').onclick = async () => {
+    if (!me) return;
+    const body = {};
+    // en 은 도입 전이라 *무시* (저장 시 ko 만 허용). select 자체가 ko만 선택 가능.
+    const lang = $('#pref_lang').value === 'en' ? 'ko' : $('#pref_lang').value;
+    const tz = $('#pref_tz').value;
+    if (lang !== (me.language || '')) {
+      if (lang) body.language = lang;
+      else body.clearLanguage = true;
+    }
+    if (tz !== (me.timezone || '')) {
+      if (tz) body.timezone = tz;
+      else body.clearTimezone = true;
+    }
+    if (pickedTheme && pickedTheme !== me.theme) body.theme = pickedTheme;
+    if (Object.keys(body).length === 0) { toast('변경사항 없음', ''); return; }
+    try {
+      me = await api('PATCH', '/api/v1/users/me', body);
+      fillPrefsFromMe();
+      reformatAllTimes();
+      toast('환경설정 저장됨', 'ok');
+    } catch (e) { toast('저장 실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── Notifications ───────────────────────
+  const masterTog = $('#tg_master');
+  function applyMaster() {
+    const on = masterTog.checked;
+    $$('#notifications .togGroup .toggle input').forEach(c => {
+      const mandatory = c.hasAttribute('disabled') && c.dataset.cat === 'securityAlerts';
+      if (!mandatory) c.disabled = !on;
+    });
+  }
+  masterTog.addEventListener('change', applyMaster);
+
+  function fillNotiFromSettings() {
+    if (!notiSettings) return;
+    masterTog.checked = notiSettings.masterEnabled;
+    ['email','inApp'].forEach(ch => {
+      const data = notiSettings[ch] || {};
+      $$(`#notifications input[data-channel="${ch}"]`).forEach(inp => {
+        const cat = inp.dataset.cat;
+        if (cat === 'securityAlerts') { inp.checked = true; inp.disabled = true; return; }
+        inp.checked = !!data[cat];
+      });
+    });
+    applyMaster();
+  }
+
+  $('#resetNoti').onclick = () => fillNotiFromSettings();
+  $('#saveNoti').onclick = async () => {
+    if (!notiSettings) return;
+    const body = { masterEnabled: masterTog.checked, email: {}, inApp: {} };
+    ['email','inApp'].forEach(ch => {
+      $$(`#notifications input[data-channel="${ch}"]`).forEach(inp => {
+        const cat = inp.dataset.cat;
+        if (cat === 'securityAlerts') return;
+        body[ch][cat] = inp.checked;
+      });
+    });
+    try {
+      notiSettings = await api('PATCH', '/api/v1/users/me/notification-settings', body);
+      fillNotiFromSettings();
+      toast('알림 설정 저장됨 (noti-api)', 'ok');
+    } catch (e) { toast('저장 실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── Workspace ───────────────────────
+  let myWorkspaces = null;   // GET /workspaces 결과
+  async function loadWorkspaces() {
+    try {
+      myWorkspaces = await api('GET', '/api/v1/workspaces');
+    } catch (e) {
+      myWorkspaces = [];
+      $('#ws_hint').textContent = '워크스페이스 로드 실패: ' + e.message;
+    }
+    const sel = $('#ws_select');
+    const empty = `<option value="">— Personal home (no default) —</option>`;
+    if (!myWorkspaces.length) {
+      sel.innerHTML = empty;
+      $('#ws_hint').textContent = '소속된 워크스페이스 없음. *Personal home* 만 사용 가능.';
+    } else {
+      sel.innerHTML = empty + myWorkspaces.map(w =>
+        `<option value="${w.workspaceId}">#${w.workspaceId} · ${esc(w.name)} <span>· ${esc(w.role)}</span></option>`
+      ).join('');
+      $('#ws_hint').textContent = `본인이 소속된 ${myWorkspaces.length}개 워크스페이스 + Personal home. 비우면 로그인 후 개인 홈.`;
+    }
+    fillWsFromMe();
+  }
+
+  function fillWsFromMe() {
+    if (!me) return;
+    $('#ws_select').value = me.defaultWorkspaceId != null ? String(me.defaultWorkspaceId) : '';
+  }
+  $('#resetWs').onclick = () => fillWsFromMe();
+  $('#saveWs').onclick = async () => {
+    if (!me) return;
+    const val = $('#ws_select').value;
+    const body = {};
+    const cur = me.defaultWorkspaceId != null ? String(me.defaultWorkspaceId) : '';
+    if (val === cur) { toast('변경사항 없음', ''); return; }
+    if (val === '') body.clearDefaultWorkspace = true;
+    else body.defaultWorkspaceId = Number(val);
+    try {
+      me = await api('PATCH', '/api/v1/users/me', body);
+      fillWsFromMe();
+      toast('워크스페이스 저장됨', 'ok');
+    } catch (e) { toast('저장 실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── Sessions ───────────────────────
+  function deviceIcon(label) {
+    const l = (label || '').toLowerCase();
+    if (l.includes('iphone') || l.includes('android') || l.includes('mobile')) {
+      return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="2" width="10" height="20" rx="2"/><path stroke-linecap="round" d="M11 19h2"/></svg>`;
+    }
+    return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="12" rx="2"/><path stroke-linecap="round" d="M8 21h8M12 17v4"/></svg>`;
+  }
+  function relativeTime(iso) {
+    if (!iso) return 'unknown';
+    const now = Date.now(), then = new Date(iso).getTime();
+    const min = Math.round((now - then) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.round(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.round(hr / 24);
+    return `${d}d ago`;
+  }
+
+  async function loadSessions() {
+    const list = $('#sessionsList');
+    try {
+      sessions = await api('GET', '/api/v1/users/me/sessions');
+    } catch (e) {
+      sessions = null;
+      list.innerHTML = `<div class="skeleton-row">${esc(e.message)}</div>`;
+      $('#sessCount').textContent = '— active';
+      $('#lastSigninEl').querySelector('div:last-child').textContent = '세션을 로드하지 못했습니다.';
+      return;
+    }
+    $('#sessCount').textContent = `${sessions.length} active`;
+
+    // last sign-in — *절대 시각*(data-iso) 으로 박아 timezone 변경 시 즉시 재렌더
+    const last = sessions[0];
+    if (last) {
+      const iso = last.lastUsedAt || last.createdAt;
+      const where = last.ipAddress || 'unknown IP';
+      const dev = last.deviceLabel || last.userAgent?.slice(0, 60) || 'unknown device';
+      $('#lastSigninEl').querySelector('div:last-child').innerHTML =
+        `Most recent activity: <span class="ts" data-iso="${esc(iso)}" data-fmt="datetime">${esc(fmt(iso))}</span> · ${esc(dev)} · ${esc(where)}`;
+    } else {
+      $('#lastSigninEl').querySelector('div:last-child').textContent = '활성 세션이 없습니다.';
+    }
+
+    list.innerHTML = sessions.map(s => {
+      const lastIso = s.lastUsedAt || s.createdAt;
+      const dev = s.deviceLabel || (s.userAgent ? s.userAgent.slice(0, 60) : 'unknown device');
+      const ip = s.ipAddress || '';
+      return `<div class="sessRow">
+        <div class="devIcon">${deviceIcon(s.deviceLabel || s.userAgent)}</div>
+        <div class="meta">
+          <div class="nm">${esc(dev)}</div>
+          <div class="ds">${esc(ip)} · last active <span class="ts" data-iso="${esc(lastIso)}" data-fmt="datetime">${esc(fmt(lastIso))}</span> · expires <span class="ts" data-iso="${esc(s.expiresAt)}" data-fmt="date">${esc(fmt(s.expiresAt, { dateStyle: 'medium' }))}</span></div>
+        </div>
+        <div class="actions"><button class="btn ghost sm sessKill" data-sid="${esc(s.sessionId)}">Sign out</button></div>
+      </div>`;
+    }).join('') || '<div class="skeleton-row">활성 세션 없음.</div>';
+
+    $$('.sessKill', list).forEach(b => b.onclick = async () => {
+      const sid = b.dataset.sid;
+      try {
+        await api('DELETE', `/api/v1/users/me/sessions/${sid}`);
+        toast('세션 종료', 'ok');
+        loadSessions();
+      } catch (e) { toast('실패: ' + e.message, 'err'); }
+    });
+  }
+
+  $('#revokeAllBtn').onclick = async () => {
+    if (!confirm('현재 디바이스를 포함한 모든 세션을 종료합니다.\n다시 로그인이 필요해집니다.')) return;
+    try {
+      await api('POST', '/api/v1/users/me/sessions/revoke-all');
+      toast('모든 세션 종료됨', 'ok');
+      loadSessions();
+    } catch (e) { toast('실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── Connections (Available now 만 동적) ───────────────────────
+  const PROVIDER_META = {
+    GITHUB: {
+      label: 'GitHub',
+      cls: 'pi--gh',
+      svg: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 .5A11.5 11.5 0 00.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.34-1.27-1.7-1.27-1.7-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.68 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.47.11-3.06 0 0 .97-.31 3.17 1.18a11 11 0 015.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.77.11 3.06.73.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.07.78 2.15v3.18c0 .31.21.67.8.56A11.5 11.5 0 0023.5 12 11.5 11.5 0 0012 .5z"/></svg>`,
+    },
+  };
+
+  async function loadConnections() {
+    const list = $('#connectionsAvailableList');
+    try {
+      connections = await api('GET', '/api/v1/users/me/connections');
+    } catch (e) {
+      connections = null;
+      list.innerHTML = `<div class="skeleton-row">${esc(e.message)}</div>`;
+      return;
+    }
+    if (!connections.length) {
+      list.innerHTML = '<div class="skeleton-row">연결된 외부 계정이 없습니다.</div>';
+      return;
+    }
+    const canDisconnect = connections.length > 1;
+    list.innerHTML = connections.map(c => {
+      const meta = PROVIDER_META[c.provider] || { label: c.provider, cls: '', svg: c.provider[0] };
+      const linkedHtml = c.linkedAt
+        ? `<span class="ts" data-iso="${esc(c.linkedAt)}" data-fmt="date">${esc(fmt(c.linkedAt, { dateStyle: 'medium' }))}</span>`
+        : 'unknown';
+      const email = c.providerEmail ? esc(c.providerEmail) + ' · ' : '';
+      const disconnectBtn = canDisconnect
+        ? `<button class="btn ghost sm connDisconnect" data-prov="${esc(c.provider)}">Disconnect</button>`
+        : `<button class="btn ghost sm" disabled title="마지막 로그인 수단은 disconnect 할 수 없습니다">Disconnect</button>`;
+      const viewBtn = c.profileUrl
+        ? `<a class="btn ghost sm" href="${esc(c.profileUrl)}" target="_blank" rel="noopener">view ↗</a>`
+        : '';
+      return `<div class="connRow">
+        <div class="pi ${meta.cls}">${meta.svg}</div>
+        <div class="meta">
+          <div class="nm">${esc(meta.label)} <span class="badge ok" style="font-size:10px;">Connected</span></div>
+          <div class="wn">${email}linked ${linkedHtml}</div>
+        </div>
+        ${viewBtn}${disconnectBtn}
+      </div>`;
+    }).join('');
+
+    $$('.connDisconnect', list).forEach(b => b.onclick = async () => {
+      const prov = b.dataset.prov;
+      if (!confirm(`Disconnect ${prov}?`)) return;
+      try {
+        await api('DELETE', `/api/v1/users/me/connections/${prov}`);
+        toast(`${prov} 연결 해제됨`, 'ok');
+        loadConnections();
+      } catch (e) {
+        const msg = e.status === 409 ? '마지막 로그인 수단이라 해제할 수 없습니다' : e.message;
+        toast(msg, 'err');
+      }
+    });
+  }
+
+  // ─────────────────────── Account / Danger zone ───────────────────────
+  function fillAccountFromMe() {
+    if (!me) return;
+    $('#acc_email').textContent = me.email || '—';
+    const st = me.status || 'ACTIVE';
+    const stCls = st === 'ACTIVE' ? 'ok' : st === 'PENDING_DELETION' ? 'warn' : 'danger';
+    $('#acc_status').innerHTML = `<span class="badge ${stCls}" style="font-size:11px;">${esc(st)}</span>`;
+    // 시각 표시는 data-iso 패턴 — timezone/language 변경 시 reformatAllTimes() 가 일괄 갱신
+    if (me.createdAt) {
+      $('#acc_memberSince').innerHTML = `<span class="ts" data-iso="${esc(me.createdAt)}" data-fmt="long">${esc(fmtDate(me.createdAt))}</span>`;
+    } else $('#acc_memberSince').textContent = '—';
+    if (me.pendingDeletionAt) {
+      $('#acc_pendingDeletion').innerHTML = `<span class="ts" data-iso="${esc(me.pendingDeletionAt)}" data-fmt="datetime">${esc(fmt(me.pendingDeletionAt))}</span>`;
+    } else $('#acc_pendingDeletion').textContent = '— (not pending)';
+
+    // Danger zone — *두 행 모두 항상 표시* (옵션 시각화). Restore 는 ACTIVE 면 disabled.
+    const pending = st === 'PENDING_DELETION';
+    $('#rowDelete').style.display = '';
+    $('#rowRestore').style.display = '';
+    $('#btnDelete').disabled = pending;       // 이미 PENDING 이면 중복 요청 불가
+    $('#btnDelete').textContent = pending ? 'Request deletion (already pending)' : 'Request deletion';
+    $('#btnRestore').disabled = !pending;
+    $('#btnRestore').textContent = pending ? 'Restore account' : 'Restore (not pending)';
+
+    // 상단 status banner
+    const banner = $('#statusBanner');
+    if (st === 'PENDING_DELETION' && me.pendingDeletionAt) {
+      const deadline = new Date(new Date(me.pendingDeletionAt).getTime() + 30 * 86400000);
+      const days = Math.max(0, Math.ceil((deadline - Date.now()) / 86400000));
+      banner.innerHTML = `<div class="topBanner warn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M10.3 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        <div style="flex:1;">
+          <h3>탈퇴 진행 중 — D-${days}</h3>
+          <div>${deadline.toLocaleDateString()} 이후 데이터가 영구 익명화됩니다. 지금 취소할 수 있습니다.</div>
+        </div>
+        <a class="btn secondary sm" href="#danger">manage →</a>
+      </div>`;
+    } else if (st === 'SUSPENDED') {
+      banner.innerHTML = `<div class="topBanner danger">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M4.9 4.9l14.2 14.2"/></svg>
+        <div><h3>계정이 일시 정지되었습니다</h3><div>문의가 필요하면 support@error-archive.dev 로 연락해주세요.</div></div>
+      </div>`;
+    } else {
+      banner.innerHTML = '';
+    }
+
+    // email label in notifications header
+    $('#emailLabel').textContent = me.email || '(no email)';
+  }
+
+  $('#btnDelete').onclick = async () => {
+    if (!confirm('탈퇴 요청 (PENDING_DELETION 진입)?\n30일 grace 후 데이터 익명화됩니다.')) return;
+    try {
+      await api('DELETE', '/api/v1/users/me');
+      me = await api('GET', '/api/v1/users/me');
+      fillAccountFromMe();
+      toast('PENDING_DELETION 으로 전이됨', 'ok');
+    } catch (e) { toast('실패: ' + e.message, 'err'); }
+  };
+  $('#btnRestore').onclick = async () => {
+    try {
+      await api('POST', '/api/v1/users/me/restore');
+      me = await api('GET', '/api/v1/users/me');
+      fillAccountFromMe();
+      toast('계정 복구됨 — ACTIVE', 'ok');
+    } catch (e) { toast('실패: ' + e.message, 'err'); }
+  };
+
+  // ─────────────────────── timezone 자동 추정 모달 ───────────────────────
+  // 노출 조건: me.timezone 이 null  AND  추정 timezone 정상  AND  세션에서 아직 dismiss 안 됨
+  // — sessionStorage 키로 세션 동안만 dismiss 유지 (로그아웃/탭 닫으면 다시 1회 기회)
+  const TZ_DISMISS_KEY = 'ia.tzModal.dismissed';
+
+  function openTzModal() {
+    const tz = browserTz();
+    if (!tz || tz === 'UTC') return;   // 추정 못 했거나 unhelpful 한 값 → skip
+    $('#tzDetected').textContent = tz;
+    // 추정 timezone 으로 *지금 시각* 미리보기
+    try {
+      const ex = new Intl.DateTimeFormat(currentLang(), {
+        dateStyle: 'long', timeStyle: 'short', timeZone: tz,
+      }).format(new Date());
+      $('#tzExample').textContent = `현재 시각이 “${ex}” 으로 표시됩니다.`;
+    } catch { $('#tzExample').textContent = ''; }
+    $('#tzModal').classList.add('show');
+  }
+  function closeTzModal(remember = true) {
+    $('#tzModal').classList.remove('show');
+    if (remember) sessionStorage.setItem(TZ_DISMISS_KEY, '1');
+  }
+  function maybeShowTzModal() {
+    if (!me) return;
+    if (me.timezone) return;                                   // 이미 설정함 → skip
+    if (sessionStorage.getItem(TZ_DISMISS_KEY)) return;        // 이번 세션에서 닫음 → skip
+    setTimeout(openTzModal, 600);                              // 화면 로딩 끝난 직후 살짝 지연
+  }
+
+  // 모달 액션 wiring
+  $('#tzLater').onclick = () => closeTzModal(true);
+  $('#tzUseSystem').onclick = () => closeTzModal(true);  // 저장 안 함. 다음 세션엔 또 묻지 않음(이번 세션만)
+  $('#tzApply').onclick = async () => {
+    const tz = browserTz();
+    if (!tz) { closeTzModal(true); return; }
+    try {
+      me = await api('PATCH', '/api/v1/users/me', { timezone: tz });
+      fillPrefsFromMe();
+      reformatAllTimes();
+      toast(`timezone 설정됨: ${tz}`, 'ok');
+    } catch (e) { toast('저장 실패: ' + e.message, 'err'); }
+    closeTzModal(true);
+  };
+  // ESC / backdrop 클릭으로 닫기
+  $('#tzModal').addEventListener('click', e => { if (e.target === $('#tzModal')) closeTzModal(true); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('#tzModal').classList.contains('show')) closeTzModal(true);
+  });
+
+  // ─────────────────────── load all ───────────────────────
+  async function loadAll() {
+    // me + notifications + sessions + connections 병렬
+    try { me = await api('GET', '/api/v1/users/me'); }
+    catch (e) {
+      $('#statusBanner').innerHTML = `<div class="topBanner err"><div style="flex:1;"><h3>GET /users/me 실패</h3><div>${esc(e.message)}</div></div></div>`;
+      return;
+    }
+    fillProfileFromMe();
+    fillPrefsFromMe();
+    fillAccountFromMe();
+
+    // 병렬 호출 (실패 무관하게 다른 섹션 살림)
+    await Promise.allSettled([
+      api('GET', '/api/v1/users/me/notification-settings').then(d => { notiSettings = d; fillNotiFromSettings(); })
+        .catch(e => toast('noti 로드 실패: ' + e.message, 'err')),
+      loadSessions(),
+      loadConnections(),
+      loadWorkspaces(),
+    ]);
+
+    maybeShowTzModal();
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+  }
+
+  // ───── sub-nav scroll spy ─────
+  const navLinks = $$('.subnav a');
+  const navSections = navLinks.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const ob = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = '#' + e.target.id;
+        navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  navSections.forEach(s => ob.observe(s));
+
+  // boot
+  syncPreview();
+  loadAll();
+})();
+</script>
+</body>
+</html>

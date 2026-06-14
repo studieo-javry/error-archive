@@ -33,6 +33,12 @@ core:
   iam-api:
     base-url: ${CORE_IAM_API_BASE_URL:http://localhost:8080}
 
+# 알림 publisher 기본값 — 명시 안 하면 `http` (직접 RestClient). local 은 yml override 로 kafka.
+# default 가 없으면 어느 adapter 도 활성화되지 않아 createCommentUseCase 가 깨진다.
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:http}
+
 management:
   endpoints:
     web:

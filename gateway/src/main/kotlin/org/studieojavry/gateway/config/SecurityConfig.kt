@@ -41,6 +41,8 @@ class SecurityConfig {
                     "/api/v1/auth/logout",
                     "/actuator/health",
                     "/__fallback/**",
+                    // 정적 아바타 이미지 — 공개 read (이미지 fetch 에 Authorization 안 가도록)
+                    "/avatars/**",
                     // Swagger UI(aggregator) + 게이트웨이 자체 docs + 다운스트림 docs 프록시 경로
                     "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/api-docs/**"
                 ).permitAll()

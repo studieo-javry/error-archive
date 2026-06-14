@@ -58,7 +58,15 @@ class TokenController(
         val refreshToken = readRefreshTokenCookie(request)
             ?: throw RefreshAccessTokenUseCase.InvalidRefreshTokenException("refresh token cookie missing")
 
-        val result = refreshAccessTokenUseCase.invoke(RefreshAccessTokenCommand(refreshToken))
+        val ctx = org.studieojavry.iamapi.auth.infrastructure.security.ClientContext.from(request)
+        val result = refreshAccessTokenUseCase.invoke(
+            RefreshAccessTokenCommand(
+                refreshToken = refreshToken,
+                deviceLabel = ctx.deviceLabel,
+                userAgent = ctx.userAgent,
+                ipAddress = ctx.ipAddress,
+            )
+        )
 
         val refreshTtl = Duration.between(Instant.now(), result.refreshTokenExpiresAt)
         response.addHeader(

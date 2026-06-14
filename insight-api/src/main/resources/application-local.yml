@@ -1,0 +1,106 @@
+# ===================================================================
+# local — 개발자 로컬 머신.
+# - DB: docker-compose 의 PostgreSQL (localhost:5435, insight_db)
+# - Kafka: noti-api 의 docker-compose 가 띄운 broker 를 *공유* (localhost:9094)
+#   - noti-api 와 insight-api 둘 다 같은 broker 사용 — 환경 단순화
+# - 8083 포트로 바인드 (gateway=8000, iam=8080, core=8081, noti=8082 다음)
+# ===================================================================
+
+server:
+  port: 8083
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  kafka:
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}"
+    consumer:
+      group-id: insight-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+  datasource:
+    url: jdbc:postgresql://localhost:5435/insight_db
+    username: insight
+    password: insight_local_pw
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+logging:
+  level:
+    org.studieojavry: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# 내부 서비스 인증
+#   verifier — gateway / core-api / iam-api 가 보낸 토큰(aud=insight-api) 검증
+#   issuer   — insight-api 가 iam-api 로 user timezone 조회 시 발급 (aud=iam-api)
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: insight-api
+    key-id: insight-api-local-1
+    private-key-pem: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDpcgV4RmGpjwXp
+      6u8A4olgAiM30kRIybn7xzp9tHji8UsPivum+2qMNw9wQX8KwgLSKT5gaer5yipj
+      6Z05lrPOXj7nTw07yRhph+0GXofa+HIQXBsbqTxwhfl4HQC5j3Qap2igEMLi9nMl
+      bQGWPXj8qZcbj8ckP9lbXClL5ZBWh30cxgBg46ZODpHepYhauNiMpIhOJLPSlyBV
+      zjD5M2HDSNawPh+rHLTC7Y3mfeWDKksRQj/sLvSpaX+csqrDzyFTEtrb24g4LyMV
+      cayEbcID9dRyFgkZO76zD4+ZMtQPDnIJJQMRVKMcrh0nqlnPQanSGuq0E5b+z5mK
+      cuzOTtshAgMBAAECggEAJh4NEJeFaNdGouxOfDmBLuEKeRnnNm9h49+jCFWIi53U
+      oMQT1S8mNaDj73NyWAJXzZMYcUu6J3FAPLIvjvCxiVfQM5qv0XxDdS/RnwGecz2v
+      +kXf00Nt7/2gP2GU9bebwKJnLgOunrqZEJpc8Pg2oiLa3pA6dwvJ5OYGhDMGv2nu
+      SIim//HpWNxTIt88nBOv8axlmq85aVr2aosZexNqYzmfg8nAcelcqb54I4LYtTbZ
+      8XDjIa/0sRnX+ZJzWQE4zif6LeG90vD9LSqVWjpXFT3ZNcV8Hk6fpcVZwnJU6Elw
+      wzTmJ+TcZN0QOUkm5Lx1URlHETxakAFhZEgXpfTxhQKBgQD2uTk6yN17ocFCJn1L
+      oJjTBI0V/XgZPxuWwUg5AScZ8J+WHB9OorEoAjbf3Js/OqkRnuaNUZV2XL2nkbgb
+      kXEiZBGxzsj2TCHWS3mSBmdgXFQnro8nCaW/0f/5cOf7/0Os1tKBergO4ecA4G7G
+      LoxvOScDvuU3KaWBHATZ6BpO2wKBgQDyOP4O84471M+9Wo+9kZ3IyFESBetBfzX5
+      jTbnDRpJ0S17G7vFDjbPTdUKekCEpWJoZotWrZGElwLZnKK9bdN8ePMiKiQQk/jR
+      rW9Mo6/kc6wkb4pg4bUxOkUQ0MGEe94rsO5O2kP2Guzh/lSSaQ37YSyMQN0KfaGt
+      T/DET56oswKBgEnnW7Q3HNj+r/QPsXJo7b4v288deM8fLzVuOiMRLFRB1pvRWrNk
+      Wmqgly1hWIONH72uemMUcA/fYdQC+0IOw/PIQ+CeD2ZvkacuPoE2N9sObQrh5/GK
+      m0KlNebTIjpC0VPBmZa9Wsrich66G5Rztw9N8FjX4rMuX2wYJ3/aXZ8HAoGBAJVi
+      NL0/0/5uVtgu2+tLvQWxFN6Kq/Yu4DjRsIR6fjX8PZJpHjp/c6oSFEtr7hJgdPpy
+      E4kXbmFZSLawdWViMEXZygjN+IQI3jFiRvv7D2VTOV0XNT5etQJxL1sZg9+TDQfh
+      DHexAKztGh6eXcYV6DuaSIEPF8N6i5V5ccGAYRclAoGAOpJd9Fhi2gRZFzdZUmPE
+      485gJmc4LdBvQv9Jp/qsvXAdxkkDFYSfSkwwkvP1nH4L6UC0dUdFOcM4BMJJ1Ofm
+      2M/sutjejlB5NdN2xY1KEvkXleBTV+CVGx+7KF8WA0Xpr3+UN00q7uQ4euEB+NYJ
+      eF18XJatl25lQqw3N4UMi6U=
+      -----END PRIVATE KEY-----
+  verifier:
+    audience: insight-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----

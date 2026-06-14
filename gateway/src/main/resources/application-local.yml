@@ -26,6 +26,8 @@ springdoc:
         url: /api-docs/iam-api
       - name: core-api
         url: /api-docs/core-api
+      - name: noti-api
+        url: /api-docs/noti-api
 
 logging:
   level:

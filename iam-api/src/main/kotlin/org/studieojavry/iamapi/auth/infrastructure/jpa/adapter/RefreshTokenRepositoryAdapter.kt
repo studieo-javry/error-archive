@@ -26,4 +26,15 @@ class RefreshTokenRepositoryAdapter(
     override fun revokeAllByUserId(userId: Long) {
         jpa.revokeAllByUserId(userId, Instant.now())
     }
+
+    override fun findActiveSessionsByUserId(userId: Long, now: Instant): List<RefreshToken> {
+        val all = jpa.findActiveByUserId(userId, now).map { it.toDomain() }
+        // family 별 *가장 최신* row 만. 같은 family 안에서 여러 row 가 활성이면(rotation 직후 등) 시간 큰 것 선호.
+        return all.groupBy { it.familyId }
+            .map { (_, rows) -> rows.maxBy { (it.lastUsedAt ?: it.createdAt) } }
+            .sortedByDescending { it.lastUsedAt ?: it.createdAt }
+    }
+
+    override fun revokeFamilyIfOwner(familyId: UUID, userId: Long): Int =
+        jpa.revokeFamilyIfOwner(familyId, userId, Instant.now())
 }

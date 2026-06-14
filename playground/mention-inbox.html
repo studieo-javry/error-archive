@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Mention Inbox · Error Archive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa; --bg-elev: #ffffff; --text: #18181b;
+    --muted: #71717a; --sub: #a1a1aa;
+    --line: #e4e4e7; --line-2: #f4f4f5;
+    --indigo: #4f46e5; --indigo-soft: #eef2ff; --indigo-text: #4338ca;
+    --rose: #f43f5e; --emerald: #10b981;
+    --radius: 12px;
+  }
+  .dark {
+    --bg: #18181b; --bg-elev: #27272a; --text: #e4e4e7;
+    --muted: #a1a1aa; --sub: #71717a; --line: #3f3f46; --line-2: #27272a;
+    --indigo: #818cf8; --indigo-soft: #1e1b4b; --indigo-text: #c7d2fe;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--text);
+               font:14px/1.5 "Inter", -apple-system, "Pretendard", sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px; display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+  h1 { font: 600 22px/1 "Merriweather", serif; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+  input, textarea { width: 100%; background: var(--line-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+                    font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--text); outline: none; resize: vertical; }
+  .dark input, .dark textarea { background: var(--line); }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  button { font: inherit; cursor: pointer; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--line-2); color: var(--text); }
+  button:hover { background: var(--line); }
+  button.primary { background: var(--indigo); color: white; border-color: var(--indigo); }
+  button.primary:hover { background: var(--indigo-text); }
+  .notif { display: flex; gap: 12px; padding: 14px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 10px;
+           position: relative; }
+  .notif.unread { background: var(--indigo-soft); }
+  .notif .ava { width: 36px; height: 36px; border-radius: 999px; background: linear-gradient(135deg, #c7d2fe, #a7f3d0);
+                display: grid; place-items: center; color: white; font-weight: 600; flex-shrink: 0; }
+  .notif .meta { flex: 1; min-width: 0; }
+  .notif .ttl { font-size: 13px; font-weight: 500; }
+  .notif .body { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .notif .when { font-size: 11px; color: var(--sub); margin-top: 4px; }
+  .notif .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--indigo); position: absolute; right: 12px; top: 12px; }
+  .bell { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--line-2); border-radius: 999px;
+          font-size: 12px; }
+  .dark .bell { background: var(--line); }
+  .badge { background: var(--rose); color: white; border-radius: 999px; min-width: 18px; height: 18px; padding: 0 5px;
+           display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+  .empty { color: var(--sub); font-size: 12px; padding: 20px 0; text-align: center; font-style: italic; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <main>
+    <h1>Mention Inbox</h1>
+    <div class="sub">core-api 댓글의 @멘션이 noti-api 에 적재된 알림을 *gateway 경유* 로 확인.</div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="bell">🔔 unread <span class="badge" id="unreadBadge">0</span></div>
+        <div class="row" style="margin:0;">
+          <button id="refreshBtn">refresh</button>
+          <button id="readAllBtn" class="primary">모두 읽음</button>
+        </div>
+      </div>
+      <div id="list"><div class="empty">creds 입력 후 refresh</div></div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:13px;">API creds</h3>
+      <div class="field">
+        <label>Gateway URL</label>
+        <input id="baseUrl" type="text" value="http://localhost:8000" />
+      </div>
+      <div class="field">
+        <label>Bearer JWT</label>
+        <textarea id="jwt" rows="4" placeholder="bash scripts/mint-jwt.sh user 3 USER"></textarea>
+      </div>
+      <div class="row">
+        <button id="saveCreds" style="flex:1">save</button>
+        <button id="themeBtn" style="flex:0 0 auto;padding:7px 10px">🌗</button>
+      </div>
+      <div class="hint">
+        멘션 알림이 노출되려면 사용자가 *해당 케이스의 댓글에서 멘션* 됐어야 합니다.<br>
+        e2e: <code>bash scripts/mint-jwt.sh user 4 USER</code> → comment-tester 에서 case 39 에 <code>@홍지인</code> 멘션 → 본 페이지에서 user 3 (홍지인) JWT 로 refresh.
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  const $ = s => document.querySelector(s);
+
+  const baseEl = $('#baseUrl'), jwtEl = $('#jwt');
+  baseEl.value = localStorage.getItem('mi.baseUrl') || baseEl.value;
+  jwtEl.value = localStorage.getItem('mi.jwt') || localStorage.getItem('ia.jwt') || '';
+
+  function applyTheme(t) { document.body.classList.toggle('dark', t === 'DARK'); }
+  let theme = localStorage.getItem('mi.theme') || 'LIGHT';
+  applyTheme(theme);
+  $('#themeBtn').onclick = () => {
+    theme = document.body.classList.contains('dark') ? 'LIGHT' : 'DARK';
+    localStorage.setItem('mi.theme', theme); applyTheme(theme);
+  };
+
+  $('#saveCreds').onclick = () => {
+    localStorage.setItem('mi.baseUrl', baseEl.value.trim());
+    localStorage.setItem('mi.jwt', jwtEl.value.trim());
+    refresh();
+  };
+
+  async function api(method, path, body) {
+    const headers = { 'Accept':'application/json', 'Authorization':'Bearer ' + jwtEl.value.trim() };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(baseEl.value.trim().replace(/\/$/,'') + path, {
+      method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  function ago(iso) {
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h/24)}d ago`;
+  }
+
+  async function refresh() {
+    try {
+      const cnt = await api('GET', '/api/v1/users/me/notifications/unread-count');
+      $('#unreadBadge').textContent = cnt.count;
+      const list = await api('GET', '/api/v1/users/me/notifications?limit=50');
+      renderList(list);
+    } catch (e) {
+      $('#list').innerHTML = `<div class="empty">로드 실패: ${e.message}</div>`;
+      $('#unreadBadge').textContent = '—';
+    }
+  }
+
+  function renderList(items) {
+    if (!items || items.length === 0) {
+      $('#list').innerHTML = '<div class="empty">알림 없음</div>';
+      return;
+    }
+    $('#list').innerHTML = items.map(n => {
+      const unread = n.readAt == null;
+      const actor = n.actorUserId ? `user #${n.actorUserId}` : 'someone';
+      const initial = String(n.actorUserId || '?').slice(0,1);
+      const snippet = (n.payload && n.payload.snippet) || '';
+      const caseId = n.payload && n.payload.errorCaseId;
+      const cmtId = n.payload && n.payload.commentId;
+      return `<div class="notif ${unread ? 'unread' : ''}">
+        ${unread ? '<span class="dot"></span>' : ''}
+        <div class="ava">${initial}</div>
+        <div class="meta">
+          <div class="ttl">${actor} 님이 댓글에서 회원님을 멘션했습니다</div>
+          <div class="body">"${snippet}"</div>
+          <div class="when">${n.type} · case #${caseId} · comment #${cmtId} · ${ago(n.createdAt)}</div>
+        </div>
+        ${unread ? `<button data-read="${n.id}">read</button>` : ''}
+      </div>`;
+    }).join('');
+    [...document.querySelectorAll('[data-read]')].forEach(b => b.onclick = async () => {
+      try { await api('POST', `/api/v1/users/me/notifications/${b.dataset.read}/read`); refresh(); }
+      catch (e) { alert('실패: ' + e.message); }
+    });
+  }
+
+  $('#refreshBtn').onclick = refresh;
+  $('#readAllBtn').onclick = async () => {
+    try { await api('POST', '/api/v1/users/me/notifications/read-all'); refresh(); }
+    catch (e) { alert(e.message); }
+  };
+
+  refresh();
+</script>
+</body>
+</html>

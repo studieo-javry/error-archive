@@ -24,4 +24,13 @@ class SocialIdentityRepositoryAdapter(
 
     override fun findAllByUserId(userId: Long): List<SocialIdentity> =
         jpa.findAllByUserIdOrderByLinkedAtAsc(userId).map { it.toDomain() }
+
+    override fun countByUserId(userId: Long): Long =
+        jpa.countByUserId(userId)
+
+    override fun existsByUserIdAndProvider(userId: Long, provider: SocialProvider): Boolean =
+        jpa.existsByUserIdAndProvider(userId, provider)
+
+    override fun deleteByUserIdAndProvider(userId: Long, provider: SocialProvider): Int =
+        jpa.deleteByUserIdAndProvider(userId, provider)
 }

@@ -47,6 +47,9 @@ dependencies {
   implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
 
+  // Kafka — 알림 도메인 이벤트 producer (mention 등)
+  implementation("org.springframework.kafka:spring-kafka")
+
   // orphan 첨부 GC 스케줄러의 다중 인스턴스 안전 (분산 락)
   implementation("net.javacrumbs.shedlock:shedlock-spring:6.10.0")
   implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.10.0")

@@ -12,6 +12,8 @@ data class MyProfileResponse(
     val status: String,
     /** status=PENDING_DELETION 일 때 grace 시작 시각. SPA 가 만료일 계산. */
     val pendingDeletionAt: Instant?,
+    /** 계정 가입 시각. SPA 의 "Member since" 표시용. */
+    val createdAt: Instant,
 
     // ── Preferences (Phase 1) ──
     /** BCP 47 language tag(예: "ko"). null=서버 기본 */

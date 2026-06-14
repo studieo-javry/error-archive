@@ -77,6 +77,23 @@ class IamWorkspaceQueryAdapter(
         }
     )
 
+    override fun listMembers(workspaceId: Long): List<WorkspaceQueryPort.MemberSummary> = cb.run(
+        {
+            try {
+                val items = iamApi.get()
+                    .uri("/api/v1/workspaces/{id}/members", workspaceId)
+                    .retrieve()
+                    .body(Array<IamMemberItem>::class.java)
+                    ?: emptyArray()
+                items.map { WorkspaceQueryPort.MemberSummary(it.userId, it.displayName, it.avatarUrl, it.role) }
+            } catch (ex: RestClientResponseException) {
+                if (ex.statusCode.value() in listOf(403, 404)) emptyList()
+                else { log.warn(ex) { "iam-api list members failed: status=${ex.statusCode}" }; throw ex }
+            }
+        },
+        { t -> log.warn(t) { "iam-api unavailable on listMembers → empty" }; emptyList() }
+    )
+
     private data class IamWorkspaceItem(
         val id: Long,
         val name: String
@@ -85,6 +102,13 @@ class IamWorkspaceQueryAdapter(
     /** GET /workspaces/{id} 응답에서 viewerRole 만 발췌(나머지 필드는 무시). */
     private data class IamWorkspaceView(
         val viewerRole: String? = null
+    )
+
+    private data class IamMemberItem(
+        val userId: Long,
+        val displayName: String,
+        val avatarUrl: String?,
+        val role: String,
     )
 }
 

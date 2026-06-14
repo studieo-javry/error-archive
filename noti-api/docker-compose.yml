@@ -1,0 +1,79 @@
+services:
+  noti-postgres:
+    image: postgres:16-alpine
+    container_name: noti-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: noti_db
+      POSTGRES_USER: noti
+      POSTGRES_PASSWORD: noti_local_pw   # dev only
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5434:5432"
+    volumes:
+      - noti-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noti -d noti_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      - "postgres"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_min_duration_statement=200"
+
+  # Kafka (KRaft 모드 — Zookeeper 불요). Apache 공식 이미지.
+  # core-api 가 publish, noti-api 가 consume. topic 은 자동 생성.
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: noti-kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094"   # 외부(호스트) 접근
+    environment:
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      # PLAINTEXT 는 *docker network 내부* 용 (kafka-ui 등) — host 가 아니라 service 명으로 advertise.
+      # EXTERNAL 은 *호스트* 용 — spring-kafka 가 호스트에서 9094 로 붙는다.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+
+  # Kafka 토픽/메시지 브라우저 — http://localhost:8027
+  # provectuslabs/kafka-ui = 무료, 가벼움. consumer lag, 메시지 raw view, schema 다 확인 가능.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: noti-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8027:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: noti-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+
+  # 알림 발송 e2e 용 — core-api 의 mailhog 와 별도로 noti-api 도 띄움(8025 충돌 회피).
+  noti-mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: noti-mailhog
+    restart: unless-stopped
+    ports:
+      - "1026:1025"   # SMTP
+      - "8026:8025"   # web UI
+
+volumes:
+  noti-postgres-data:
+    name: noti-postgres-data

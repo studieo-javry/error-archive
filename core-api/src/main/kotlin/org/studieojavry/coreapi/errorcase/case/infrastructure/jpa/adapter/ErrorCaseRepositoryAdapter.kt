@@ -67,6 +67,7 @@ class ErrorCaseRepositoryAdapter(
         criteria.workspaceId?.let { preds += cb.equal(root.get<MetaEmbeddable>("meta").get<Long>("workspaceId"), it) }
         criteria.ownerUserId?.let { preds += cb.equal(root.get<Long>("ownerUserId"), it) }
         criteria.status?.let { preds += cb.equal(root.get<ErrorCaseStatus>("status"), it) }
+        criteria.visibility?.let { preds += cb.equal(root.get<Visibility>("visibility"), it) }
         criteria.severityCode?.let { preds += cb.equal(root.get<MetaEmbeddable>("meta").get<Int>("severityCode"), it) }
         criteria.fingerprint?.let {
             preds += cb.equal(root.get<ErrorSnapshotEmbeddable>("snapshot").get<String>("fingerprint"), it)
@@ -85,13 +86,21 @@ class ErrorCaseRepositoryAdapter(
             .where(*preds.toTypedArray())
             .orderBy(cb.desc(root.get<LocalDateTime>("createdAt")), cb.desc(root.get<Long>("id")))
 
-        return em.createQuery(cq)
+        val entities = em.createQuery(cq)
             .setMaxResults(criteria.limit)
             .resultList
-            .map { it.toSummary() }
+
+        // 태그 N+1 회피 — IN (ids) 단일 쿼리 후 in-memory 그룹핑
+        val ids = entities.mapNotNull { it.id }
+        val tagsByCaseId: Map<Long, List<String>> = if (ids.isEmpty()) emptyMap() else
+            tagRepo.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(ids)
+                .groupBy { it.errorCaseId }
+                .mapValues { (_, rows) -> rows.map { it.tag } }
+
+        return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
     }
 
-    private fun ErrorCaseEntity.toSummary(): ErrorCaseSummary {
+    private fun ErrorCaseEntity.toSummary(tags: List<String>): ErrorCaseSummary {
         // 모든 meta 컬럼이 null 이면 Hibernate 가 embedded 를 null 로 돌려준다(개인 케이스 등).
         val m: MetaEmbeddable? = meta
         return ErrorCaseSummary(
@@ -105,7 +114,9 @@ class ErrorCaseRepositoryAdapter(
             fingerprint = snapshot?.fingerprint,
             exceptionClass = snapshot?.exceptionClass,
             createdAt = createdAt,
-            occurredAt = occurredAt
+            occurredAt = occurredAt,
+            tags = tags,
+            descriptionRaw = description,
         )
     }
 

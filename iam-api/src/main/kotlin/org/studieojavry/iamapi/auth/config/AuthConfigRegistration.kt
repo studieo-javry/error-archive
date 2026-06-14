@@ -9,5 +9,6 @@ import org.springframework.context.annotation.Configuration
     OAuthProperties::class,
     AuthCookieProperties::class,
     AccountDeletionProperties::class,
+    AvatarStorageProperties::class,
 )
 class AuthConfigRegistration

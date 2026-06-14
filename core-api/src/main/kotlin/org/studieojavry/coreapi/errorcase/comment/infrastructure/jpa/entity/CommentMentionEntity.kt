@@ -12,7 +12,10 @@ import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentMention
 @Entity
 @Table(
     name = "error_case_comment_mention",
-    indexes = [Index(name = "ix_comment_mention_comment", columnList = "comment_id")]
+    indexes = [
+        Index(name = "ix_comment_mention_comment", columnList = "comment_id"),
+        Index(name = "ix_comment_mention_user", columnList = "mentioned_user_id"),
+    ]
 )
 class CommentMentionEntity(
     @Id
@@ -24,11 +27,20 @@ class CommentMentionEntity(
 
     @Column(name = "mentioned_identifier", nullable = false, length = 100)
     var mentionedIdentifier: String,
+
+    /** 식별자 → userId 매핑 성공 시. 동명이인/존재하지 않는 사용자면 null. */
+    @Column(name = "mentioned_user_id")
+    var mentionedUserId: Long? = null,
 ) {
-    fun toDomain(): CommentMention = CommentMention.rehydrate(id!!, commentId, mentionedIdentifier)
+    fun toDomain(): CommentMention =
+        CommentMention.rehydrate(id!!, commentId, mentionedIdentifier, mentionedUserId)
+
     companion object {
         fun fromDomain(m: CommentMention) = CommentMentionEntity(
-            id = m.id, commentId = m.commentId, mentionedIdentifier = m.mentionedIdentifier,
+            id = m.id,
+            commentId = m.commentId,
+            mentionedIdentifier = m.mentionedIdentifier,
+            mentionedUserId = m.mentionedUserId,
         )
     }
 }

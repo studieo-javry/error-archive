@@ -21,6 +21,7 @@ class GetMyProfileUseCase(
             bio = user.bio,
             status = user.status.name,
             pendingDeletionAt = user.pendingDeletionAt,
+            createdAt = user.createdAt,
             language = user.language,
             timezone = user.timezone,
             theme = user.theme,
@@ -37,6 +38,8 @@ class GetMyProfileUseCase(
         val status: String,
         /** PENDING_DELETION 일 때 grace 시작 시각. 클라가 만료까지 남은 시간 표시 가능. */
         val pendingDeletionAt: java.time.Instant?,
+        /** 계정 가입 시각 (불변). */
+        val createdAt: java.time.Instant,
         val language: String?,
         val timezone: String?,
         val theme: org.studieojavry.iamapi.auth.domain.model.vo.Theme,

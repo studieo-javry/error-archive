@@ -1,5 +1,681 @@
 # error-archive Implementation Changelog
 
+## 2026-06-14 14:05 KST · core-api · fix: DescriptionPreview — placeholder 가 경계에 걸치면 직전까지 후퇴 (B 옵션)
+
+**증상**: 120자 슬라이스 위치가 `[code]` / `[file]` placeholder 한가운데에 떨어지면 `[co…` 같은 깨진 출력 노출.
+
+**수정**: take(120) 후 끝부분에 *닫히지 않은 `[`* 가 있으면 그 위치부터 끝까지 제거.
+```kotlin
+val truncated = s.take(MAX_LENGTH)
+val lastOpen = truncated.lastIndexOf('[')
+val lastClose = truncated.lastIndexOf(']')
+val cleaned = if (lastOpen > lastClose) truncated.substring(0, lastOpen) else truncated
+return cleaned.trimEnd() + "…"
+```
+- 잘림 보장 유지 (절대 120자 안 넘김, 가끔 110~119자로 짧아질 수 있음)
+- placeholder 의 의미("코드/첨부 있음") 가 보존되거나 *통째로 사라짐* — 깨진 형태는 안 나옴
+
+**회귀 방지 테스트** — `core-api/src/test/.../DescriptionPreviewTest.kt` 10 케이스:
+- null/blank/짧은 본문/snippet 치환/attach 치환/복수 마커 + 공백 정규화
+- 정확히 120자 그대로 / 121자 잘림 + …
+- B 옵션 경계 시나리오 3개 (snippet/attach 한가운데 잘림 후퇴, 완전 포함 시 유지)
+
+`:core-api:test --tests DescriptionPreviewTest` BUILD SUCCESSFUL (10/10).
+
+---
+
+## 2026-06-14 13:50 KST · core-api · feat: 공개 에러 케이스 검색 endpoint + 목록 응답 확장 (tags, descriptionPreview)
+
+**요청**: search 페이지에서 공개 케이스만 무한 스크롤로. status 필터 시작 + 향후 확장. 목록 응답에 태그 + description 일부(120자) 포함. description 의 마커는 placeholder 로.
+
+### 신규 endpoint
+- `GET /api/v1/error-cases/search?status=&severity=&fingerprint=&cursor=&size=` — visibility=PUBLIC 강제, 인증된 사용자라면 누구나. cursor 페이징(size+1 hasNext), 정렬 createdAt DESC, id DESC. Swagger 동시 작성
+
+### 도메인/포트 확장
+- `ErrorCaseSearchCriteria` 에 `visibility: Visibility?` 추가 — search use case 가 PUBLIC 으로 강제, 기존 `ListErrorCasesUseCase` 는 null 전달
+- `ErrorCaseSummary` 에 `tags: List<String>`, `descriptionRaw: String?` 두 필드 추가 (raw 는 use case 가 preview 변환에 사용 — DTO 매핑 시점에 변환되어 응답엔 안 노출)
+
+### preview 변환 — 신규 `DescriptionPreview` (application/usecase/)
+- `@snippet(<markerId>)` → `[code]`
+- `@attach(<markerId>)` → `[file]`
+- 연속 공백/줄바꿈 → 단일 공백
+- max **120자** + 잘리면 끝에 `…`
+- 마커를 *제거* 가 아니라 placeholder 로 두는 이유: "이 케이스엔 코드/첨부가 있다" 신호 보존
+
+### Infrastructure
+- `ErrorCaseRepositoryAdapter.search`:
+  - visibility predicate 한 줄 추가
+  - 태그 N+1 회피 — 결과 IDs 로 `findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc` 단일 쿼리 후 in-memory 그룹핑
+  - toSummary 가 tags + descriptionRaw 동봉
+- `ErrorCaseTagJpaRepository.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc` 신규
+
+### 응답 DTO
+- `ErrorCaseSummaryResponse` 에 `tags`, `descriptionPreview` 추가 — `from(s)` 가 `DescriptionPreview.of(s.descriptionRaw)` 호출
+- 내 케이스 목록(`GET /error-cases`) 과 공개 검색(`GET /error-cases/search`) 둘 다 같은 schema
+
+### 신규 UseCase
+- `SearchPublicErrorCasesUseCase` — `ListErrorCasesUseCase` 와 분리 (의도/권한 모델이 다름). visibility=PUBLIC + ownerUserId=null + workspaceId=null 강제. 향후 *공개 한정 기능* (인기/추천/정렬 옵션) 확장 여지
+
+### 실DB 검증 (core-api-postgres + bootRun, X-Test-User-Id 헤더)
+- 시드 4건 — PUBLIC×3 (OPEN/RESOLVED/IN_PROGRESS), PRIVATE×1
+- ✓ S1 /search default: PUBLIC 3건만 + 정렬 정상, PRIVATE 1건은 제외
+- ✓ S2 status=RESOLVED 필터: 1건 (id=42)
+- ✓ S3 size=2 cursor: 1페이지 2건 + hasNext=true + nextCursor 발급
+- ✓ S4 cursor 다음 페이지: 1건 + hasNext=false
+- ✓ S5 기존 /error-cases 도 tags + descriptionPreview 노출 확인
+- ✓ descriptionPreview: 마커 치환 (`@snippet(7a7d35e9)` → `[code]`, `@attach(file_001)` → `[file]`), 긴 본문 120자 + `…` 잘림 확인
+- ✓ tags 정렬 createdAt asc (`["java","spring"]`)
+
+### 빌드
+- `:core-api:compileKotlin` BUILD SUCCESSFUL
+
+---
+
+## 2026-06-12 22:05 KST · insight-api · refactor: Visibility 제거 — 잔디 전부 공개
+
+**결정**: 잔디 공개/비공개 토글은 사용자 통제권 가치 대비 운영 복잡도가 커서 제거. 모든 잔디는 인증된 사용자라면 누구나 조회 가능.
+
+### 삭제 파일 7
+- `domain/Visibility.kt`
+- `infrastructure/VisibilityEntity.kt` · `VisibilityJpaRepository.kt` · `VisibilityRepositoryAdapter.kt`
+- `application/port/VisibilityRepositoryPort.kt`
+- `application/usecase/UpdateVisibilityUseCase.kt`
+- `presentation/VisibilityController.kt`
+
+### 코드 변경
+- `GetActivityGrassUseCase`: 첫 줄 viewer ≠ target 분기 + `AccessDeniedException` 제거. 시그니처 `invoke(viewerUserId, targetUserId, ...)` → `invoke(targetUserId, ...)` 로 단순화
+- `ActivityGrassController`: `AccessDeniedException` import / catch 제거, `publicGrass` 의 403 응답 명세 제거 (200/401 만 남음), `invoke` 헬퍼에서 viewerId 매개변수 삭제
+
+### 문서 동기화
+- `activity-grass-design.md`: §4 의 `insight_user_visibility` 테이블 제거 + API 표에서 visibility endpoint 두 줄 제거 + 공개 정책 한 줄 추가
+- `insight-overview.md`: 도메인 모델 표/DB 표/API 표/보안 표/구현됨 목록/참고 파일 인덱스 모두 visibility 흔적 제거
+
+### DB
+- *컨테이너 살아 있는 환경* 에선 ddl-auto=update 가 기존 테이블을 drop 하지 *않으므로*, 한 번 수동 DROP 권장:
+  ```
+  docker exec insight-postgres psql -U insight -d insight_db \
+    -c "DROP TABLE IF EXISTS insight_user_visibility;"
+  ```
+
+### 빌드
+- `:insight-api:build` (test 포함) BUILD SUCCESSFUL
+
+---
+
+## 2026-06-12 21:55 KST · insight-api · docs: 잔디 BC 구현 현황 단일 문서
+
+신규 `insight-api/docs/insight-overview.md` — 도메인 6종 + DB 3 테이블 + API 매트릭스 + 이벤트 흐름 (코드 매핑 포함) + 가중치/색 정책 + 보안/internal JWT 매트릭스 + yml 설정 + 인프라 포트 매트릭스 + e2e 검증 절차 + **구현된 것 vs 미구현 영역 명시 표** + 참고 파일 인덱스 + 다음 단계 우선순위까지 12 섹션.
+
+설계 사상은 `activity-grass-design.md`, 현재 구현 매핑은 본 overview 로 역할 분리.
+
+---
+
+## 2026-06-12 21:40 KST · insight-api + iam-api + gateway · feat: Activity Grass — insight-api 본체 구현
+
+**요청 한 줄**: "잔디 BC" 를 insight-api 에 실제 코드로. activity kind 에서 `SUGGESTION_ACCEPTED` / `SNIPPET_REGISTERED` 제외.
+
+### Activity 종류 정리 (10 → 8)
+- 제거: `SUGGESTION_ACCEPTED`, `SNIPPET_REGISTERED`
+- 유지 (가중치): `CASE_CREATED=5`, `SOLUTION_ADDED=5`, `CASE_PUBLISHED=3`, `STEP_ADDED=2`, `COMMENT_POSTED=2`, `COMMENT_REACTION=1`, `COMMENT_HELPFUL=1`, `FOLLOWED_USER=1`
+- design doc(`insight-api/docs/activity-grass-design.md`) + playground(`playground/activity-grass.html`) 두 곳 동시 갱신
+
+### insight-api — 도메인 + 인프라
+- 도메인 (`activity/domain/`): `ActivityType` (enum 8종), `ActivityEvent` (멱등 raw, 13개월 보존), `ActivityDaily` (사용자 × user-timezone 일자), `Visibility` (잔디 공개 토글), `Streak` (오늘 기준 거꾸로 연속 일수), `LevelCalculator` + `Thresholds` (relative quantile / absolute)
+- JPA (`activity/infrastructure/`): 3 entity + 3 JpaRepository + 3 Adapter
+  - `insight_activity_event` (`UNIQUE idempotency_key`, `ix_user_time`)
+  - `insight_activity_daily` (PK `(user_id, activity_date)`, `JdbcTemplate native ON CONFLICT` 으로 jsonb breakdown 증분)
+  - `insight_user_visibility` (PK `user_id`)
+
+### insight-api — Application + Adapters
+- UseCase: `IngestActivityEventUseCase` (멱등 INSERT → daily 증분, server-side weight 정책 권한), `GetActivityGrassUseCase` (visibility → daily 조회 → days 채움 → level + streak + totals + best), `UpdateVisibilityUseCase`
+- Port: `ActivityEventRepositoryPort` / `ActivityDailyRepositoryPort` / `VisibilityRepositoryPort` / `UserTimezonePort`
+- Adapter: `ActivityEventRepositoryAdapter` (멱등 INSERT + DataIntegrityViolation catch), `ActivityDailyRepositoryAdapter` (native upsert + jsonb_set), `IamUserTimezoneAdapter` (60초 메모리 캐시 + UTC fallback)
+- Kafka: `KafkaConsumerConfig` (Spring Boot 4 수동 빈, `@EnableKafka`), `ActivityEventConsumer` (topic `user-activity.v1`, group `insight-api`)
+- Config: `ActivityWeightProperties` (`insight.activity.weights.{TYPE}` 정책 주입), `IamApiProperties`, `ConfigRegistration` (`@ConfigurationPropertiesScan`)
+
+### insight-api — Presentation + Security
+- `ActivityGrassController` — `GET /api/v1/users/me/activity-grass`, `GET /api/v1/users/{userId}/activity-grass` (둘 다 `from/to/mode` 옵션, 비공개 시 403)
+- `VisibilityController` — `PATCH /api/v1/users/me/activity-grass/visibility`
+- `SecurityConfig` — gateway internal JWT(aud=insight-api) 검증, principal = userId
+
+### iam-api 연동
+- 신규 `InternalUserPreferencesController` — `GET /internal/users/{userId}/preferences` (`timezone`, `language` 반환). gateway 미라우팅
+- iam-api `internal-auth.verifier.known-issuers` 에 `insight-api` 공개키 추가 (noti-api 와 동일 키 재사용)
+
+### gateway
+- `RouteConfig.insightApiRoute` — `/api/v1/users/me/activity-grass(**)` + `/api/v1/users/*/activity-grass(**)` → `localhost:8083` (+ CircuitBreaker `insightApiCB`)
+- `RouteConfig.insightDocsRoute` — `/api-docs/insight-api` → 8083/v3/api-docs
+- `HeaderInjectionFilter` audience 분기에 `/activity-grass → insight-api` 추가
+
+### 인프라
+- `insight-api/docker-compose.yml` — `insight-postgres` (5435) 만. Kafka broker 는 noti-api 의 것을 *공유* (localhost:9094)
+- `insight-api/build.gradle.kts` — Spring Boot 4, JPA, spring-kafka, shared-internal-auth, springdoc, Jackson 3
+- `insight-api/application.yml` + `application-local.yml` — port 8083, datasource, kafka, internal-auth issuer/verifier, weights
+- `insight-api/src/test/resources/application-test.yml` — H2 + 자체 internal-auth 키 (외부 의존성 0)
+- `InsightApiApplicationTests` 에 `@ActiveProfiles("test")` 추가
+
+### 빌드
+- `:insight-api:build` 통과 (contextLoads 포함)
+- `:iam-api`, `:gateway`, `:core-api`, `:noti-api` compile 모두 통과
+
+### 의도된 미구현 (publish 측은 다음 단계)
+- 출처 서비스(core-api / iam-api) 에 `ActivityPublisher` (Kafka producer) 추가 — 이번 PR 범위 밖. 추가 시 `KafkaProducerConfig` (Boot 4 수동 빈) + 활동 발생 지점에 `runCatching { ... }` swallow publish 호출
+
+---
+
+## 2026-06-12 01:10 KST · playground + insight-api docs · refactor: Activity Grass → "Debug Pulse" — 서비스 정체성 반영 디자인
+
+**문제**: 초안의 indigo 단조 잔디는 GitHub 와 너무 닮고 *에러 아카이브* 의 도메인 정체성이 안 드러남.
+
+**변경**:
+- 컨셉 재정의 — "Debug Pulse" — 잔디 한 칸을 *그 날의 디버깅 결말* 로 해석
+- 5단계 색 스펙트럼이 **error → resolved 스토리** 를 가짐:
+  - 0 idle (jet gray) / 1 errored (burn red) / 2 debugging (amber) / 3 progressing (teal) / 4 RESOLVED (emerald + glow)
+- 베이스를 *다크 콘솔* 톤으로, 헤더는 터미널 프롬프트(`$ debug-pulse▮` + cursor blink)
+- 통계 카드에 ANSI dot 글로우 (red/amber/teal/emerald)
+- tooltip 을 *로그 라인* 룩으로 변경 — `[2026-06-12] RESOLVED 4 stacks · score=11`
+- 셀 클릭 → 터미널 output 룩 day panel — `▸ [RESOLVED] case.created × 1`
+- 활동 라벨도 `case.created`, `comment.posted` 같은 *코드성 도트 표기* 로 통일
+- 폰트: JetBrains Mono(메타/콘솔) + Inter(본문) 혼용
+- 라이트 모드 옵션 유지 — 같은 hue 의 명도만 조정
+
+`playground/activity-grass.html` 전면 재작성 + `insight-api/docs/activity-grass-design.md` §8 (FE 디자인) 9 소절로 확장.
+
+---
+
+## 2026-06-12 00:40 KST · insight-api + playground · plan: Activity Grass — 기획 + 설계 문서 + mock UI
+
+신규 `insight-api/docs/activity-grass-design.md` (10 섹션):
+- 컨셉 — GitHub contributions 변형, *단순 카운트 대신 가중치 점수*
+- 활동 10종 + 가중치 + 멱등 키 매트릭스 (`CASE_CREATED=5`, `SOLUTION_ADDED=5`, `COMMENT_POSTED=2` ...)
+- 5단계 색 — relative quantile(default) vs absolute threshold 모드
+- 이벤트 흐름 — Kafka `user-activity.v1` topic → insight-api consume → daily aggregate
+- DB 3 테이블 — `insight_activity_event(raw)` / `insight_activity_daily(aggregate)` / `insight_user_visibility`
+- API 4종 외부 + internal 0종 (모든 ingest 는 Kafka)
+- 모듈 구조(hexagonal) — domain/application/infrastructure/presentation
+- 보안, FE 디자인 가이드(색/그리드/위젯/접근성), 추후
+
+신규 `playground/activity-grass.html` — 1년 grid(53주×7일), streak 카드 4종, 활동 종류별 breakdown, 요일별 평균, 셀 hover tooltip + 클릭 day panel, relative/absolute 토글, reseed, dark mode, mock 데이터 생성기 포함.
+
+---
+
+## 2026-06-12 00:10 KST · noti-api · docs: 노티 전체 구조 단일 문서로 정리
+
+신규 `noti-api/docs/notifications-overview.md` — 그림(시퀀스/배포), 도메인 3종(Notification/NotificationSettings/DeviceToken), API 매트릭스(외부/internal), 이벤트 흐름(producer→Kafka→fan-out 3채널), 발송 채널 추상화(Email/Push/Publisher 별 Adapter 표), internal JWT 매트릭스(issuer/verifier), 설정 yml + Spring Boot 4 Kafka 수동 빈, docker-compose 포트, e2e 검증 순서, 의도된 미구현, 참고 파일 인덱스까지 한 페이지.
+
+---
+
+## 2026-06-11 22:20 KST · core-api + playground · fix: 멘션 정규식 경계 — "@" 앞이 공백/문자열 시작일 때만
+
+**증상**: `hello@user`, `` `@user ``, `me@example.com` 같이 *@ 앞에 비공백 문자* 가 있어도 멘션으로 인식 — 이메일/inline-code 안의 @ 까지 알림이 발사됨.
+
+**원인**: BE/FE 정규식이 모두 `@` 앞 문맥을 보지 않음.
+- BE `CreateCommentUseCase.MENTION_PATTERN = Regex("@([A-Za-z0-9_.가-힣-]+)")`
+- FE `highlightMentions` 의 `/@([\w가-힣ㄱ-ㅎㅏ-ㅣ_-]+)/`
+
+**수정** (3곳 정렬):
+- BE: `Regex("(?:^|\\s)@([A-Za-z0-9_.가-힣-]+)")` — `findAll` 동작 유지(연속 멘션도 인식). 캡처 그룹 1 만 사용하므로 호출부 무변경.
+- FE 하이라이트: `/(^|\s)@([\w가-힣ㄱ-ㅎㅏ-ㅣ_-]{1,32})/g` 로 좁히고 캡처 그룹 1(앞 공백) 복원.
+- FE dropdown: 이미 `(^|\s)@(...)$` 였으므로 변경 없음.
+
+### 통과 케이스
+- `@홍지인` (line start) — 멘션 ✓
+- `안녕 @홍지인` (space 앞) — 멘션 ✓
+- `@홍지인 @영희` (연속) — 둘 다 멘션 ✓
+- `@` 단독 — dropdown 뜨고, 사용자 선택 시 정상 ✓
+
+### 차단 케이스
+- `hello@홍지인`, `\`@홍지인`, `me@example.com` — 멘션 아님 ✓
+
+---
+
+## 2026-06-11 22:00 KST · core-api + noti-api · fix: Spring Boot 4 에 KafkaAutoConfiguration 부재 — Producer/Consumer 빈 수동 등록
+
+**증상**: 21:45 변경 후에도 bootRun 이 `KafkaTemplate` bean 없음으로 즉시 실패.
+
+**원인**: Spring Boot 4.0.4 의 `spring-boot-autoconfigure-4.0.4.jar` 가 Kafka 모듈을 *포함하지 않음* (Boot 4 가 기능별 모듈로 분해되며 `spring-boot-kafka` autoconfigure 가 별도 starter 로 빠졌고 현재 의존성에 미포함). `spring-kafka` jar 자체에도 autoconfigure 가 없음 → KafkaAutoConfiguration 자체가 클래스패스에 없어 `KafkaTemplate` 빈이 절대 생성되지 않음.
+
+**수정**:
+- 신규 `core-api/.../noti/KafkaProducerConfig.kt` — `@ConditionalOnProperty(mode=kafka)` + `DefaultKafkaProducerFactory` + `KafkaTemplate<String,String>` 빈 수동 등록. `application-local.yml` 의 `spring.kafka.*` 를 `@Value` 로 직접 읽음.
+- 신규 `noti-api/.../kafka/KafkaConsumerConfig.kt` — `@EnableKafka` + `DefaultKafkaConsumerFactory` + `kafkaListenerContainerFactory` (이름 고정 — `@KafkaListener` 기본 lookup) 빈 수동 등록.
+
+### 결과
+- `./gradlew :core-api:bootRun` 컨텍스트 초기화 통과 (KafkaTemplate 빈 정상 등록, 이후엔 포트 충돌까지 진행)
+- noti-api 의 `@KafkaListener` 도 정상 동작 가능
+- Spring Boot 4 starter 분해 패턴이 안정화되면 (`spring-boot-starter-kafka` 가 maven central 에 publish 되면) 수동 Config 를 제거하고 autoconfigure 로 회귀 가능
+
+---
+
+## 2026-06-11 21:45 KST · core-api · fix: 빌드 실패 3건 (yml 중복키 + Kafka publisher 항상-활성 + test profile 미분리)
+
+**증상**: `./gradlew :core-api:build` 가 `contextLoads()` 에서 `DuplicateKeyException` → 그 다음엔 `KafkaTemplate` 빈 없음으로 연속 실패.
+
+### 원인 + 수정
+1. **application-local.yml 의 top-level `spring:` 가 2개** (Phase A 에서 `spring.kafka:` 블록을 새 `spring:` 로 추가) → SnakeYAML `DuplicateKeyException`.
+   → `spring.kafka:` 블록을 기존 `spring:` 아래 `jpa:` 와 `logging:` 사이로 병합.
+2. **`KafkaNotificationPublisherAdapter` 가 `@ConditionalOnProperty(matchIfMissing=true)`** 라 test/외부환경에서도 활성화 → `KafkaTemplate` 빈 없는 컨텍스트에선 NoSuchBeanDefinitionException.
+   → `matchIfMissing=true` 제거. `application.yml` (base) 에 `noti.publisher.mode: ${NOTI_PUBLISHER_MODE:http}` 명시해 *명시 없는 환경에선 http adapter 활성*.
+3. **`CoreApiApplicationTests` 가 local profile 을 그대로 상속** → `mode=kafka` 가 우선 → Kafka adapter 활성 → 동일 실패.
+   → `@ActiveProfiles("test")` 추가 + `src/test/resources/application-test.yml` 생성 (H2 mem DB, `mode=http`, JWT/internal-auth 키 모두 자체 포함).
+
+### 결과
+- `./gradlew :core-api:build` 통과
+- local 기동 동작 무변경 — `application-local.yml` 의 `mode: kafka` 가 그대로 우선
+- ENV `NOTI_PUBLISHER_MODE=http` 로 즉시 회귀하는 동작도 유지
+
+---
+
+## 2026-06-11 23:40 KST · core-api + noti-api + iam-api + gateway · feat: 의도된 미구현 해소 — Kafka pub/sub + SMTP + FCM stub + device tokens
+
+**요청 한 줄**: "의도된 미구현" 으로 남아 있던 1) core→noti 전달의 Kafka 화, 2) noti 의 email/push 발송 추상화(SMTP + FCM) 를 실제 코드로 구현.
+
+### Phase A — Kafka 인프라 + Producer/Consumer 교체
+- `noti-api/docker-compose.yml` 에 `apache/kafka:3.8.0` (KRaft, 외부 9094) + `noti-mailhog` (SMTP 1026 / UI 8026) 추가
+- core-api: `KafkaNotificationPublisherAdapter` (topic `notification-events.mentions.v1`) 신설 + 기존 `NotiApiNotificationPublisherAdapter` 를 `@ConditionalOnProperty(prefix=noti.publisher, name=mode, havingValue=http)` 로 변경. Kafka 모드가 *기본*
+- core-api `application-local.yml`: `spring.kafka.bootstrap-servers=localhost:9094` + `noti.publisher.mode=kafka` (env `NOTI_PUBLISHER_MODE=http` 로 fallback)
+- noti-api: `MentionEventConsumer` (`@KafkaListener` topic+group `noti-api`) → 기존 `ReceiveMentionEventUseCase` 그대로 호출 — 메시지당 1 recipient (fan-out 은 producer)
+
+### Phase B — Email/Push 발송 어댑터 추상화
+- 신규 ports `EmailSenderPort` / `PushSenderPort`
+- 신규 properties `EmailProperties` (`noti.email.{provider,from-address,from-name,subject-prefix}`) + `PushProperties` (`noti.push.{provider,fcm.project-id,fcm.service-account-path}`)
+- 어댑터 4종 (`@ConditionalOnProperty` 로 swap):
+  - `LoggingEmailSenderAdapter` (default — 콘솔만)
+  - `SmtpEmailSenderAdapter` (`provider=smtp`, JavaMailSender + MimeMessage UTF-8)
+  - `LoggingPushSenderAdapter` (default)
+  - `FcmPushSenderAdapter` (`provider=fcm`, OAuth2 + send v1 *stub* — 자격증명 미설정 시 안전 fail)
+- noti-api `build.gradle.kts`: `spring-boot-starter-mail` + `spring-kafka`
+- noti-api `application-local.yml`: `spring.mail.{host=localhost,port=1026}` (mailhog) + auth/starttls 토글 ENV
+
+### Phase C — Device Token endpoint
+- DB: `noti_device_token(id, user_id, token, platform, created_at)` + unique(user_id,token) + ix_user
+- 도메인 `DeviceToken` (Platform=IOS/ANDROID/WEB) + Entity + JpaRepo + `DeviceTokenRepositoryPort` + Adapter
+- UseCases `RegisterDeviceTokenUseCase` (멱등) / `RemoveDeviceTokenUseCase`
+- 신규 endpoint `DeviceTokenController`
+  - `POST   /api/v1/users/me/device-tokens` (201; body `{token, platform}`)
+  - `DELETE /api/v1/users/me/device-tokens/{token}` (204, 멱등)
+- gateway `RouteConfig` 의 noti-api 매처에 `/users/me/device-tokens(**)` 추가
+- gateway `HeaderInjectionFilter` 의 audience 분기에 `/api/v1/users/me/device-tokens → noti-api` 추가
+
+### Phase D — 발송 wiring (in-app + email + push fan-out)
+- noti-api 가 *issuer* 역할도 겸하도록 변경 — `internal-auth.issuer` 키 등록 (RSA 2048, kid=`noti-api-local-1`)
+- iam-api `internal-auth.verifier.known-issuers` 에 `noti-api` 공개키 추가 (gateway/core-api 옆)
+- iam-api 신규 internal endpoint `GET /internal/users/{userId}/contact` (`InternalUserContactController`) — `{userId, email, displayName, status, active}` 반환, gateway 미라우팅
+- noti-api 신규 port `IamUserContactPort` + `IamUserContactAdapter` (RestClient + 자기키 발급, sub=`system`) + `IamApiProperties` (`noti.iam-api.base-url`) + `IamApiRestClientConfig`
+- `ReceiveMentionEventUseCase` 재구성 — 3-채널 fan-out
+  - **in-app**: `masterEnabled && inApp.mentions` → 별도 `InAppMentionWriter` (@Transactional) 가 적재 (Spring self-invocation 회피)
+  - **email**: `masterEnabled && email.mentions` → iam-api 로 contact 조회 → `EmailSenderPort` 호출 (subject = `[Error Archive] {actor} mentioned you`, HTML+text)
+  - **push**: `masterEnabled && inApp.mentions` → device tokens 조회 → `PushSenderPort` 호출 (FCM data `{type,errorCaseId,commentId,actorUserId}`)
+- 발송 채널 실패는 *swallow + warn* — 한 채널 장애가 다른 채널을 막지 않음
+
+### 운영 노트
+- **SMTP/푸시 default 는 logging** — local 첫 기동 시 외부 서비스 없이도 동작. mailhog 띄우면 `NOTI_EMAIL_PROVIDER=smtp` 한 줄로 전환
+- **FCM 은 stub** — `NOTI_PUSH_PROVIDER=fcm` + `NOTI_FCM_PROJECT_ID` + `NOTI_FCM_SERVICE_ACCOUNT_PATH` 가 모두 채워질 때만 활성. 자격증명 없으면 안전 fail
+- **Kafka 가 *기본*, HTTP 는 fallback** — `NOTI_PUBLISHER_MODE=http` 로 즉시 회귀 가능
+
+### 빌드
+- `:noti-api:compileKotlin` / `:iam-api:compileKotlin` / `:gateway:compileKotlin` / `:core-api:compileKotlin` 모두 성공 (warnings only)
+
+---
+
+## 2026-06-11 19:05 KST · iam-api + core-api + noti-api + gateway · feat: 멘션 자동완성 v2 + userId 매핑 + 알림 적재/inbox (M1~M6 전체)
+
+**요청 한 줄**: 댓글 본문의 @멘션이 *실제로 동작* 하도록 — 자동완성 후보 v2, 식별자→userId 매핑, noti-api 로 알림 적재, 내 inbox endpoint 까지 단대단.
+
+### M1 · iam-api 사용자 검색 endpoint
+- `UserRepositoryPort` 에 `searchByDisplayNamePrefix` / `findActiveByDisplayName` / `findAllByIds` 추가, Jpa + Adapter 동기화
+- 신규 `SearchUsersUseCase` — ACTIVE 만, viewer 본인 제외, 빈 q → 최근 가입 순
+- 신규 endpoint `GET /api/v1/users/search?q=&limit=` + Swagger
+- 응답 DTO `UserSearchResponse(userId, displayName, avatarUrl)`
+
+### M3 · CommentMention 에 mentionedUserId 매핑
+- DB: `error_case_comment_mention.mentioned_user_id BIGINT` + `ix_comment_mention_user` 인덱스
+- 도메인 `CommentMention` 에 `mentionedUserId: Long?` 추가 + Entity 동기화
+- `CreateCommentUseCase` 가 식별자 파싱 직후 *iam-api 로 정확 일치 1건* 조회 → userId 채움 (동명이인 X, 미존재 X 면 null)
+
+### v2 · 멘션 후보 endpoint (cross-aggregate)
+- 신규 `IamUserQueryPort` (search/resolve/findByIds) + `IamUserQueryAdapter` (기존 `iamApiRestClient` 재사용)
+- `WorkspaceQueryPort.listMembers(workspaceId)` 추가 + adapter 보강 (iam-api `/workspaces/{id}/members` 호출)
+- 신규 `MentionCandidatesUseCase` — 4가지 source 합산:
+  - 케이스 댓글 참여자(가중치 30)
+  - 케이스 owner(20)
+  - 워크스페이스 멤버(15) — 워크스페이스 케이스만, 외부 후보 *자동 제거* (정보 누출 방지)
+  - iam-api prefix 검색(5)
+  - prefix 일치 +12 보너스
+- 신규 `GET /api/v1/error-cases/{caseId}/mention-candidates?q=&limit=` (`MentionCandidatesController`)
+- 응답: `{userId, displayName, avatarUrl, badge}` — badge=`in-discussion|owner|workspace-member|search`
+
+### M4-M5 · noti-api 알림 도메인 + 적재 endpoint
+- DB: `noti_notification(id, recipient_user_id, type, actor_user_id, payload jsonb, read_at, created_at)` + 2 인덱스(recipient_created · 부분 인덱스 unread)
+- 도메인 `Notification` + enum `NotificationType` (MENTION_IN_COMMENT — 추후 REPLY/FOLLOWER/INVITATION/SECURITY)
+- Entity(JSONB String 매핑) + JpaRepo + Adapter
+- 신규 `ReceiveMentionEventUseCase` — 수신 시 사용자별 `NotificationSettings` 조회 → `masterEnabled && inApp.mentions` 인 경우만 row 적재
+- 신규 internal endpoint `POST /internal/notifications/mentions` (`InternalNotificationController`) — core-api 가 동기 호출
+
+### core-api → noti-api 알림 발사
+- 신규 `NotificationPublisherPort` + `NotiApiNotificationPublisherAdapter` (RestClient + CircuitBreaker `notiApi`)
+- 신규 `NotiApiProperties` (`core.noti-api.base-url`) + `NotiApiRestClientConfig` — *core-api 가 자기 키로 internal JWT 발급* (aud=noti-api)
+- `application-local.yml` 에 `core.noti-api.base-url: http://localhost:8082`
+- `CreateCommentUseCase` 가 멘션 저장 후 *userId 가 매핑된 + 본인 아님* 대상에게 `publishMentions` 호출 — 실패는 *조용히 fallback* (댓글 작성은 정상)
+
+### M6 · 내 알림 inbox + 카운터
+- 신규 `MyNotificationsController`:
+  - `GET /api/v1/users/me/notifications?unreadOnly=&limit=&offset=` — 최신순, 본인 row 만
+  - `GET .../unread-count` — 종 아이콘용
+  - `POST .../{id}/read` — 멱등 단건 읽음 (본인 가드)
+  - `POST .../read-all` — 모두 읽음
+- DTO `NotificationResponse{id, type, actorUserId, payload(Map), readAt, createdAt}` — payload 는 type 별 자유 JSON
+
+### Security / Gateway
+- noti-api `application-local.yml` 의 `internal-auth.verifier.known-issuers` 에 **`core-api` 공개키 추가** (이게 빠져 있어 초기 e2e 가 401 — 발견·수정)
+- Gateway `RouteConfig.notiApiRoute` 에 `/users/me/notifications/**` 추가
+- `HeaderInjectionFilter.resolveAudience` 에 `/notifications` 시작 path → `AUDIENCE_NOTI_API`
+- `/internal/**` 은 gateway 가 라우팅 안 함 — 외부 노출 X. noti-api 의 InternalToken filter 가 직접 검증
+
+### M2 · FE wiring
+- `core-api/.../static/comment-tester.html`:
+  - composer textarea 의 `@` 토큰 감지 → `/error-cases/{id}/mention-candidates` 호출
+  - dropdown UI (avatar + displayName + badge) + 방향키/Enter/Tab/ESC navigation
+  - blur 시 자동 닫힘
+  - 답글 composer 도 동적 wiring (MutationObserver)
+  - 종 아이콘은 표시만 (X-Test-User-Id 인증으론 gateway 경유 불가 — playground 별도 페이지 안내)
+- 신규 `playground/mention-inbox.html` — gateway 경유로 inbox/unread/read 검증. JWT + Bearer 인증
+
+### 검증 (e2e 통과)
+- iam-api: `GET /users/search?q=` → 빈 q 는 ACTIVE 최근순, q="hong" → ko prefix 매칭 X (한글 정상), q="홍" → 홍지인 ✓
+- core-api: `GET /error-cases/39/mention-candidates?q=홍` → `홍지인` badge=`search` 정확 반환 ✓
+- 댓글 `@홍지인` 작성 → DB row `mentioned_identifier="홍지인", mentioned_user_id=3` ✓
+- noti-api: row 1건 적재 (recipient_user_id=3, type=MENTION_IN_COMMENT, payload={errorCaseId, commentId, snippet}) ✓
+- user 3 inbox: `GET /users/me/notifications` → 알림 1건, `unread-count` → 1 ✓
+- 읽음 처리 → `read-all` 후 unread=0 + unreadOnly=true 응답 빈 배열 ✓
+- 본인 멘션 self-skip: user 3 가 자기 자신 멘션 → noti row 추가 안 됨 (그대로 1건) ✓
+
+### 의도된 미구현 (별도 phase)
+- **Kafka** 도입 — 현재 core-api → noti-api 동기 HTTP. publisher Port 만 유지하면 Kafka producer 로 *호출자 변경 없이* 교체 가능
+- **email / push sender** — `noti.inApp.mentions` 만 처리. email 발송, FCM 푸시는 후속
+- **이미 매핑된 row 의 *재시도*** — publishMentions 실패 시 outbox 재처리 없음. 도입 시 `comment_mention.notified_at` 컬럼 + scheduler
+
+### 변경/신규 파일 (요약)
+- iam-api: `UserRepositoryPort`/`UserJpaRepository`/`UserRepositoryAdapter`(+3 method) · 신규 `SearchUsersUseCase` · 신규 `UserSearchResponse` · `UserController`(+search endpoint)
+- core-api: 신규 `IamUserQueryPort`/`IamUserQueryAdapter` · 신규 `NotificationPublisherPort`/`NotiApiNotificationPublisherAdapter` · 신규 `NotiApiProperties`/`NotiApiRestClientConfig` · `WorkspaceQueryPort.listMembers` · `IamWorkspaceQueryAdapter` 보강 · `CommentMention` 도메인 + Entity (+ DB 컬럼) · `CreateCommentUseCase` (식별자 매핑 + 알림 publish) · 신규 `MentionCandidatesUseCase` · 신규 `MentionCandidatesController` · static `comment-tester.html` (자동완성 wiring)
+- noti-api: 신규 도메인 `Notification`/`NotificationType` · Entity/Jpa/Adapter · 신규 `NotificationRepositoryPort` · 4 use case · 2 controller (internal + me) · DTO · SecurityConfig 주석 · `application-local.yml`(core-api 공개키 추가)
+- gateway: `RouteConfig.notiApiRoute`(+notifications), `HeaderInjectionFilter`(+/notifications)
+- playground: 신규 `mention-inbox.html`
+
+**FE 동기화 필요** (별도): `error-archive-fe` 의 SPA 에 자동완성 + inbox UI — 본 PR 에선 *core-api 의 static comment-tester* 와 *playground 의 mention-inbox.html* 만 수정 (정책상).
+
+빌드 `:iam-api/core-api/noti-api/gateway:compileKotlin` 통과 · 4 서비스 재기동 · DB 컬럼/테이블 2건 추가 · e2e 7건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
+## 2026-06-10 20:30 KST · noti-api + gateway + iam-api · refactor: NotificationSettings 를 noti-api 마이크로서비스로 이동
+
+**요청 한 줄**: 직전 PR 에서 임시로 iam-api 에 넣었던 알림 설정 도메인을 *정공법* 으로 noti-api 마이크로서비스로 분리. iam-api 는 user lifecycle 만 보유, noti-api 가 알림 설정+발송 정책 소유. 게이트웨이는 `/api/v1/users/me/notification-settings` 만 noti-api 로 라우팅.
+
+**왜 분리** (도메인 경계):
+- iam 도메인 = 식별/인증/라이프사이클. *발송 정책* 은 iam 책임 아님
+- 장애 격리: iam 다운 ≠ 알림 발송 끊김 (noti-api 가 자체 store)
+- Kafka 이벤트 기반 알림 흐름과 자연스럽게 연결 (이번 PR 에선 이벤트 발행은 out of scope)
+
+**noti-api 인프라**:
+- `docker-compose.yml`: `noti-postgres` (5434:5432, noti_db/noti/noti_local_pw) 신설
+- `build.gradle.kts`: iam-api 와 동일 패턴 — web/jpa/security/oauth2-resource-server/swagger/jackson-kotlin/postgres/shared-internal-auth
+- `application.yml` + `application-local.yml`: server port 8082, datasource, internal-auth (verifier audience=`noti-api`, gateway 공개키)
+- `shared/config/SecurityConfig`: core-api 와 동일 — internal JWT 만 받음, principal=userId
+
+**noti-api 도메인 / 인프라**:
+- `notification.domain.NotificationSettings` — 채널(email/inApp) × 카테고리 매트릭스 + master + deep-merge Patch (iam-api 의 P3 도메인을 그대로 이동)
+- `notification.infrastructure.NotificationSettingsEntity` — `noti_user_notification_settings(user_id PK, settings jsonb, created_at, updated_at)` 신규 테이블
+- `NotificationSettingsRepositoryAdapter` — Jackson(tools.jackson) 으로 Domain ↔ String 변환
+- `NotificationSettingsJpaRepository` — 단순 JpaRepository
+
+**noti-api UseCase / DTO / Controller**:
+- `GetMyNotificationSettingsUseCase` / `UpdateMyNotificationSettingsUseCase` — row 없으면 `defaults()` 응답, upsert 패턴
+- `dto/UpdateNotificationSettingsRequest` + `dto/NotificationSettingsResponse` — securityAlerts 강제 true (iam 코드 그대로 이동)
+- `NotificationController` (`GET / PATCH /api/v1/users/me/notification-settings`) — Swagger 동시 작성, principal=`@AuthenticationPrincipal userId: Long?`
+
+**Gateway 갱신**:
+- `RouteConfig.notiApiRoute` 신설 — `/api/v1/users/me/notification-settings(/**)` 만 매칭, http://localhost:8082
+- **Route Bean 순서 함정**: notiApiRoute 가 *iamApiRoute 보다 위에* 와야 함 (더 구체적 path 인데 Bean 정의 순서로 매칭 우선순위 결정 — 처음엔 아래에 두었다가 *503 service_unavailable* 떨어져서 재배치). 주석으로 명시
+- `HeaderInjectionFilter.resolveAudience()` — `/notification-settings` 시작 경로는 `AUDIENCE_NOTI_API = "noti-api"` 로 internal JWT 발급
+- `AUDIENCE_NOTI_API` 상수 신설
+
+**iam-api 정리**:
+- 신규 P3 파일 4개 삭제: `vo/NotificationSettings.kt`, `NotificationSettingsUseCases.kt`, `dto/UpdateNotificationSettingsRequest.kt`, `dto/NotificationSettingsResponse.kt`
+- `User` 도메인의 `notificationSettings` 필드 + `applyNotificationPatch()` + `finalizeDeletion` 의 정리 라인 + import 제거
+- `UserEntity` 의 `notification_settings` 컬럼 매핑 + `JdbcTypeCode`/`SqlTypes` import 제거 + `toDomain/fromDomain` 책임 복원 (Adapter 가 Jackson 안 쓰니 단순화)
+- `UserRepositoryAdapter` 단순 매핑 패턴으로 복구
+- `UserController` 의 2 endpoint + UseCase 주입 + DTO/UseCase import 제거 + 이동 안내 주석
+- **DB 컬럼 DROP**: `ALTER TABLE iam_user DROP COLUMN notification_settings;` (수동, 실행 완료)
+
+**검증 (gateway:8000 + iam-api:8080 + noti-api:8082, user 4)**:
+- `GET /api/v1/users/me` → iam-api 라우팅, P3 영향 없이 정상 ✓
+- `GET /api/v1/users/me/notification-settings` → **noti-api** 라우팅, 영속 값 ✓
+- `PATCH .../notification-settings` → deep merge 동작, securityAlerts 강제 true ✓
+- `GET /api/v1/users/me/sessions` → iam-api 정상 (path-specific 라우팅 정확) ✓
+- `iam_user.notification_settings` 컬럼 DROP 확인 ✓
+- `noti_user_notification_settings` row 1건 (user 4) JSON 영속 ✓
+
+**의도된 미구현**:
+- **Kafka user.lifecycle 이벤트** (`USER_DELETED` → noti-api 가 row 정리). 본 PR 범위 X — *orphan row* 가 생길 수 있으나 운영상 *알림 못 보내면 자연 무시* 라 즉시 영향 X. 별도 PR
+- **알림 발송 도메인** — `email/in-app sender` adapter, kafka consumer (`core-api` 이벤트). 본 PR 은 *설정 도메인* 만
+
+**변경/신규 파일** (요약):
+- noti-api 신규: `docker-compose.yml`, `build.gradle.kts`, `application.yml`+`application-local.yml`, `shared/config/SecurityConfig`, `notification/domain/NotificationSettings`, `notification/application/NotificationSettingsRepositoryPort`, `notification/application/NotificationSettingsUseCases`, `notification/infrastructure/{Entity,JpaRepository,RepositoryAdapter}`, `notification/presentation/NotificationController`, `notification/presentation/dto/{UpdateNotificationSettingsRequest,NotificationSettingsResponse}`
+- gateway: `RouteConfig`(notiApiRoute 추가 + 순서 변경), `HeaderInjectionFilter`(AUDIENCE_NOTI_API)
+- iam-api: 4 파일 *삭제* + User/UserEntity/UserRepositoryAdapter/UserController 정리
+
+빌드 `:noti-api:compileKotlin` · `:gateway:compileKotlin` · `:iam-api:compileKotlin` 통과 · 4 서비스 재기동 (gateway 8000, iam 8080, core 8081, noti 8082) · e2e 6건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
+## 2026-06-10 19:45 KST · iam-api · feat: Settings IA Phase 3 — Notifications (JSONB + GET/PATCH + Security alerts 강제 on)
+
+**요청 한 줄**: `settings-ia.html` 의 Notifications 섹션을 실 BE 로 연결. 채널(`email`/`inApp`) × 카테고리 매트릭스 + master switch + Security alerts 강제 on (변경 불가).
+
+**DB 마이그레이션**:
+```sql
+ALTER TABLE iam_user ADD COLUMN notification_settings JSONB;
+```
+- *null* 컬럼이면 응답에 `NotificationSettings.defaults()` 채움. 마이그레이션 없이도 기존 사용자 호환.
+
+**Domain VO (단일 파일 `NotificationSettings.kt`)**:
+- `NotificationSettings(masterEnabled, email: Email, inApp: InApp)`
+- `Email` = 6 카테고리(`mentions/replies/newFollowers/workspaceInvitations/weeklyDigest/productAnnouncements`)
+- `InApp` = 4 카테고리(`mentions/replies/newFollowers/workspaceInvitations`)
+- `mergePatch(Patch)` — deep merge. null 필드 유지.
+- **Security alerts 는 VO 에 없음** — *모든 채널에 강제 true* 라 저장 불필요. 응답 매핑 단계에서 채움.
+
+**User 도메인**:
+- `notificationSettings: NotificationSettings?` 필드 추가 (null=기본값)
+- `applyNotificationPatch(patch)` — 현재(또는 기본값) + patch 를 merge 후 저장. 변경 없으면 no-op
+- `finalizeDeletion()` 도 `notificationSettings = null` 추가
+
+**Entity 매핑 (중요)**:
+- `iam_user.notification_settings` JSONB 컬럼은 Entity 에선 `String?` 으로 노출 (`@JdbcTypeCode(SqlTypes.JSON)` + `@Column(columnDefinition="jsonb")`)
+- Adapter 가 Jackson `ObjectMapper` 로 **Domain ↔ String** 변환 책임
+- **함정 회피**: 초기엔 Hibernate 의 `SqlTypes.JSON` 으로 Entity 에 직접 `NotificationSettings?` 매핑 시도 → *PATCH 시 `Could not deserialize string to java type`* 에러. Hibernate 의 자체 ObjectMapper 가 *Kotlin module 미적용* 이라 Kotlin data class 직렬화 실패. **Adapter 에서 Spring 의 ObjectMapper** 로 변환하니 깔끔히 해결
+- **Jackson 3 환경**: Spring Boot 4 에선 `tools.jackson.databind.ObjectMapper` 가 표준 bean (`com.fasterxml` 아님)
+- `toDomain/fromDomain` 책임이 entity → adapter 로 이동 — 다른 caller 없는지 grep 확인
+
+**UseCase / DTO / Controller**:
+- `GetMyNotificationSettingsUseCase` — null 컬럼이면 defaults 반환
+- `UpdateMyNotificationSettingsUseCase` — `applyNotificationPatch` 호출
+- 요청: `UpdateNotificationSettingsRequest` + 채널별 `EmailPatchRequest`/`InAppPatchRequest` — *security alerts 필드 자체 없음* (변경 시도해도 Jackson 이 조용히 무시)
+- 응답: `NotificationSettingsResponse` — `securityAlerts: Boolean = true` 강제 노출 (UI 가 *disabled+checked* 로 표시 가능)
+- `GET /api/v1/users/me/notification-settings`
+- `PATCH /api/v1/users/me/notification-settings` — Swagger 동시 작성
+
+**검증 (gateway:8000, user 4, 7건)**:
+- GET (null 컬럼) → 기본값 ✓
+- PATCH `{masterEnabled:false}` → master 만 변경, 카테고리 유지 ✓
+- PATCH `{"email":{"mentions":false},"inApp":{"newFollowers":false}}` → 두 채널 동시 부분 갱신, 나머지 필드 유지 (deep merge) ✓
+- PATCH `{"email":{"securityAlerts":false}}` → 응답에 `securityAlerts: true` (DTO 미존재 필드라 무시) ✓
+- 빈 PATCH `{}` → no-op, 200 ✓
+- DB jsonb 컬럼 확인 → masterEnabled/email/inApp 정상 영속 ✓
+- 같은 user GET 재호출 → 저장된 값 반환 ✓
+
+**변경/신규 파일**: 신규 `vo/NotificationSettings.kt` · `User`(필드+메서드+finalize) · `UserEntity`(컬럼+toDomain/fromDomain 책임 이동) · `UserRepositoryAdapter`(Jackson 주입 + 변환) · 신규 `NotificationSettingsUseCases.kt` · 신규 `UpdateNotificationSettingsRequest.kt` · 신규 `NotificationSettingsResponse.kt` · `UserController`(GET/PATCH endpoint + 주입 + import).
+
+**FE 동기화 필요** (별도): `error-archive-fe` 의 SPA — 본 PR 에선 자동 수정 X (사용자 분리 정책).
+
+빌드 `:iam-api:compileKotlin` 통과 · iam-api 재기동 · e2e 7건 통과 · DB 컬럼 추가. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
+## 2026-06-10 19:05 KST · iam-api · refactor: PATCH /users/me 에서 `clearAvatar` flag 제거 — 한 동작에 한 길
+
+**요청 한 줄**: avatar 비우기는 *DELETE endpoint* 와 *PATCH clearAvatar* 두 길이 공존했는데, PATCH 경로는 storage 파일을 *정리하지 못해 orphan* 이 생기는 불완전 분기였음. PATCH 에서 제거하고 *DELETE 만 유일한 길* 로.
+
+**변경**:
+- `UpdateMyProfileRequest` — `clearAvatar: Boolean` 필드 삭제 + avatarUrl @Schema 보강("외부 URL set 만, 비우기는 DELETE /me/avatar")
+- `UpdateMyProfileCommand` — `clearAvatar` 파라미터 삭제. KDoc 에 *avatar 만 별도 라이프사이클* 명시
+- `UpdateMyProfileUseCase` — `when {clearAvatar -> changeAvatar(null) ...}` 제거. avatarUrl 은 *blank 아닐 때만 set* 으로 단순화
+- `UserController.updateMe` — request → command 매핑에서 `clearAvatar` 삭제. PATCH/DELETE Swagger 설명 갱신 (clearAvatar 제거 + "유일한 길" 명시)
+
+**왜 분리가 옳은가**:
+- avatar 는 *값* 이 아니라 *파일 자원* — 다른 PATCH 필드(`bio/language/timezone/defaultWorkspaceId`)는 단순 DB 컬럼 값
+- 두 길 공존 시 *storage 정리 누락* 사고 발생 가능 (PATCH 분기엔 storage adapter 가 주입돼 있지 않음)
+- 클라이언트 액션과 endpoint 가 1:1 매칭 — Remove 버튼 → DELETE, Upload → POST, 메타 수정 → PATCH
+
+**다른 `clear*` flag 는 유지**: `clearBio`, `clearLanguage`, `clearTimezone`, `clearDefaultWorkspace` — 모두 단순 *값* 이라 PATCH 로 비우는 게 자연스러움.
+
+**검증 (gateway:8000, user 4)**:
+- 초기 avatar 세팅 후 PATCH `{clearAvatar:true}` → 200 + **avatar 안 비워짐** (Jackson 이 unknown property 로 조용히 무시 — DTO 에 더 이상 필드 없음). 의도된 동작 ✓
+- PATCH `{avatarUrl:"https://x.example/y.png"}` → 외부 URL set 정상 ✓
+- DELETE `/me/avatar` → avatarUrl=null (유일한 길) ✓
+- PATCH `{clearBio:true}` → bio=null (다른 clear* 는 그대로) ✓
+
+**FE 동기화 필요** (별도 작업):
+- `error-archive-fe/src/services/authApi.ts` 의 `updateProfile()` 타입에서 `clearAvatar?: boolean` 제거
+- `PATCH` 흐름에서 avatar 비우기를 의도한 곳이 있다면 `removeAvatar()` (DELETE) 호출로 전환
+- *본 PR 에서는 FE/playground 자동 수정 X* (사용자 분리 정책)
+
+**변경 파일**: `UpdateMyProfileRequest` · `UpdateMyProfileCommand` · `UpdateMyProfileUseCase` · `UserController` (각 1군데).
+
+빌드 `:iam-api:compileKotlin` 통과 · iam-api 재기동 · e2e 4건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
+## 2026-06-10 18:35 KST · iam-api · feat: Settings IA Phase 2 — Sessions 도입 (refresh_token 컬럼 확장 + 3 endpoint)
+
+**요청 한 줄**: `settings-ia.html` 의 Sessions 섹션을 실제 데이터로 채울 BE. refresh-token family 단위로 *세션* 을 노출하고 단건/전체 revoke.
+
+**DB 마이그레이션** (수동 SQL — `ddl-auto=update` 도 자동 반영):
+```sql
+ALTER TABLE iam_refresh_token ADD COLUMN device_label VARCHAR(120);
+ALTER TABLE iam_refresh_token ADD COLUMN user_agent  VARCHAR(512);
+ALTER TABLE iam_refresh_token ADD COLUMN ip_address  VARCHAR(64);
+ALTER TABLE iam_refresh_token ADD COLUMN last_used_at TIMESTAMP(6) WITH TIME ZONE;
+```
+
+**도메인 / Entity 확장**: `RefreshToken` + `RefreshTokenEntity` 에 4 필드 + `touchLastUsed()`. rotation 시 디바이스 메타는 *처음 발급 시 값* 유지(컨텍스트 추적), `lastUsedAt` 은 refresh 마다 now.
+
+**ClientContext 추출**: `ClientContext.from(HttpServletRequest)` — UA / X-Forwarded-For(우선) 또는 remoteAddr 추출. 간이 UA 파서 `DeviceLabelParser` 가 `"macOS · Chrome 132"` 같은 라벨 생성 (`Edge|Chrome|Firefox|Safari|curl` × `Windows 10/11|macOS|iPhone|iPad|Android|Linux`).
+
+**Login / Refresh flow**:
+- `SocialLoginCommand` + `RefreshAccessTokenCommand` 에 `deviceLabel/userAgent/ipAddress` 추가
+- `OAuthController.callback` + `TokenController.refresh` 가 `ClientContext.from(request)` 로 채움
+- `SocialLoginUseCase.issueTokens` + `RefreshAccessTokenUseCase` rotation 경로 모두 새 row 에 메타 보존
+
+**신규 Port 메서드** (`RefreshTokenRepositoryPort`):
+- `findActiveSessionsByUserId(userId, now)`: family 별 *가장 최신* row 만 dedupe + `lastUsedAt DESC NULLS LAST, createdAt DESC` 정렬
+- `revokeFamilyIfOwner(familyId, userId): Int`: 본인 소유 family 만 revoke (다른 user 면 0 반환 — 정보 노출 회피)
+
+**UseCase** (한 파일 `SessionUseCases.kt`):
+- `ListMySessionsUseCase` — Port 결과를 DTO 로 매핑
+- `RevokeMySessionUseCase` — 영향 0 row 면 `SessionNotFoundException → 404`
+- `RevokeAllMySessionsUseCase` — 멱등
+
+**Endpoint** (3개, 모두 Swagger 동시 작성):
+- `GET /api/v1/users/me/sessions` → `List<SessionResponse>` (sessionId=family UUID, deviceLabel, userAgent, ipAddress, createdAt, lastUsedAt, expiresAt, rememberMe)
+- `DELETE /api/v1/users/me/sessions/{sessionId}` → 204 / 404
+- `POST /api/v1/users/me/sessions/revoke-all` → 204 (현재 디바이스 포함)
+
+**의도된 미구현**: `current=true` 플래그는 *클라가 자기 sessionId 를 알고 있을 때* 만 의미 — 로그인 응답에 sessionId 를 같이 박는 변경 필요. 별도 PR 로 분리.
+
+**검증 (gateway:8000, user 4 시드 3개)**:
+- GET → 3개, lastUsedAt DESC 정렬 ✓
+- DELETE 두 번째 → 204, GET 재호출 시 2개 ✓
+- DELETE 동일 sessionId 재시도 → 404 (`revokeFamilyIfOwner` 가 미revoke 만 매칭하므로 0 → 404) ✓
+- DELETE 임의 UUID → 404 ✓
+- POST revoke-all → 204, GET 빈 배열 ✓
+- revoke-all 재시도 → 204 (멱등) ✓
+
+**변경/신규 파일**: 도메인(`RefreshToken`) · entity(`RefreshTokenEntity`) · command(`SocialLoginCommand`, `RefreshAccessTokenCommand`) · 신규 `ClientContext`(+`DeviceLabelParser`) · `SocialLoginUseCase` · `RefreshAccessTokenUseCase` · `OAuthController` · `TokenController` · port(`RefreshTokenRepositoryPort`) · jpa(`RefreshTokenJpaRepository`) · adapter(`RefreshTokenRepositoryAdapter`) · 신규 `SessionUseCases.kt` · 신규 `SessionResponse` · `UserController` (3 endpoint + 주입 + import).
+
+빌드 `:iam-api:compileKotlin` 통과 · iam-api 재기동 · DB 시드 3건 · e2e 8건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
+## 2026-06-10 18:15 KST · iam-api + gateway · feat: Avatar 멀티파트 업로드 / 제거 (옵션 A)
+
+**요청 한 줄**: Settings → Profile 섹션의 *Upload new* / *Remove* 버튼을 실제 BE 와 연결. 외부 호스팅 URL 입력 대신 *파일 업로드* 가 정공법이라 *옵션 A* (iam-api 에 multipart 업로드 endpoint + 로컬 디스크 storage + 정적 서빙).
+
+**구현 (8 파일 신규/수정)**:
+- **Storage abstraction**:
+  - `AvatarStoragePort` (port) — `store(userId, fileName, contentType, bytes): StoredAvatar` + `delete(publicUrl)`
+  - `LocalFileSystemAvatarStorageAdapter` — `./var/avatars/{userId}/{uuid}.{ext}` 저장. UUID 라 같은 사용자가 여러 번 업로드해도 *덮어쓰기 X* (use case 가 기존 URL 보존했다가 delete 호출하는 패턴)
+  - `AvatarStorageProperties` (`@ConfigurationProperties("iam.avatar")`) — storagePath / publicBaseUrl / maxFileSizeBytes(5MB) / allowedContentTypes (PNG·JPEG·WebP·GIF)
+- **UseCase**: `UpdateMyAvatarUseCase` — `upload(userId, ...)` / `remove(userId)`. 검증(MIME · size · empty 거부 → `AvatarUploadInvalidException`/400). 이전 URL 자동 cleanup (외부 URL 이면 adapter 가 prefix 검사 후 skip).
+- **Endpoints** (iam-api `UserController`):
+  - `POST /api/v1/users/me/avatar` (multipart/form-data, `file` part) → 갱신된 `MyProfileResponse` 반환 (200)
+  - `DELETE /api/v1/users/me/avatar` → 갱신된 `MyProfileResponse` 반환 (200). `PATCH /me {clearAvatar:true}` 와 *동등 동작* 이지만 storage 정리를 한 의도로 묶음
+  - 두 endpoint 모두 Swagger 어노테이션 동시 작성
+- **정적 서빙**: `AvatarStaticResourceConfig` — `/avatars/**` 를 디스크 디렉토리에 매핑(`WebMvcConfigurer.addResourceHandlers`). 캐시 5분.
+- **보안 우회**: `SecurityConfig` 의 permitAll 에 `/avatars/**`, `/error` 추가. (`/error` 는 *NoHandlerFound 가 forward 되는 dispatcher path* — 누락 시 정적 미스가 `anyRequest().authenticated()` 에 잡혀 *404 대신 401* 이 떨어지는 함정 → e2e 도중 발견·수정)
+- **Multipart 한도** (`application.yml`): `spring.servlet.multipart.max-file-size: 6MB` (storage 5MB 한도 + 약간의 multipart overhead)
+- **Gateway**:
+  - `RouteConfig.iamApiRoute` 의 path 매칭에 `/avatars/**` 추가
+  - `SecurityConfig` 의 permitAll 에 `/avatars/**` 추가 (이미지 fetch 에 Authorization 안 가도록)
+- **`.gitignore`**: `**/var/avatars/`, `**/var/attachments/` 추가
+- **Playground**: `settings-ia.html` 의 Upload/Remove 버튼을 *진짜 API 호출* 로 wiring (이전엔 클라이언트 data URL 만). 다른 playground 와 localStorage 의 baseUrl/jwt 공유.
+
+**검증 (gateway:8000, user 4)**:
+- POST 1x1 PNG → 200, 응답 avatarUrl = `http://localhost:8000/avatars/4/{uuid}.png` ✓
+- GET 위 URL → 200, `Content-Type: image/png` ✓
+- 디스크 확인 → `iam-api/var/avatars/4/{uuid}.png` 존재 ✓
+- DELETE → 200, 응답 avatarUrl = null ✓
+- 이전 URL GET → 404 (정적 미스가 *401 아닌 404* 로 정확히 떨어짐) ✓
+- POST text/plain 파일 → 400 (MIME 검증) ✓
+
+**옵션 A 의 트레이드오프**: 디스크 저장은 *단일 인스턴스* 가정. 다중 인스턴스 또는 컨테이너 재기동에서 데이터 보존이 필요해지면 S3/GCS 어댑터로 *Port 만 교체* 하면 됨. publicBaseUrl 도 yml 한 줄로 CDN 으로 전환 가능.
+
+**변경/신규 파일**: `AvatarStorageProperties`(신) · `AvatarStoragePort`(신) · `LocalFileSystemAvatarStorageAdapter`(신) · `AvatarStaticResourceConfig`(신) · `UpdateMyAvatarUseCase`(신) · `UserController`(2 endpoint + 주입 + import) · `SecurityConfig`(iam, gateway 각각) · `RouteConfig`(gateway) · `AuthConfigRegistration`(properties 등록) · `application.yml`(iam.avatar + multipart) · `.gitignore` · `settings-ia.html`(wiring)
+
+빌드 `:iam-api:compileKotlin` · `:gateway:compileKotlin` 통과 · 양쪽 재기동 · e2e 6건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree 변경.
+
+
+## 2026-06-10 17:05 KST · iam-api · feat: Settings IA Phase 1 — MyProfile.createdAt 노출 + Disconnect endpoint
+
+**요청 한 줄**: `playground/settings-ia.html` IA 데모를 실제 BE 로 연결. Phase 1 = 두 가지 작은 wins — Account 의 "Member since" 표시용 createdAt 노출 + Connections 의 Disconnect endpoint(마지막 수단 가드 포함).
+
+**Phase 1a — `MyProfileResponse.createdAt`**:
+- `MyProfileResponse` / `GetMyProfileUseCase.Result` / `UpdateMyProfileUseCase.Result` 에 `createdAt: Instant` 추가
+- `UserController` 의 GET·PATCH 응답 매핑 동시 갱신
+- *User 도메인엔 이미 `createdAt` 존재* — DB 컬럼/마이그레이션 없음. 응답 노출만 추가.
+
+**Phase 1b — `DELETE /users/me/connections/{provider}`**:
+- 신규 `DisconnectConnectionUseCase` (+ `ConnectionNotFoundException` / `LastConnectionRemainingException`)
+- `SocialIdentityRepositoryPort` 에 `countByUserId` / `existsByUserIdAndProvider` / `deleteByUserIdAndProvider` 3개 메서드 추가, JpaRepository + Adapter 동기화
+- `UserController.disconnect` 신설 — 204/401/404/409 응답 매핑 + Swagger
+- **가드 순서** (중요): ① 본인이 가지지 않은 provider → 404 (먼저), ② 마지막 수단이면 → 409. *Provider 보유 여부 검사를 마지막 수단 가드보다 우선* — 그렇지 않으면 사용자가 안 가진 provider 삭제 시도해도 마지막 수단 가드가 먼저 발동해 *잘못된 409* 가 반환됨 (초기 구현 후 e2e 에서 발견·수정).
+- 끊긴 provider 로 발급된 refresh token 은 *유지* — sign-out everywhere 와 의도적으로 분리 (사용자가 명시적 액션)
+
+**검증 (gateway:8000, user 4 = FloralLife)**:
+- GET `/users/me` → `createdAt:"2026-05-12T12:53:48.345093Z"` 포함 ✓
+- DELETE `/connections/GITHUB` (마지막 수단) → 409 ✓
+- DELETE `/connections/GOOGLE` (안 가짐) → 404 ✓
+- DELETE `/connections/FACEBOOK` (enum 외) → 404 ✓
+- 더미 GOOGLE 시드 후 DELETE `/connections/google` (소문자) → 204, 남은 connections=[GITHUB] ✓
+- DELETE `/connections/GITHUB` 재시도 (마지막 수단 복귀) → 409 ✓
+
+**변경 파일**:
+- DTO: `MyProfileResponse`
+- UseCase: `GetMyProfileUseCase`, `UpdateMyProfileUseCase`, **신규** `DisconnectConnectionUseCase`
+- Port: `SocialIdentityRepositoryPort` (+3 메서드)
+- Infra: `SocialIdentityJpaRepository`, `SocialIdentityRepositoryAdapter`
+- Controller: `UserController` (createdAt 매핑 2곳 + disconnect 매핑 신설 + import 5줄)
+
+**남은 Phase**: P2 Sessions(refresh_token 컬럼 확장 + 3 endpoint), P3 Notifications(JSONB + GET/PATCH), P4 Connect new(OAuth link mode). 이번엔 변경 X.
+
+빌드 `:iam-api:compileKotlin` 통과 · iam-api 재시작 · e2e 5건 통과. `feature/#5-iam-auth-baseline` 브랜치 working tree.
+
+
 ## 2026-06-07 01:35 KST · core-api · feat: PATCH /error-cases 에 `tags` 선언형 일괄 재설정 추가
 
 **요청 한 줄**: 에러 케이스 *수정* request 에 tag 필드가 없어 일괄 변경이 안 되는 문제. 단건 endpoint 와 공존하는 *선언형* 필드 추가.

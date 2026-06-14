@@ -15,4 +15,12 @@ interface SocialIdentityJpaRepository : JpaRepository<SocialIdentityEntity, Long
     @Modifying(clearAutomatically = true)
     @Query("delete from SocialIdentityEntity s where s.userId = :userId")
     fun deleteByUserId(@Param("userId") userId: Long): Int
+
+    fun countByUserId(userId: Long): Long
+
+    fun existsByUserIdAndProvider(userId: Long, provider: SocialProvider): Boolean
+
+    @Modifying(clearAutomatically = true)
+    @Query("delete from SocialIdentityEntity s where s.userId = :userId and s.provider = :provider")
+    fun deleteByUserIdAndProvider(@Param("userId") userId: Long, @Param("provider") provider: SocialProvider): Int
 }

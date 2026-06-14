@@ -1,0 +1,42 @@
+# ===================================================================
+# noti-api 공통 베이스 — 모든 환경 동일 값만.
+# 환경별 차이는 application-{local|dev|stg|prod}.yml 에 분리.
+# ===================================================================
+
+spring:
+  application:
+    name: noti-api
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  forward-headers-strategy: framework
+
+iam:
+  jwt:
+    # 게이트웨이가 발급한 internal JWT 검증용 audience
+    audience: ${NOTI_JWT_AUDIENCE:noti-api}
+
+noti:
+  # 발송 모드 — 환경별로 logging(default 안전) / smtp / fcm 활성화
+  email:
+    provider: ${NOTI_EMAIL_PROVIDER:smtp}   # smtp | logging
+    from-address: ${NOTI_EMAIL_FROM:notifications@error-archive.local}
+    from-name: ${NOTI_EMAIL_FROM_NAME:Error Archive}
+    subject-prefix: "[Error Archive]"
+  push:
+    provider: ${NOTI_PUSH_PROVIDER:logging}  # fcm | logging
+    fcm:
+      project-id: ${NOTI_FCM_PROJECT_ID:}
+      service-account-path: ${NOTI_FCM_SERVICE_ACCOUNT_PATH:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

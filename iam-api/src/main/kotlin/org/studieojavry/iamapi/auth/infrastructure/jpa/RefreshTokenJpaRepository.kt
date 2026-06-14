@@ -33,4 +33,34 @@ interface RefreshTokenJpaRepository : JpaRepository<RefreshTokenEntity, Long> {
         """
     )
     fun revokeAllByUserId(@Param("userId") userId: Long, @Param("now") now: Instant): Int
+
+    /**
+     * 본인의 활성 (non-revoked, non-expired) refresh row 들 전체.
+     * adapter 가 family 별 최신만 추리고 정렬.
+     */
+    @Query(
+        """
+        select rt from RefreshTokenEntity rt
+         where rt.userId = :userId
+           and rt.revokedAt is null
+           and rt.expiresAt > :now
+        """
+    )
+    fun findActiveByUserId(@Param("userId") userId: Long, @Param("now") now: Instant): List<RefreshTokenEntity>
+
+    @Modifying(clearAutomatically = true)
+    @Query(
+        """
+        update RefreshTokenEntity rt
+           set rt.revokedAt = :now
+         where rt.familyId = :familyId
+           and rt.userId = :userId
+           and rt.revokedAt is null
+        """
+    )
+    fun revokeFamilyIfOwner(
+        @Param("familyId") familyId: UUID,
+        @Param("userId") userId: Long,
+        @Param("now") now: Instant,
+    ): Int
 }

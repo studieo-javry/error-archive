@@ -19,10 +19,8 @@ class UpdateMyProfileUseCase(
 
         command.displayName?.let { user.changeDisplayName(it.trim()) }
 
-        when {
-            command.clearAvatar -> user.changeAvatar(null)
-            command.avatarUrl != null -> user.changeAvatar(command.avatarUrl.trim())
-        }
+        // avatarUrl 은 *set 만*. 비우기는 DELETE /users/me/avatar (storage 정리 포함).
+        command.avatarUrl?.takeIf { it.isNotBlank() }?.let { user.changeAvatar(it.trim()) }
 
         when {
             command.clearBio -> user.changeBio(null)
@@ -55,6 +53,7 @@ class UpdateMyProfileUseCase(
             bio = saved.bio,
             status = saved.status.name,
             pendingDeletionAt = saved.pendingDeletionAt,
+            createdAt = saved.createdAt,
             language = saved.language,
             timezone = saved.timezone,
             theme = saved.theme,
@@ -70,6 +69,7 @@ class UpdateMyProfileUseCase(
         val bio: String?,
         val status: String,
         val pendingDeletionAt: Instant?,
+        val createdAt: Instant,
         val language: String?,
         val timezone: String?,
         val theme: Theme,

@@ -28,6 +28,27 @@ import org.springframework.web.servlet.function.ServerResponse
 @Configuration
 class RouteConfig {
 
+    // ⚠️ Route Bean *순서* 가 매칭 우선순위. 더 구체적인 path 를 먼저 정의해야 한다.
+    //    예: `/api/v1/users/me/notification-settings` 는 `/api/v1/users/**` 보다 *더 구체적* 이라
+    //         notiApiRoute 가 iamApiRoute 위에 와야 함.
+
+    @Bean
+    fun notiApiRoute(): RouterFunction<ServerResponse> =
+        route("noti-api")
+            .route(
+                path("/api/v1/users/me/notification-settings/**")
+                    .or(path("/api/v1/users/me/notification-settings"))
+                    .or(path("/api/v1/users/me/notifications/**"))
+                    .or(path("/api/v1/users/me/notifications"))
+                    .or(path("/api/v1/users/me/device-tokens/**"))
+                    .or(path("/api/v1/users/me/device-tokens")),
+                http()
+            )
+            .before(uri("http://localhost:8082"))
+            .filter(circuitBreaker("notiApiCB", "/__fallback/noti-api"))
+            .filter(retry(2))
+            .build()
+
     @Bean
     fun iamApiRoute(): RouterFunction<ServerResponse> =
         route("iam-api")
@@ -35,12 +56,36 @@ class RouteConfig {
                 path("/api/v1/auth/**")
                     .or(path("/api/v1/users/**"))
                     .or(path("/api/v1/workspaces/**"))
-                    .or(path("/api/v1/invitations/**")),
+                    .or(path("/api/v1/invitations/**"))
+                    .or(path("/avatars/**")),
                 http()
             )
             .before(uri("http://localhost:8080"))
             .filter(circuitBreaker("iamApiCB", "/__fallback/iam-api"))
             .filter(retry(2))
+            .build()
+
+    @Bean
+    fun insightApiRoute(): RouterFunction<ServerResponse> =
+        route("insight-api")
+            .route(
+                path("/api/v1/users/me/activity-grass/**")
+                    .or(path("/api/v1/users/me/activity-grass"))
+                    .or(path("/api/v1/users/*/activity-grass/**"))
+                    .or(path("/api/v1/users/*/activity-grass")),
+                http()
+            )
+            .before(uri("http://localhost:8083"))
+            .filter(circuitBreaker("insightApiCB", "/__fallback/insight-api"))
+            .filter(retry(2))
+            .build()
+
+    @Bean
+    fun insightDocsRoute(): RouterFunction<ServerResponse> =
+        route("insight-docs")
+            .GET("/api-docs/insight-api", http())
+            .before(uri("http://localhost:8083"))
+            .before(setPath("/v3/api-docs"))
             .build()
 
     @Bean
@@ -68,6 +113,14 @@ class RouteConfig {
         route("iam-docs")
             .GET("/api-docs/iam-api", http())
             .before(uri("http://localhost:8080"))
+            .before(setPath("/v3/api-docs"))
+            .build()
+
+    @Bean
+    fun notiDocsRoute(): RouterFunction<ServerResponse> =
+        route("noti-docs")
+            .GET("/api-docs/noti-api", http())
+            .before(uri("http://localhost:8082"))
             .before(setPath("/v3/api-docs"))
             .build()
 

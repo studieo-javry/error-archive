@@ -50,7 +50,19 @@ class RefreshTokenEntity(
     var revokedAt: Instant?,
 
     @Column(name = "replaced_by_hash", length = 128)
-    var replacedByHash: String?
+    var replacedByHash: String?,
+
+    @Column(name = "device_label", length = 120)
+    var deviceLabel: String? = null,
+
+    @Column(name = "user_agent", length = 512)
+    var userAgent: String? = null,
+
+    @Column(name = "ip_address", length = 64)
+    var ipAddress: String? = null,
+
+    @Column(name = "last_used_at")
+    var lastUsedAt: Instant? = null,
 ) {
 
     fun toDomain(): RefreshToken = RefreshToken.Companion.rehydrate(
@@ -62,7 +74,11 @@ class RefreshTokenEntity(
         expiresAt = expiresAt,
         createdAt = createdAt,
         revokedAt = revokedAt,
-        replacedByHash = replacedByHash
+        replacedByHash = replacedByHash,
+        deviceLabel = deviceLabel,
+        userAgent = userAgent,
+        ipAddress = ipAddress,
+        lastUsedAt = lastUsedAt,
     )
 
     companion object {
@@ -75,7 +91,11 @@ class RefreshTokenEntity(
             expiresAt = token.expiresAt,
             createdAt = token.createdAt,
             revokedAt = token.revokedAt,
-            replacedByHash = token.replacedByHash
+            replacedByHash = token.replacedByHash,
+            deviceLabel = token.deviceLabel,
+            userAgent = token.userAgent,
+            ipAddress = token.ipAddress,
+            lastUsedAt = token.lastUsedAt,
         )
     }
 }

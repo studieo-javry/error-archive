@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>ErrorCase Tag Playground</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1c2230;
+    --border: #2a3142;
+    --text: #e7ecf3;
+    --muted: #8a93a6;
+    --accent: #6aa7ff;
+    --accent-2: #2a3a5a;
+    --green: #59d399;
+    --red: #ef6a78;
+    --yellow: #f0c065;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+               font: 14px/1.5 -apple-system, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid;
+          grid-template-columns: 1fr 420px; gap: 20px; }
+  h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: .2px; }
+  h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600;
+       text-transform: uppercase; letter-spacing: 1.2px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+           padding: 16px; margin-bottom: 16px; }
+  .panel.sticky { position: sticky; top: 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  input[type="text"], textarea {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 8px 10px; font: inherit; outline: none;
+  }
+  input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+  textarea { min-height: 60px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  button { background: var(--accent); border: none; color: #0a1020; font-weight: 600;
+           padding: 8px 14px; border-radius: 6px; cursor: pointer; font: 600 13px/1.2 inherit; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); font-weight: 500; }
+  button.danger { background: var(--red); color: #1a0a0e; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* chip widget */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px;
+           background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; min-height: 44px;
+           align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px;
+          background: var(--accent-2); color: var(--text); border-radius: 999px;
+          font-size: 12px; line-height: 1; }
+  .chip.pending { opacity: .55; }
+  .chip .x { display: inline-flex; width: 18px; height: 18px; border-radius: 999px;
+             background: rgba(255,255,255,.08); align-items: center; justify-content: center;
+             cursor: pointer; font-size: 12px; color: var(--text); }
+  .chip .x:hover { background: var(--red); color: #1a0a0e; }
+  .chip-input { flex: 1 1 120px; min-width: 100px; background: transparent; border: none;
+                color: var(--text); outline: none; padding: 4px 6px; }
+
+  .row-2 { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+          background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+  .pill.green { color: var(--green); border-color: rgba(89,211,153,.4); }
+  .pill.red { color: var(--red); border-color: rgba(239,106,120,.4); }
+  .pill.yellow { color: var(--yellow); border-color: rgba(240,192,101,.4); }
+
+  /* log */
+  #log { max-height: calc(100vh - 64px); overflow-y: auto; }
+  .entry { border-bottom: 1px dashed var(--border); padding: 10px 0; font-family: ui-monospace,
+           SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .entry:last-child { border-bottom: none; }
+  .entry .head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+  .entry .method { font-weight: 700; }
+  .entry .method.GET { color: var(--accent); }
+  .entry .method.POST { color: var(--green); }
+  .entry .method.DELETE { color: var(--red); }
+  .entry .status { font-weight: 700; }
+  .entry .status.ok { color: var(--green); }
+  .entry .status.err { color: var(--red); }
+  .entry .url { color: var(--muted); word-break: break-all; }
+  pre.body { margin: 0; padding: 8px; background: var(--panel-2); border-radius: 6px;
+             overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 14px; border-radius: 8px;
+           background: var(--panel); border: 1px solid var(--border); color: var(--text);
+           box-shadow: 0 8px 24px rgba(0,0,0,.4); opacity: 0; transform: translateY(10px);
+           transition: opacity .18s ease, transform .18s ease; pointer-events: none; max-width: 360px; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { border-color: rgba(239,106,120,.6); }
+  .toast.ok { border-color: rgba(89,211,153,.6); }
+
+  hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  @media (max-width: 920px) {
+    .wrap { grid-template-columns: 1fr; }
+    .panel.sticky { position: static; }
+    #log { max-height: 360px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LEFT — controls -->
+  <div>
+    <div class="panel">
+      <h1>ErrorCase Tag Playground</h1>
+      <div class="muted" style="margin-bottom: 12px;">
+        free-tag 위젯 UX 확인용. 모든 호출은 게이트웨이(<code>http://localhost:8000</code>) 거쳐 core-api 로.
+      </div>
+
+      <label>Gateway base URL</label>
+      <input id="baseUrl" type="text" value="http://localhost:8000" />
+
+      <label>User JWT (Bearer) — <span class="muted">터미널: <code>bash scripts/mint-jwt.sh user 777 USER</code></span></label>
+      <textarea id="jwt" spellcheck="false" placeholder="eyJhbGciOi..."></textarea>
+
+      <div style="margin-top: 10px;">
+        <button id="saveCreds" class="ghost">creds 저장 (localStorage)</button>
+        <button id="clearCreds" class="ghost">지우기</button>
+      </div>
+    </div>
+
+    <!-- 1) 기존 케이스 — 단건 add/remove -->
+    <div class="panel">
+      <h2>① 기존 케이스에서 태그 편집 (단건 add / remove)</h2>
+
+      <div class="row-2">
+        <div>
+          <label>Case ID</label>
+          <input id="caseId" type="text" placeholder="예: 33" />
+        </div>
+        <div>
+          <button id="loadCase">load</button>
+        </div>
+      </div>
+
+      <div id="caseSummary" class="muted" style="margin-top: 10px;">아직 로드되지 않음.</div>
+
+      <div style="margin-top: 12px;">
+        <label>tags <span class="muted">— enter 로 추가, X 로 삭제. 낙관적 UI + 실패 시 롤백.</span></label>
+        <div id="editChips" class="chips" data-mode="edit">
+          <input class="chip-input" type="text" placeholder="+ 태그 입력 후 Enter" />
+        </div>
+        <div class="muted" style="margin-top: 6px;">
+          정규화: trim · lowercase · ≤32자 · 케이스당 max 20개.
+        </div>
+      </div>
+    </div>
+
+    <!-- 2) 새 케이스 + tags 배열 일괄 생성 -->
+    <div class="panel">
+      <h2>② 새 케이스 + 태그 일괄 생성</h2>
+
+      <label>title</label>
+      <input id="newTitle" type="text" value="tag playground sample" />
+
+      <label>tags <span class="muted">— 로컬 state. 생성 버튼 누를 때 한 번에 전송.</span></label>
+      <div id="createChips" class="chips" data-mode="create">
+        <input class="chip-input" type="text" placeholder="+ 태그 입력 후 Enter" />
+      </div>
+
+      <div class="row" style="margin-top: 12px;">
+        <button id="createBtn">POST /error-cases</button>
+        <button id="loadAfterCreate" class="ghost" disabled>↳ 생성된 case 로 ①로 이동</button>
+      </div>
+      <div id="createResult" class="muted" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="panel" style="background: transparent; border-style: dashed;">
+      <h2>도움말</h2>
+      <ul style="margin: 0; padding-left: 18px; color: var(--muted);">
+        <li>이 파일은 <code>file://</code> 로 열면 CORS 가 막힘. <b>반드시</b> 다음 중 하나로 서빙:
+          <pre class="body">cd playground &amp;&amp; python3 -m http.server 3000
+# 또는 5173</pre>
+          그리고 <code>http://localhost:3000/tag-playground.html</code> 열기.
+        </li>
+        <li>JWT 는 90초~ 단명 토큰이라 401 이 나면 다시 mint. (기본 mint-jwt.sh 출력 시간 확인)</li>
+        <li>모든 호출/응답은 우측 패널 <b>Network log</b> 에 표시.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- RIGHT — network log -->
+  <div class="panel sticky">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <h2 style="margin: 0;">Network log</h2>
+      <button id="clearLog" class="ghost">clear</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(() => {
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const el = (tag, props = {}, ...children) => {
+    const n = Object.assign(document.createElement(tag), props);
+    children.flat().forEach(c => n.append(c?.nodeType ? c : document.createTextNode(c ?? '')));
+    return n;
+  };
+
+  // ---------- creds (localStorage) ----------
+  const baseUrlInput = $('#baseUrl');
+  const jwtInput = $('#jwt');
+  baseUrlInput.value = localStorage.getItem('tp.baseUrl') || baseUrlInput.value;
+  jwtInput.value = localStorage.getItem('tp.jwt') || '';
+  $('#saveCreds').onclick = () => {
+    localStorage.setItem('tp.baseUrl', baseUrlInput.value.trim());
+    localStorage.setItem('tp.jwt', jwtInput.value.trim());
+    toast('creds 저장됨', 'ok');
+  };
+  $('#clearCreds').onclick = () => {
+    localStorage.removeItem('tp.baseUrl'); localStorage.removeItem('tp.jwt');
+    jwtInput.value = ''; toast('creds 지워짐', 'ok');
+  };
+
+  // ---------- fetch + log ----------
+  const logEl = $('#log');
+  $('#clearLog').onclick = () => logEl.innerHTML = '';
+
+  async function api(method, path, body) {
+    const base = baseUrlInput.value.trim().replace(/\/$/, '');
+    const url = base + path;
+    const headers = { 'Accept': 'application/json' };
+    const jwt = jwtInput.value.trim();
+    if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+    let res, text;
+    try {
+      res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+      text = await res.text();
+    } catch (e) {
+      logEntry({ method, url, status: 'ERR', ok: false, requestBody: body, responseText: String(e) });
+      throw e;
+    }
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+    logEntry({ method, url, status: res.status, ok: res.ok, requestBody: body, responseText: text, parsed });
+    if (!res.ok) {
+      const err = new Error((parsed && (parsed.error || parsed.message)) || `HTTP ${res.status}`);
+      err.status = res.status; err.body = parsed || text;
+      throw err;
+    }
+    return parsed;
+  }
+
+  function logEntry({ method, url, status, ok, requestBody, responseText, parsed }) {
+    const entry = el('div', { className: 'entry' });
+    const head = el('div', { className: 'head' },
+      el('span', { className: 'method ' + method }, method),
+      el('span', { className: 'status ' + (ok ? 'ok' : 'err') }, String(status)),
+      el('span', { className: 'url' }, url),
+    );
+    entry.append(head);
+    if (requestBody !== undefined) entry.append(el('pre', { className: 'body' }, JSON.stringify(requestBody, null, 2)));
+    if (responseText) entry.append(el('pre', { className: 'body' },
+      parsed ? JSON.stringify(parsed, null, 2) : responseText));
+    logEl.prepend(entry);
+  }
+
+  // ---------- toast ----------
+  const toastEl = $('#toast');
+  let toastTimer;
+  function toast(msg, kind = '') {
+    toastEl.className = 'toast ' + kind;
+    toastEl.textContent = msg;
+    requestAnimationFrame(() => toastEl.classList.add('show'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+  }
+
+  // ---------- chip widget ----------
+  // Renders chips array into the container, preserving the chip-input at the end.
+  // On enter / X, calls hooks (onAdd, onRemove) which can be sync (create mode) or async (edit mode).
+  function makeChipWidget(container, opts) {
+    const input = container.querySelector('.chip-input');
+    const mode = container.dataset.mode; // 'create' | 'edit'
+    let state = []; // array of {name, pending: boolean}
+
+    function render() {
+      // remove all chips, keep input
+      [...container.querySelectorAll('.chip')].forEach(c => c.remove());
+      state.forEach(({ name, pending }) => {
+        const chip = el('span', { className: 'chip' + (pending ? ' pending' : '') });
+        chip.append(name);
+        const x = el('span', { className: 'x', title: '제거' }, '×');
+        x.onclick = () => handleRemove(name);
+        chip.append(x);
+        container.insertBefore(chip, input);
+      });
+    }
+
+    function setAll(names) {
+      state = names.map(name => ({ name, pending: false }));
+      render();
+    }
+    function getAll() { return state.filter(c => !c.pending).map(c => c.name); }
+
+    function localNormalize(raw) {
+      return raw.trim().toLowerCase();
+    }
+
+    async function handleAdd(raw) {
+      const v = localNormalize(raw);
+      if (!v) return;
+      if (v.length > 32) { toast('태그는 32자 이하', 'err'); return; }
+      if (state.some(c => c.name === v)) { toast('이미 있음', 'err'); return; }
+      if (state.length >= 20) { toast('케이스당 최대 20개', 'err'); return; }
+
+      if (mode === 'create') {
+        state.push({ name: v, pending: false });
+        render();
+        return;
+      }
+      // edit mode → optimistic add + POST
+      const chip = { name: v, pending: true };
+      state.push(chip); render();
+      try {
+        const r = await opts.onAdd(v);
+        // 서버 응답의 allTags 로 전체 교체 (가장 안전한 동기화)
+        setAll(r.allTags);
+        toast(r.added ? `+ ${r.tag}` : `이미 있음: ${r.tag}`, r.added ? 'ok' : '');
+      } catch (e) {
+        // rollback
+        state = state.filter(c => c !== chip); render();
+        toast('추가 실패: ' + e.message, 'err');
+      }
+    }
+
+    async function handleRemove(name) {
+      if (mode === 'create') {
+        state = state.filter(c => c.name !== name);
+        render(); return;
+      }
+      // edit mode → optimistic remove + DELETE
+      const prev = state.slice();
+      state = state.filter(c => c.name !== name); render();
+      try {
+        const r = await opts.onRemove(name);
+        setAll(r.allTags);
+        toast(r.removed ? `− ${r.tag}` : `원래 없음: ${r.tag}`, r.removed ? 'ok' : '');
+      } catch (e) {
+        // rollback
+        state = prev; render();
+        toast('삭제 실패: ' + e.message, 'err');
+      }
+    }
+
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ',') {
+        ev.preventDefault();
+        const raw = input.value;
+        input.value = '';
+        if (raw.trim()) handleAdd(raw);
+      } else if (ev.key === 'Backspace' && input.value === '' && state.length > 0) {
+        // backspace on empty input → remove last
+        const last = state[state.length - 1];
+        if (!last.pending) handleRemove(last.name);
+      }
+    });
+
+    return { setAll, getAll };
+  }
+
+  // ---------- ① edit existing case ----------
+  let currentCaseId = null;
+  const editWidget = makeChipWidget($('#editChips'), {
+    onAdd: (tag) => api('POST', `/api/v1/error-cases/${currentCaseId}/tags`, { tag }),
+    onRemove: (tag) => api('DELETE', `/api/v1/error-cases/${currentCaseId}/tags/${encodeURIComponent(tag)}`),
+  });
+
+  async function loadCase(id) {
+    currentCaseId = id;
+    $('#caseSummary').textContent = 'loading...';
+    try {
+      const c = await api('GET', `/api/v1/error-cases/${id}`);
+      $('#caseSummary').innerHTML =
+        `<span class="pill green">#${c.id}</span> ` +
+        `<span class="pill">${c.status}</span> ` +
+        `<span class="pill yellow">${c.visibility ?? '-'}</span> ` +
+        `<b style="color:var(--text)">${escapeHtml(c.title)}</b> ` +
+        `<span class="muted">owner=${c.ownerUserId}</span>`;
+      editWidget.setAll(c.tags || []);
+    } catch (e) {
+      $('#caseSummary').innerHTML = `<span class="pill red">load 실패</span> ${escapeHtml(e.message)}`;
+      editWidget.setAll([]);
+      currentCaseId = null;
+    }
+  }
+
+  $('#loadCase').onclick = () => {
+    const id = $('#caseId').value.trim();
+    if (!id) { toast('Case ID 입력', 'err'); return; }
+    loadCase(id);
+  };
+  $('#caseId').addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') $('#loadCase').click();
+  });
+
+  // ---------- ② create new case with tags array ----------
+  const createWidget = makeChipWidget($('#createChips'), {});
+
+  $('#createBtn').onclick = async () => {
+    const title = $('#newTitle').value.trim();
+    if (!title) { toast('title 필요', 'err'); return; }
+    const tags = createWidget.getAll();
+    const body = { title, visibility: 'PRIVATE' };
+    if (tags.length) body.tags = tags;
+    try {
+      const r = await api('POST', '/api/v1/error-cases', body);
+      $('#createResult').innerHTML =
+        `생성됨: <span class="pill green">#${r.id}</span> ` +
+        `<span class="pill">${r.status}</span> ` +
+        `<b style="color:var(--text)">${escapeHtml(r.title)}</b>`;
+      $('#loadAfterCreate').disabled = false;
+      $('#loadAfterCreate').onclick = () => {
+        $('#caseId').value = r.id;
+        loadCase(r.id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+      toast(`case #${r.id} 생성됨`, 'ok');
+    } catch (e) {
+      $('#createResult').innerHTML = `<span class="pill red">실패</span> ${escapeHtml(e.message)}`;
+      toast('생성 실패: ' + e.message, 'err');
+    }
+  };
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
+  }
+})();
+</script>
+</body>
+</html>

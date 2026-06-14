@@ -1,0 +1,80 @@
+# ===================================================================
+# test — contextLoads 검증용. 외부 서비스(Kafka/IAM/Noti) 모두 *불요*.
+# - noti.publisher.mode=http → KafkaNotificationPublisherAdapter 비활성 (KafkaTemplate 빈 불요)
+# - DB 는 H2 in-memory (PostgreSQL dialect 지정)
+# - JWT secret/iam 은 base application.yml 의 ENV placeholder 대신 박힌 값
+# ===================================================================
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:core-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate.dialect: org.hibernate.dialect.H2Dialect
+
+iam:
+  jwt:
+    secret: "test-secret-test-secret-test-secret-test-secret-test-secret-test-secret-1234"
+    issuer: "https://iam.test"
+    audience: "test-clients"
+
+noti:
+  publisher:
+    mode: http
+
+core:
+  noti-api:
+    base-url: "http://localhost:8082"
+
+internal-auth:
+  ttl-seconds: 60
+  verifier:
+    audience: core-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+  issuer:
+    name: core-api
+    key-id: core-api-test
+    private-key-pem: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCOWXifiD7mPMlU
+      +2pXTHoKADYg6XNtW3573w5okmS4iU46CIVgs4tbPsEk2Ci/YQGxDoZGrOed0vAT
+      AJzS5vFsRdD1SJ+DFCADtSKKUPxjPGB8txIsRR19mMxIjpZSqzuaXQFF0EMtFQOD
+      CBONEDz/ku9tn+pC9f3+BS/JFbJU4ADu3iUBDvX/Y0V1mXr7o2O6BythMO4761/B
+      aIte8Szo0EesNj0KsPi+6qYcne9V/+i+s7D5CLCGNTzzxAJ5y13RcGjUy4OZY4Zx
+      sYHzLHvgjSoQNH3Gx/Xb6IMruU1Os0MnSbpcuhckjZbf/3qezoPnutOpsBlSweqQ
+      QBtJ2ki3AgMBAAECggEANmyFvjTIm51U+m1PWIYwSJ+REl8/Fun6v2BmMVv7L0Sr
+      yGtWl0S9/IpPLQeJ+LWdgHTFqMLVoRUzXYiH7OiIGDXPMOBtwB9TKCe6R3i0Ljq4
+      xyX1SEC6iDkBraH6XiwCkz+Iy4jXDibxG0lctDunnq0uZlLULXrAe7y+6tolPuZ9
+      x5xe7Ddj4zFpWHUZfGcQSIgN8dOIXqo/0PDgtM0AOFEMJxw0N6Lhn8D2zt4CeRdl
+      bh3MAWNZr1ZwGy1plPFGe/7n7PYRcq1ARIhviILpaYD8SYNnLrYV0hOsUR2DX61t
+      tMG9ZAOSYwSMd51qjFx2OW8vIth7DgyJbR7vFCwehQKBgQDHhWvcKBtzBm4atjLF
+      o7LTJhVqxhAanCbjj+o4EiFD8iBfThzEvMxcOSiKlMyp2lITFSFv8/GULTWv2w+I
+      9b0BkL2ljfExik9rGpRkPL/JRFNjsyX65xiz3QBRorK/Dc4xnCCFuyXLY7nTX/lZ
+      r0jSbfwkyILxaJYiSirHMr4PGwKBgQC2pQZZAS6lYddnnHMgqsHpli76ObcgKC1o
+      aqPHca2BHZ79Ib/qVjqf+sLp/t3kFEUZ0btN5XsKpRpOAYMs6TMplEYTfGjwdufm
+      F4rDZUmeZFCPiiG6K++OvlYRNgusqYSaBjgVw2caOII87Sg0mv9lbqKI6csMjwPL
+      KI7Q0oRalQKBgQDFFF5RTfCnMt/JVNVb8fGurbyUBmZb0oh7WWmSzx26vs0JNuAl
+      2RPHuNH56TcsQ7G0lbe8nOqwYePY+/ohYBK9HBqoEEgBlkwSUGPpizQp+2qfXZMT
+      ffghmhg5iwsiuuFEkaJyVkTj3XLtfqyP0RuOeAOK1eC50oQSBM6yisW/pwKBgECm
+      fW636mkEDxlP2biweN9UF+De2SF610fkp4CLjpzrfUGg1qv+RdYnDyOA4c5AFo2j
+      HaffGQSVmJAQHPyit0d6gquXGBY2ILPjlWzAx6RXYeTNQk8CClP+r7x74voFLzjO
+      BsA9YJt5cTBbyiWEz+55kPLhvsv9O5yICLWGLu9ZAoGAcExTCsIlB5HqUdd6yRQc
+      hXSw4QUc7lS1mZnNLmRWn7yt7bT4wzM/cE8wiC177RlCfGoMRdNqohFVdv6gKZ0U
+      ncj9sDhE6Dr6nr7kpieY/4Thym/QgyBvYk795O0wwJY0MLSZkAgzzQtry6C4CIYx
+      /TGSQELuR2e4a94l0qLDwxc=
+      -----END PRIVATE KEY-----

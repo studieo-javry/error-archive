@@ -47,6 +47,7 @@ class GithubProfileFetcher(
         return SocialProfile(
             providerUserId = user.id.toString(),
             email = email,
+            providerLogin = user.login,
             displayName = (user.name ?: user.login).take(100),
             profileUrl = user.htmlUrl,
             avatarUrl = user.avatarUrl

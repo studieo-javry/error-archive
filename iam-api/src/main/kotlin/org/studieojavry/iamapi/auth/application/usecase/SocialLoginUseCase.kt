@@ -50,9 +50,11 @@ class SocialLoginUseCase(
                 existing
             }
         } else {
+            val handle = pickAvailableHandle(profile.providerLogin)
             val created = userRepository.save(
                 User.create(
                     email = profile.email?.let { Email(it) },
+                    handle = handle,
                     displayName = profile.displayName,
                     avatarUrl = profile.avatarUrl
                 )
@@ -85,6 +87,35 @@ class SocialLoginUseCase(
             refreshTokenExpiresAt = tokens.refreshTokenExpiresAt,
             rememberMe = command.rememberMe
         )
+    }
+
+    /**
+     * provider 의 login 을 우리 handle 로 매핑. 충돌 시 `-2`, `-3` … suffix.
+     *
+     * 정규화:
+     *  - 소문자
+     *  - `[^a-z0-9-]` → 하이픈으로 치환 (이론상 GitHub login 은 이미 영문/숫자/하이픈만, 단 방어적 처리)
+     *  - 시작/끝 하이픈 제거 (`-foo` → `foo`)
+     *  - 빈 결과면 `user`
+     *  - 39자 cap
+     */
+    private fun pickAvailableHandle(providerLogin: String): String {
+        val base = providerLogin
+            .lowercase()
+            .replace(Regex("[^a-z0-9-]"), "-")
+            .trim('-')
+            .ifBlank { "user" }
+            .take(User.HANDLE_MAX_LENGTH)
+
+        if (!userRepository.existsByHandle(base)) return base
+
+        // suffix `-2`, `-3` … 까지 시도. 너무 많이 충돌하면 매우 드문 케이스 — 마지막 fallback 으로 short uuid.
+        for (i in 2..99) {
+            val candidate = "${base.take(User.HANDLE_MAX_LENGTH - 3)}-$i"
+            if (!userRepository.existsByHandle(candidate)) return candidate
+        }
+        val short = secureRandom.generateUrlSafeToken(6).lowercase().replace(Regex("[^a-z0-9]"), "").take(6)
+        return "${base.take(User.HANDLE_MAX_LENGTH - 7)}-$short"
     }
 
     private fun issueTokens(

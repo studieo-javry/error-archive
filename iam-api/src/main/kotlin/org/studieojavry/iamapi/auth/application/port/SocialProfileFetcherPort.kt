@@ -16,6 +16,11 @@ interface SocialProfileFetcherPort {
     data class SocialProfile(
         val providerUserId: String,
         val email: String?,
+        /**
+         * provider 의 unique login (GitHub login 등). 우리 서비스의 handle 매핑 후보.
+         * 매핑 시 소문자 정규화 + 충돌 시 `-2`, `-3` suffix.
+         */
+        val providerLogin: String,
         val displayName: String,
         val profileUrl: String?,
         val avatarUrl: String?

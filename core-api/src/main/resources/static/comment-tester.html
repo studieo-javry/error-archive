@@ -261,8 +261,12 @@ code.inline{font-family:var(--mono);font-size:12px;padding:2px 6px;border-radius
     <select id="caseSelect"><option value="">— 케이스 선택 —</option></select>
     <button class="btn" id="reloadBtn">새로고침</button>
     <button class="btn" id="themeBtn">🌗</button>
+    <button class="btn" id="bellBtn" title="알림 — gateway 경유 필요. playground 의 별도 페이지에서 확인." disabled style="opacity:.55">🔔 inbox →</button>
   </div>
 </header>
+
+<!-- 멘션 자동완성 dropdown — composer textarea 위 floating -->
+<div id="mentionDropdown" style="display:none;position:absolute;z-index:600;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);min-width:240px;max-height:280px;overflow-y:auto;padding:4px"></div>
 
 <main>
   <!-- Case header -->
@@ -359,7 +363,9 @@ code.inline{font-family:var(--mono);font-size:12px;padding:2px 6px;border-radius
 // ─────────────────────────────────────────────────────────────────────────────
 // API helper
 // ─────────────────────────────────────────────────────────────────────────────
-const API_BASE = '/api/v1';
+// gateway 절대 URL — 상대 경로(`/api/v1`) 로 두면 8081/comment-tester.html 로 열 때 core-api 직접 호출이 되어
+// 게이트웨이의 internal-JWT/header injection 을 우회한다. 절대 URL 로 고정해 *언제나 gateway 경유*.
+const API_BASE = 'http://localhost:8000/api/v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
@@ -1142,6 +1148,152 @@ $('#emojiCustom').addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('#emojiPicker').classList.contains('show')) closeEmojiPicker();
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @멘션 자동완성 — composer textarea 의 caret 위치에서 @토큰 감지 → core-api 호출
+// ─────────────────────────────────────────────────────────────────────────────
+const MENTION_TOKEN_RE = /@([A-Za-z0-9_.가-힣-]*)$/;
+
+function getCaretCoords(textarea) {
+  // textarea 의 caret 위치 (시각적) 를 *근사* 로 구함 — div mirror 트릭 사용
+  const m = document.createElement('div');
+  const cs = getComputedStyle(textarea);
+  ['fontFamily','fontSize','fontWeight','letterSpacing','lineHeight','padding','border','width','whiteSpace','wordWrap','boxSizing'].forEach(k => m.style[k] = cs[k]);
+  m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap';
+  m.textContent = textarea.value.substring(0, textarea.selectionStart);
+  const span = document.createElement('span');
+  span.textContent = '|';
+  m.appendChild(span);
+  document.body.appendChild(m);
+  const rectTa = textarea.getBoundingClientRect();
+  const rectSpan = span.getBoundingClientRect();
+  const x = rectTa.left + (rectSpan.left - m.getBoundingClientRect().left) + window.scrollX;
+  const y = rectTa.top + (rectSpan.top - m.getBoundingClientRect().top) + window.scrollY + 18;
+  document.body.removeChild(m);
+  return { x, y };
+}
+
+const mentionDD = $('#mentionDropdown');
+let mentionState = { active: false, items: [], selected: 0, tokenStart: -1, target: null };
+
+function closeMentionDD() {
+  mentionDD.style.display = 'none';
+  mentionState.active = false;
+}
+
+function renderMentionDD() {
+  if (mentionState.items.length === 0) {
+    mentionDD.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:11px">매칭되는 사용자 없음</div>';
+    return;
+  }
+  mentionDD.innerHTML = mentionState.items.map((u, i) => {
+    const sel = i === mentionState.selected ? 'background:var(--accent2)' : '';
+    const initial = u.displayName.slice(0, 2).toUpperCase();
+    const avatar = u.avatarUrl
+      ? `<img src="${u.avatarUrl}" style="width:24px;height:24px;border-radius:999px;object-fit:cover">`
+      : `<div style="width:24px;height:24px;border-radius:999px;background:linear-gradient(135deg,#c7d2fe,#a7f3d0);color:white;display:grid;place-items:center;font-size:10px;font-weight:600">${initial}</div>`;
+    const badgeText = ({
+      'in-discussion': '대화 참여',
+      'owner': '케이스 owner',
+      'workspace-member': '워크스페이스',
+      'search': '검색',
+    })[u.badge] || '';
+    return `<div data-idx="${i}" class="mentionItem" style="display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer;${sel}">
+      ${avatar}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${u.displayName}</div>
+        ${badgeText ? `<div style="font-size:10px;color:var(--muted)">${badgeText}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  [...mentionDD.querySelectorAll('.mentionItem')].forEach(el => {
+    el.onmouseenter = () => { mentionState.selected = Number(el.dataset.idx); renderMentionDD(); };
+    el.onclick = () => applyMention(Number(el.dataset.idx));
+  });
+}
+
+async function fetchMentionCandidates(q) {
+  if (!currentCase) return [];
+  try {
+    const r = await api(`/error-cases/${currentCase.id}/mention-candidates?q=${encodeURIComponent(q)}&limit=8`);
+    return Array.isArray(r) ? r : [];
+  } catch (e) { return []; }
+}
+
+function applyMention(idx) {
+  const target = mentionState.target;
+  const u = mentionState.items[idx];
+  if (!target || !u) return;
+  const value = target.value;
+  const before = value.substring(0, mentionState.tokenStart);
+  const afterCaret = value.substring(target.selectionStart);
+  const inserted = `@${u.displayName} `;
+  target.value = before + inserted + afterCaret;
+  const newPos = before.length + inserted.length;
+  target.setSelectionRange(newPos, newPos);
+  closeMentionDD();
+  target.focus();
+}
+
+async function maybeOpenMentionDD(target) {
+  mentionState.target = target;
+  const value = target.value;
+  const upto = value.substring(0, target.selectionStart);
+  const m = upto.match(MENTION_TOKEN_RE);
+  if (!m) { closeMentionDD(); return; }
+  mentionState.tokenStart = upto.length - m[0].length;   // @ 위치
+  const q = m[1];
+  const items = await fetchMentionCandidates(q);
+  if (items.length === 0 && q === '') { closeMentionDD(); return; }
+  mentionState.items = items;
+  mentionState.selected = 0;
+  mentionState.active = true;
+  const { x, y } = getCaretCoords(target);
+  mentionDD.style.left = x + 'px';
+  mentionDD.style.top = y + 'px';
+  mentionDD.style.display = 'block';
+  renderMentionDD();
+}
+
+// 댓글 본 composer + 답글 composer 양쪽에 wiring
+function attachMentionListeners(textarea) {
+  if (!textarea || textarea.dataset.mentionWired) return;
+  textarea.dataset.mentionWired = '1';
+  textarea.addEventListener('input', () => maybeOpenMentionDD(textarea));
+  textarea.addEventListener('keydown', e => {
+    if (!mentionState.active) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionState.selected = (mentionState.selected + 1) % mentionState.items.length;
+      renderMentionDD();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionState.selected = (mentionState.selected - 1 + mentionState.items.length) % mentionState.items.length;
+      renderMentionDD();
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      applyMention(mentionState.selected);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeMentionDD();
+    }
+  });
+  textarea.addEventListener('blur', () => setTimeout(closeMentionDD, 150));
+}
+
+attachMentionListeners($('#commentInput'));
+
+// 답글 composer 가 동적으로 만들어질 때 — MutationObserver 로 textarea 발견시 자동 wiring
+const moBody = document.querySelector('.discussionBody') || document.body;
+new MutationObserver(muts => {
+  muts.forEach(m => {
+    m.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
+      n.querySelectorAll && n.querySelectorAll('textarea').forEach(t => attachMentionListeners(t));
+      if (n.tagName === 'TEXTAREA') attachMentionListeners(n);
+    });
+  });
+}).observe(moBody, { childList: true, subtree: true });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init

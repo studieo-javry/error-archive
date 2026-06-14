@@ -10,6 +10,9 @@ interface ErrorCaseTagJpaRepository : JpaRepository<ErrorCaseTagEntity, Long> {
 
     fun findAllByErrorCaseIdOrderByCreatedAtAscIdAsc(errorCaseId: Long): List<ErrorCaseTagEntity>
 
+    /** 목록 조회용 — 여러 케이스의 태그 일괄 조회 (N+1 회피). */
+    fun findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(errorCaseIds: Collection<Long>): List<ErrorCaseTagEntity>
+
     fun findByErrorCaseIdAndTag(errorCaseId: Long, tag: String): ErrorCaseTagEntity?
 
     fun countByErrorCaseId(errorCaseId: Long): Long

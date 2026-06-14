@@ -17,6 +17,11 @@ class FollowRepositoryAdapter(
     override fun exists(followerId: Long, followeeId: Long): Boolean =
         jpa.existsByFollowerIdAndFolloweeId(followerId, followeeId)
 
+    override fun existsAll(followerId: Long, followeeIds: Collection<Long>): Set<Long> {
+        if (followeeIds.isEmpty()) return emptySet()
+        return jpa.findFollowedIds(followerId, followeeIds).toSet()
+    }
+
     override fun delete(followerId: Long, followeeId: Long): Boolean =
         jpa.deleteRelation(followerId, followeeId) > 0
 

@@ -8,6 +8,12 @@ interface FollowRepositoryPort {
 
     fun exists(followerId: Long, followeeId: Long): Boolean
 
+    /**
+     * follower 가 *팔로우 중인* followeeIds 의 부분집합을 반환.
+     * 목록 응답에 isFollowing 매핑 시 N+1 회피 — 한 번의 query 로 batch lookup.
+     */
+    fun existsAll(followerId: Long, followeeIds: Collection<Long>): Set<Long>
+
     fun delete(followerId: Long, followeeId: Long): Boolean
 
     /** 회원 탈퇴 시 사용자의 follower/followee 양방향 모든 엣지 삭제. */

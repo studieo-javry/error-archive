@@ -10,6 +10,19 @@ interface FollowJpaRepository : JpaRepository<FollowEntity, Long> {
 
     fun existsByFollowerIdAndFolloweeId(followerId: Long, followeeId: Long): Boolean
 
+    /** follower 가 팔로우 중인 followeeIds 의 부분집합. */
+    @Query(
+        """
+        select f.followeeId from FollowEntity f
+         where f.followerId = :followerId
+           and f.followeeId in :followeeIds
+        """
+    )
+    fun findFollowedIds(
+        @Param("followerId") followerId: Long,
+        @Param("followeeIds") followeeIds: Collection<Long>,
+    ): List<Long>
+
     @Modifying(clearAutomatically = true)
     @Query(
         """

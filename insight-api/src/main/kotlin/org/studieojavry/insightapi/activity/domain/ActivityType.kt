@@ -10,6 +10,7 @@ package org.studieojavry.insightapi.activity.domain
  */
 enum class ActivityType {
     CASE_CREATED,
+    CASE_RESOLVED,
     CASE_PUBLISHED,
     STEP_ADDED,
     SOLUTION_ADDED,

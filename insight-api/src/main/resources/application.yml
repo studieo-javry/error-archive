@@ -40,6 +40,7 @@ insight:
       STEP_ADDED:       2
       SOLUTION_ADDED:   5
       COMMENT_POSTED:   2
+      CASE_RESOLVED:    4
       COMMENT_REACTION: 1
       COMMENT_HELPFUL:  1
       FOLLOWED_USER:    1

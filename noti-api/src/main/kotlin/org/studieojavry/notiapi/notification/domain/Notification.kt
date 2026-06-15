@@ -57,5 +57,7 @@ enum class NotificationType {
     COMMENT_ON_ERROR_CASE,
     NEW_FOLLOWER,
     WORKSPACE_INVITATION,
+    /** 케이스가 RESOLVED 로 전환됨. recipients = watchlist 사용자 ∪ 워크스페이스 멤버 (actor 제외). */
+    CASE_RESOLVED,
     // 추후: PRODUCT_ANNOUNCEMENT, SECURITY_ALERT
 }

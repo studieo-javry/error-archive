@@ -25,6 +25,10 @@ object NotificationDeepLink {
                 else -> null
             }
         }
+        NotificationType.CASE_RESOLVED -> {
+            val ec = payload["errorCaseId"]?.toString()
+            if (!ec.isNullOrBlank()) "/error-cases/$ec" else null
+        }
     }
 
     private fun errorCaseCommentLink(payload: Map<String, Any?>): String? {

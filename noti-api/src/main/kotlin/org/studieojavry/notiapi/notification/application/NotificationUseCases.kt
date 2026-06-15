@@ -386,6 +386,43 @@ class CountMyUnreadUseCase(
     fun invoke(userId: Long): Long = notifications.countUnread(userId)
 }
 
+/**
+ * 케이스 RESOLVED 알림 — recipients (워크스페이스 멤버 ∪ watchlist 사용자, actor 제외) 에게 fan-out.
+ *
+ * MVP 정책:
+ *  - in-app 만 (email/push 없음)
+ *  - per-recipient settings.masterEnabled 체크 X (운영성 알림으로 처리, 토글은 후속)
+ *  - actor 제외는 *발화 측 (core-api)* 책임 — 여기서는 받은 recipientUserIds 그대로 적재
+ */
+@Service
+class ReceiveCaseResolvedEventUseCase(
+    private val inAppWriter: InAppNotificationWriter,
+) {
+    fun invoke(event: CaseResolvedEvent) {
+        if (event.recipientUserIds.isEmpty()) return
+        val payload = CaseResolvedPayloadJson(
+            errorCaseId = event.errorCaseId,
+            caseTitle = event.caseTitle.take(200),
+            workspaceId = event.workspaceId,
+        )
+        inAppWriter.save(NotificationType.CASE_RESOLVED, event.actorUserId, event.recipientUserIds, payload)
+    }
+
+    data class CaseResolvedEvent(
+        val recipientUserIds: List<Long>,
+        val actorUserId: Long,
+        val errorCaseId: Long,
+        val caseTitle: String,
+        val workspaceId: Long?,
+    )
+
+    internal data class CaseResolvedPayloadJson(
+        val errorCaseId: Long,
+        val caseTitle: String,
+        val workspaceId: Long?,
+    )
+}
+
 @Service
 class MarkMyNotificationReadUseCase(
     private val notifications: NotificationRepositoryPort,

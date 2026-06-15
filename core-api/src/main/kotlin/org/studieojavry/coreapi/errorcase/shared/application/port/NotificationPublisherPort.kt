@@ -31,6 +31,12 @@ interface NotificationPublisherPort {
      */
     fun publishCommentOnErrorCase(event: CommentOnErrorCaseEvent) {}
 
+    /**
+     * 케이스 RESOLVED 알림 fan-out. recipients = 워크스페이스 멤버 ∪ watchlist 사용자, actor 제외.
+     * 발화 측 (UpdateErrorCaseUseCase) 이 recipients 계산. 여기서는 받은 list 그대로 발행.
+     */
+    fun publishCaseResolved(event: CaseResolvedEvent) {}
+
     data class MentionEvent(
         val recipientUserIds: List<Long>,
         val actorUserId: Long,
@@ -54,5 +60,14 @@ interface NotificationPublisherPort {
         val errorCaseId: Long,
         val commentId: Long,
         val snippet: String,
+    )
+
+    data class CaseResolvedEvent(
+        val recipientUserIds: List<Long>,
+        val actorUserId: Long,
+        val errorCaseId: Long,
+        val caseTitle: String,
+        /** 워크스페이스 case 면 그 ID, 개인 case 면 null. */
+        val workspaceId: Long?,
     )
 }

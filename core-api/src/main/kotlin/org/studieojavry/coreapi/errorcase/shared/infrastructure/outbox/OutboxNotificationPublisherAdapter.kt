@@ -75,6 +75,31 @@ class OutboxNotificationPublisherAdapter(
         }
     }
 
+    override fun publishCaseResolved(event: NotificationPublisherPort.CaseResolvedEvent) {
+        if (event.recipientUserIds.isEmpty()) return
+        try {
+            // recipients 가 fan-out 대상이지만 *consumer 측이 list 1건* 으로 받아 batch save → outbox row 1건.
+            val msg = CaseResolvedMessage(
+                recipientUserIds = event.recipientUserIds.distinct(),
+                actorUserId = event.actorUserId,
+                errorCaseId = event.errorCaseId,
+                caseTitle = event.caseTitle,
+                workspaceId = event.workspaceId,
+            )
+            outboxRepo.save(
+                OutboxEventEntity(
+                    aggregateType = "CASE_RESOLVED",
+                    aggregateId = "case-resolved:case-${event.errorCaseId}",
+                    topic = CASE_RESOLVED_TOPIC,
+                    kafkaKey = event.errorCaseId.toString(),
+                    payload = objectMapper.writeValueAsString(msg),
+                )
+            )
+        } catch (ex: Exception) {
+            log.warn(ex) { "outbox case-resolved INSERT failed (silently dropped): caseId=${event.errorCaseId}" }
+        }
+    }
+
     override fun publishCommentOnErrorCase(event: NotificationPublisherPort.CommentOnErrorCaseEvent) {
         try {
             val msg = CommentOnCaseMessage(
@@ -126,9 +151,19 @@ class OutboxNotificationPublisherAdapter(
         val snippet: String,
     )
 
+    /** Kafka case-resolved 메시지 — noti-api `CaseResolvedEventConsumer` 와 동일 스키마. */
+    data class CaseResolvedMessage(
+        val recipientUserIds: List<Long>,
+        val actorUserId: Long,
+        val errorCaseId: Long,
+        val caseTitle: String,
+        val workspaceId: Long?,
+    )
+
     companion object {
         const val TOPIC = "notification-events.mentions.v1"
         const val REPLY_TOPIC = "notification-events.replies.v1"
         const val COMMENT_ON_CASE_TOPIC = "notification-events.comments-on-case.v1"
+        const val CASE_RESOLVED_TOPIC = "notification-events.case-resolved.v1"
     }
 }

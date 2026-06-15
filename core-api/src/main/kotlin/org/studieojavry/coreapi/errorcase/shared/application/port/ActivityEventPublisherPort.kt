@@ -32,9 +32,10 @@ interface ActivityEventPublisherPort {
         val meta: Map<String, Any?>? = null,
     )
 
-    /** core-api 가 발행하는 6종. insight-api 의 ActivityType enum 의 부분 집합. */
+    /** core-api 가 발행하는 type. insight-api 의 ActivityType enum 의 부분 집합. */
     enum class Type {
         CASE_CREATED,
+        CASE_RESOLVED,
         STEP_ADDED,
         SOLUTION_ADDED,
         COMMENT_POSTED,

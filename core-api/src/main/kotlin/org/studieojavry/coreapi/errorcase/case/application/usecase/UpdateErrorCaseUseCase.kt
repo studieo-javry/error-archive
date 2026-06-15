@@ -5,16 +5,22 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.command.UpdateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorSnapshot
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.RawStackTrace
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
+import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
+import org.studieojavry.coreapi.errorcase.shared.application.port.NotificationPublisherPort
+import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceMemberReaderPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import org.studieojavry.coreapi.shared.util.FingerprintGenerator
+import java.time.Instant
 
 /**
  * 에러케이스 부분 수정 — **소유자만**.
@@ -34,6 +40,10 @@ class UpdateErrorCaseUseCase(
     private val tagRepository: ErrorCaseTagRepositoryPort,
     private val errorSnapshotExtractor: ErrorSnaphostExtractorPort,
     private val access: ErrorCaseAccess,
+    private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
+    private val workspaceMemberReader: WorkspaceMemberReaderPort,
+    private val notificationPublisher: NotificationPublisherPort,
+    private val activityEventPublisher: ActivityEventPublisherPort,
 ) {
     @Transactional
     fun invoke(command: UpdateErrorCaseCommand): ErrorCase {
@@ -69,9 +79,26 @@ class UpdateErrorCaseUseCase(
             visibility = newVisibility,
         )
         // 상태 전이는 도메인 transitionTo 가 검증. 같은 상태면 no-op.
-        // RESOLVED 전환 시 transitionTo 내부에서 resolvedAt + resolvedByUserId 자동 세팅.
+        val prevStatus = errorCase.status
         command.status?.let { errorCase.transitionTo(it, command.requesterUserId) }
         errorCaseRepository.update(errorCase)
+
+        // RESOLVED 로 전환됐으면 알림 발행 + 잔디 event. recipients = 워크스페이스 멤버 ∪ watchlist 사용자, actor 제외.
+        if (prevStatus != ErrorCaseStatus.RESOLVED && errorCase.status == ErrorCaseStatus.RESOLVED) {
+            publishCaseResolvedNotification(errorCase, command.requesterUserId)
+            // 잔디용 activity event (fire-and-forget). 본인 액션이어도 *기여도* 신호로 가산.
+            runCatching {
+                activityEventPublisher.publish(
+                    ActivityEventPublisherPort.ActivityEvent(
+                        userId = command.requesterUserId,
+                        type = ActivityEventPublisherPort.Type.CASE_RESOLVED,
+                        occurredAt = Instant.now(),
+                        idempotencyKey = "case-resolved:${errorCase.id}",
+                        meta = mapOf("errorCaseId" to errorCase.id),
+                    )
+                )
+            }
+        }
 
         // 스니펫·첨부·태그 선언형 재설정(diff). 같은 트랜잭션.
         reconcileSnippets(command.snippetMarkerIds, command.errorCaseId, command.requesterUserId)
@@ -81,6 +108,39 @@ class UpdateErrorCaseUseCase(
         // 재연결이 반영된 최신 애그리거트를 다시 로드해 반환(벌크 UPDATE 후 영속성 컨텍스트는 clear 됨).
         return errorCaseRepository.findById(command.errorCaseId)
             ?: throw ErrorCaseNotFoundException(command.errorCaseId)
+    }
+
+    /**
+     * RESOLVED 알림 fan-out:
+     *  - 워크스페이스 case: workspace 멤버 ∪ watchlist 사용자
+     *  - 개인 PUBLIC case: watchlist 사용자만
+     *  - 개인 PRIVATE case: actor==owner 라서 recipients 0 → 발행 skip
+     *  - 모든 경우 actor 제외
+     *
+     * fire-and-forget — 실패 시 status 변경 자체는 성공으로 처리.
+     */
+    private fun publishCaseResolvedNotification(errorCase: ErrorCase, actorUserId: Long) {
+        val caseId = errorCase.id ?: return
+        val workspaceId = errorCase.meta.workspaceId
+        val watchlistUserIds = runCatching { caseWatchlistRepository.findUserIdsByCaseId(caseId) }
+            .getOrDefault(emptyList())
+        val workspaceMemberIds = if (workspaceId != null) {
+            runCatching { workspaceMemberReader.findMemberIds(workspaceId) }.getOrDefault(emptyList())
+        } else emptyList()
+        val recipients = (watchlistUserIds + workspaceMemberIds)
+            .toSet()
+            .minus(actorUserId)
+            .toList()
+        if (recipients.isEmpty()) return
+        notificationPublisher.publishCaseResolved(
+            NotificationPublisherPort.CaseResolvedEvent(
+                recipientUserIds = recipients,
+                actorUserId = actorUserId,
+                errorCaseId = caseId,
+                caseTitle = errorCase.title,
+                workspaceId = workspaceId,
+            )
+        )
     }
 
     /**

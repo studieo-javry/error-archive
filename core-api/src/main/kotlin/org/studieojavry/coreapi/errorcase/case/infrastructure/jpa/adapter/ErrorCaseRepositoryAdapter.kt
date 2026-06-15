@@ -100,6 +100,17 @@ class ErrorCaseRepositoryAdapter(
         return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
     }
 
+    override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
+        if (caseIds.isEmpty()) return emptyList()
+        val entities = errorCaseRepo.findAllByIdIn(caseIds)
+        val ids = entities.mapNotNull { it.id }
+        val tagsByCaseId: Map<Long, List<String>> = if (ids.isEmpty()) emptyMap() else
+            tagRepo.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(ids)
+                .groupBy { it.errorCaseId }
+                .mapValues { (_, rows) -> rows.map { it.tag } }
+        return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
+    }
+
     private fun ErrorCaseEntity.toSummary(tags: List<String>): ErrorCaseSummary {
         // 모든 meta 컬럼이 null 이면 Hibernate 가 embedded 를 null 로 돌려준다(개인 케이스 등).
         val m: MetaEmbeddable? = meta

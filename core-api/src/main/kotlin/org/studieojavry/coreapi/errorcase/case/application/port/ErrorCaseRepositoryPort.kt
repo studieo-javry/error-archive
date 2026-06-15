@@ -20,4 +20,7 @@ interface ErrorCaseRepositoryPort {
     fun findOwnerUserIdById(errorCaseId: Long): Long?
 
     fun deleteById(errorCaseId: Long)
+
+    /** caseIds 의 summary 일괄. watchlist-feed 에서 case 메타 일괄 조회용. */
+    fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary>
 }

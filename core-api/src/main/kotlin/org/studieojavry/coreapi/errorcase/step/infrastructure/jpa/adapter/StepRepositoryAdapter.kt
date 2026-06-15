@@ -24,6 +24,21 @@ class StepRepositoryAdapter(
     override fun existsSuccessByErrorCaseId(errorCaseId: Long): Boolean =
         jpa.existsByErrorCaseIdAndStatus(errorCaseId, StepStatus.RESOLVED)
 
+    override fun findActivitiesByCaseIdsSince(
+        caseIds: Collection<Long>,
+        globalSince: java.time.LocalDateTime,
+    ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow> {
+        if (caseIds.isEmpty()) return emptyList()
+        return jpa.findActivitiesByCaseIdsSince(caseIds, globalSince).map {
+            org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow(
+                errorCaseId = it.errorCaseId,
+                createdAt = it.createdAt,
+                authorUserId = it.authorUserId,
+                source = org.studieojavry.coreapi.errorcase.case.application.port.CaseActivitySource.STEP_ADDED,
+            )
+        }
+    }
+
     override fun delete(id: Long) = jpa.deleteById(id)
     override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }
 }

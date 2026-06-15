@@ -4,7 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.CaseActivityProjection
 import org.studieojavry.coreapi.errorcase.solution.infrastructure.jpa.entity.SolutionEntity
+import java.time.LocalDateTime
 
 interface SolutionJpaRepository : JpaRepository<SolutionEntity, Long> {
     fun findAllByErrorCaseIdOrderByCreatedAtAsc(errorCaseId: Long): List<SolutionEntity>
@@ -21,4 +23,17 @@ interface SolutionJpaRepository : JpaRepository<SolutionEntity, Long> {
     @Modifying(clearAutomatically = true)
     @Query("delete from SolutionEntity s where s.errorCaseId = :caseId")
     fun deleteAllByErrorCaseId(@Param("caseId") errorCaseId: Long): Int
+
+    /** watchlist-feed unread 계산용 — globalSince 이후 활동을 case-id 별로 fetch. */
+    @Query("""
+        select s.errorCaseId as errorCaseId, s.createdAt as createdAt, s.authorUserId as authorUserId,
+               'SOLUTION' as source
+          from SolutionEntity s
+         where s.errorCaseId in :caseIds
+           and s.createdAt > :globalSince
+    """)
+    fun findActivitiesByCaseIdsSince(
+        @Param("caseIds") caseIds: Collection<Long>,
+        @Param("globalSince") globalSince: LocalDateTime,
+    ): List<CaseActivityProjection>
 }

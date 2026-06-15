@@ -6,6 +6,7 @@ import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentHelpful
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentMention
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentReaction
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentSuggestion
+import java.time.LocalDateTime
 
 /**
  * Comment 애그리거트의 단일 포트. 리액션/도움됨/멘션/Diff 제안의 작은 N:1·N:M 도 같이 묶는다 —
@@ -22,6 +23,12 @@ interface CommentRepositoryPort {
     fun findAllByErrorCaseId(errorCaseId: Long): List<Comment>
 
     fun deleteAllByErrorCaseId(errorCaseId: Long)
+
+    /** watchlist-feed 활동 fetch — caseIds 별 globalSince 이후 (deleted 제외) 댓글, literal source=`COMMENT_POSTED`. */
+    fun findActivitiesByCaseIdsSince(
+        caseIds: Collection<Long>,
+        globalSince: LocalDateTime,
+    ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow>
 
     // ── Reactions ──────────────────────────────────────────────
     fun findReactionsByCommentIds(commentIds: List<Long>): List<CommentReaction>

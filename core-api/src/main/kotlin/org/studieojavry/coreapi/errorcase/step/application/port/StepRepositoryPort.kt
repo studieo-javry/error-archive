@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.step.application.port
 
 import org.springframework.stereotype.Repository
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
+import java.time.LocalDateTime
 
 @Repository
 interface StepRepositoryPort {
@@ -16,6 +17,12 @@ interface StepRepositoryPort {
 
     /** 케이스에 첫 SUCCESS step 이 있는지(RESOLVED 추천 트리거 판정). */
     fun existsSuccessByErrorCaseId(errorCaseId: Long): Boolean
+
+    /** watchlist-feed 활동 fetch — caseIds 별 globalSince 이후 step, literal source=`STEP_ADDED`. */
+    fun findActivitiesByCaseIdsSince(
+        caseIds: Collection<Long>,
+        globalSince: LocalDateTime,
+    ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow>
 
     fun delete(id: Long)
     fun deleteAllByErrorCaseId(errorCaseId: Long)

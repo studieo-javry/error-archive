@@ -48,6 +48,21 @@ class CommentRepositoryAdapter(
         commentJpa.deleteAllByErrorCaseId(errorCaseId)
     }
 
+    override fun findActivitiesByCaseIdsSince(
+        caseIds: Collection<Long>,
+        globalSince: java.time.LocalDateTime,
+    ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow> {
+        if (caseIds.isEmpty()) return emptyList()
+        return commentJpa.findActivitiesByCaseIdsSince(caseIds, globalSince).map {
+            org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow(
+                errorCaseId = it.errorCaseId,
+                createdAt = it.createdAt,
+                authorUserId = it.authorUserId,
+                source = org.studieojavry.coreapi.errorcase.case.application.port.CaseActivitySource.COMMENT_POSTED,
+            )
+        }
+    }
+
     // ── Reactions ──────────────────────────────────────────────
     override fun findReactionsByCommentIds(commentIds: List<Long>): List<CommentReaction> =
         if (commentIds.isEmpty()) emptyList()

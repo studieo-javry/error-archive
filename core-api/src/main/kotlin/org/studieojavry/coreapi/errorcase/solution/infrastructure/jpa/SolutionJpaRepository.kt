@@ -26,7 +26,8 @@ interface SolutionJpaRepository : JpaRepository<SolutionEntity, Long> {
 
     /** watchlist-feed unread 계산용 — globalSince 이후 활동을 case-id 별로 fetch. */
     @Query("""
-        select s.errorCaseId as errorCaseId, s.createdAt as createdAt, s.authorUserId as authorUserId,
+        select s.errorCaseId as errorCaseId, s.id as activityId,
+               s.createdAt as createdAt, s.authorUserId as authorUserId,
                'SOLUTION' as source
           from SolutionEntity s
          where s.errorCaseId in :caseIds

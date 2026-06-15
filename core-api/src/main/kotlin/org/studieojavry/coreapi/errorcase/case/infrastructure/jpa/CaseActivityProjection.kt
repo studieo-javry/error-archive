@@ -11,6 +11,8 @@ import java.time.LocalDateTime
  */
 interface CaseActivityProjection {
     val errorCaseId: Long
+    /** 도메인별 PK (comment.id / step.id / solution.id) — watchlist-feed 의 deep link fragment 용. */
+    val activityId: Long
     val createdAt: LocalDateTime
     val authorUserId: Long
     val source: String

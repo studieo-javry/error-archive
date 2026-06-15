@@ -57,8 +57,9 @@ class GetMyWatchlistFeedUseCase(
             .mapValues { (_, rows) -> rows.maxBy { it.createdAt } }
 
         // 3. unread 계산 — author != me + createdAt > lastViewedAt
+        // 3 sources (comment/step/solution) + CASE_RESOLVED virtual (case.resolvedAt 가 lastViewed 이후)
         val lastViewedByCase = caseViewRepository.findByUserAndCaseIds(input.userId, candidateCaseIds)
-        val unreadByCase: Map<Long, Long> = activities
+        val realActivityUnread: Map<Long, Long> = activities
             .filter { it.authorUserId != input.userId }
             .filter {
                 val lastViewed = lastViewedByCase[it.errorCaseId]
@@ -67,6 +68,17 @@ class GetMyWatchlistFeedUseCase(
             .groupingBy { it.errorCaseId }
             .eachCount()
             .mapValues { it.value.toLong() }
+        // CASE_RESOLVED virtual unread — resolvedAt > lastViewed AND resolvedBy != me
+        val resolvedUnread: Map<Long, Long> = candidateCaseIds.mapNotNull { caseId ->
+            val summary = summaries[caseId] ?: return@mapNotNull null
+            val resolvedAt = summary.resolvedAt ?: return@mapNotNull null
+            if (summary.resolvedByUserId == input.userId) return@mapNotNull null
+            val lastViewed = lastViewedByCase[caseId]
+            if (lastViewed != null && !resolvedAt.isAfter(lastViewed)) return@mapNotNull null
+            caseId to 1L
+        }.toMap()
+        val unreadByCase: Map<Long, Long> = (realActivityUnread.keys + resolvedUnread.keys)
+            .associateWith { (realActivityUnread[it] ?: 0L) + (resolvedUnread[it] ?: 0L) }
 
         // 4. case-id 별 latest 결정 — 3 sources latest 와 CASE_RESOLVED virtual 비교
         val cards = candidateCaseIds.mapNotNull { caseId ->
@@ -76,6 +88,7 @@ class GetMyWatchlistFeedUseCase(
             Item(
                 summary = summary,
                 latestActivitySource = latest.source,
+                latestActivityId = latest.activityId,
                 latestActivityActorUserId = latest.actorUserId,
                 lastActivityAt = latest.occurredAt,
                 unreadActivityCount = unreadByCase[caseId] ?: 0L,
@@ -106,6 +119,7 @@ class GetMyWatchlistFeedUseCase(
         latestActivityRow?.let {
             candidates += LatestActivity(
                 source = it.source,
+                activityId = it.activityId,
                 actorUserId = it.authorUserId,
                 occurredAt = it.createdAt,
             )
@@ -113,6 +127,7 @@ class GetMyWatchlistFeedUseCase(
         if (summary.resolvedAt != null) {
             candidates += LatestActivity(
                 source = CaseActivitySource.CASE_RESOLVED,
+                activityId = null,           // virtual — case.resolvedAt 자체. 별도 PK 없음
                 actorUserId = summary.resolvedByUserId,
                 occurredAt = summary.resolvedAt,
             )
@@ -122,6 +137,7 @@ class GetMyWatchlistFeedUseCase(
 
     private data class LatestActivity(
         val source: CaseActivitySource,
+        val activityId: Long?,
         val actorUserId: Long?,
         val occurredAt: LocalDateTime,
     )
@@ -134,6 +150,8 @@ class GetMyWatchlistFeedUseCase(
     data class Item(
         val summary: ErrorCaseSummary,
         val latestActivitySource: CaseActivitySource,
+        /** 도메인별 PK — COMMENT/STEP/SOLUTION 의 row id. CASE_RESOLVED 는 virtual 이라 null. deep link fragment 용. */
+        val latestActivityId: Long?,
         /** type 별 정확 매핑: CASE_RESOLVED → resolvedBy, COMMENT_POSTED/STEP_ADDED/SOLUTION_REGISTERED → 작성자. */
         val latestActivityActorUserId: Long?,
         val lastActivityAt: LocalDateTime,

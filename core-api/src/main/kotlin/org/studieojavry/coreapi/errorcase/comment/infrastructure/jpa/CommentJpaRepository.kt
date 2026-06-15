@@ -17,7 +17,8 @@ interface CommentJpaRepository : JpaRepository<CommentEntity, Long> {
 
     /** watchlist-feed unread 계산용 — globalSince 이후 활동을 case-id 별로 fetch. */
     @Query("""
-        select c.errorCaseId as errorCaseId, c.createdAt as createdAt, c.authorUserId as authorUserId,
+        select c.errorCaseId as errorCaseId, c.id as activityId,
+               c.createdAt as createdAt, c.authorUserId as authorUserId,
                'COMMENT' as source
           from CommentEntity c
          where c.errorCaseId in :caseIds

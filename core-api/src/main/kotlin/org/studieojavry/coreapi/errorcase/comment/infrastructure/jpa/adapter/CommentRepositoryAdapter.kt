@@ -56,6 +56,7 @@ class CommentRepositoryAdapter(
         return commentJpa.findActivitiesByCaseIdsSince(caseIds, globalSince).map {
             org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow(
                 errorCaseId = it.errorCaseId,
+                activityId = it.activityId,
                 createdAt = it.createdAt,
                 authorUserId = it.authorUserId,
                 source = org.studieojavry.coreapi.errorcase.case.application.port.CaseActivitySource.COMMENT_POSTED,

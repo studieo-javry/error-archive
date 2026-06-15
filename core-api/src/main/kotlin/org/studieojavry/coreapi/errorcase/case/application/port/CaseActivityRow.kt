@@ -14,6 +14,8 @@ import java.time.LocalDateTime
  */
 data class CaseActivityRow(
     val errorCaseId: Long,
+    /** comment.id / step.id / solution.id — watchlist-feed 의 deep link fragment (`#comment-{id}` 등) 용. */
+    val activityId: Long,
     val createdAt: LocalDateTime,
     val authorUserId: Long,
     val source: CaseActivitySource,

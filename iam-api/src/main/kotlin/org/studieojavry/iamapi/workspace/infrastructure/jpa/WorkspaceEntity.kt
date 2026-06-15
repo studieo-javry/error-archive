@@ -9,15 +9,18 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import org.studieojavry.iamapi.workspace.domain.model.Workspace
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceName
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceSettings
+import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceSlug
 import java.time.Instant
 
 @Entity
 @Table(
     name = "iam_workspace",
-    indexes = [Index(name = "ix_iam_workspace_creator", columnList = "created_by_user_id")]
+    indexes = [Index(name = "ix_iam_workspace_creator", columnList = "created_by_user_id")],
+    uniqueConstraints = [UniqueConstraint(name = "uq_iam_workspace_slug", columnNames = ["slug"])],
 )
 class WorkspaceEntity(
     @Id
@@ -26,6 +29,9 @@ class WorkspaceEntity(
 
     @Column(name = "name", nullable = false, length = 50)
     var name: String,
+
+    @Column(name = "slug", nullable = false, length = 40, updatable = false)
+    var slug: String,
 
     @Embedded
     var settings: WorkspaceSettingsEmbeddable,
@@ -43,6 +49,7 @@ class WorkspaceEntity(
     fun toDomain(): Workspace = Workspace.rehydrate(
         id = id!!,
         name = WorkspaceName(name),
+        slug = WorkspaceSlug(slug),
         settings = WorkspaceSettings(
             notificationEnabled = settings.notificationEnabled,
             defaultTimezone = settings.defaultTimezone
@@ -56,6 +63,7 @@ class WorkspaceEntity(
         fun fromDomain(workspace: Workspace): WorkspaceEntity = WorkspaceEntity(
             id = workspace.id,
             name = workspace.name.value,
+            slug = workspace.slug.value,
             settings = WorkspaceSettingsEmbeddable(
                 notificationEnabled = workspace.settings.notificationEnabled,
                 defaultTimezone = workspace.settings.defaultTimezone

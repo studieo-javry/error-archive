@@ -22,6 +22,7 @@ class GetWorkspaceUseCase(
         return Result(
             workspaceId = workspace.id!!,
             name = workspace.name.value,
+            slug = workspace.slug.value,
             createdByUserId = workspace.createdByUserId,
             notificationEnabled = workspace.settings.notificationEnabled,
             defaultTimezone = workspace.settings.defaultTimezone,
@@ -34,6 +35,7 @@ class GetWorkspaceUseCase(
     data class Result(
         val workspaceId: Long,
         val name: String,
+        val slug: String,
         val createdByUserId: Long,
         val notificationEnabled: Boolean,
         val defaultTimezone: String,

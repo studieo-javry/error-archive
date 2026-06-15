@@ -21,6 +21,7 @@ class ListMyWorkspacesUseCase(
             Item(
                 workspaceId = ws.id!!,
                 name = ws.name.value,
+                slug = ws.slug.value,
                 role = membership.role,
                 createdByUserId = ws.createdByUserId
             )
@@ -30,6 +31,7 @@ class ListMyWorkspacesUseCase(
     data class Item(
         val workspaceId: Long,
         val name: String,
+        val slug: String,
         val role: WorkspaceRole,
         val createdByUserId: Long
     )

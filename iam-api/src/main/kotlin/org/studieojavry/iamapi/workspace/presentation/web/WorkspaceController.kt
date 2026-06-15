@@ -43,11 +43,22 @@ class WorkspaceController(
     private val listMyWorkspacesUseCase: ListMyWorkspacesUseCase
 ) {
 
-    @Operation(summary = "워크스페이스 생성", description = "생성자가 자동으로 ADMIN 으로 멤버 등록됨.")
+    @Operation(
+        summary = "워크스페이스 생성",
+        description = """
+            생성자가 자동으로 ADMIN 으로 멤버 등록됨.
+
+            - `name`: 표시 이름. 영문/숫자/공백/하이픈 만.
+            - `slug`: URL 식별자. kebab-case lowercase alnum + 단일 hyphen. **unique**. 생성 후 변경 불가.
+
+            FE 는 name 입력을 받아 kebab-case 로 정규화해 slug 칸에 자동 prefill (사용자가 override 가능).
+        """,
+    )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "생성됨(상세 반환, viewerRole=ADMIN)"),
-        ApiResponse(responseCode = "400", description = "이름 검증 실패", content = [Content()]),
-        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()])
+        ApiResponse(responseCode = "400", description = "name/slug 검증 실패", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "slug 중복", content = [Content()]),
     )
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -57,12 +68,13 @@ class WorkspaceController(
     ): WorkspaceResponse {
         val me = currentUserId(jwt)
         val created = createWorkspaceUseCase.invoke(
-            CreateWorkspaceCommand(createdByUserId = me, name = request.name)
+            CreateWorkspaceCommand(createdByUserId = me, name = request.name, slug = request.slug)
         )
         val detail = getWorkspaceUseCase.invoke(created.workspaceId, me)
         return WorkspaceResponse(
             workspaceId = detail.workspaceId,
             name = detail.name,
+            slug = detail.slug,
             createdByUserId = detail.createdByUserId,
             notificationEnabled = detail.notificationEnabled,
             defaultTimezone = detail.defaultTimezone,
@@ -78,7 +90,7 @@ class WorkspaceController(
     fun listMine(@Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt): List<WorkspaceListItemResponse> {
         val me = currentUserId(jwt)
         return listMyWorkspacesUseCase.invoke(me).map {
-            WorkspaceListItemResponse(it.workspaceId, it.name, it.role.name, it.createdByUserId)
+            WorkspaceListItemResponse(it.workspaceId, it.name, it.slug, it.role.name, it.createdByUserId)
         }
     }
 
@@ -99,6 +111,7 @@ class WorkspaceController(
         return WorkspaceResponse(
             workspaceId = r.workspaceId,
             name = r.name,
+            slug = r.slug,
             createdByUserId = r.createdByUserId,
             notificationEnabled = r.notificationEnabled,
             defaultTimezone = r.defaultTimezone,

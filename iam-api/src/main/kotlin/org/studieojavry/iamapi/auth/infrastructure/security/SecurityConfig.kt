@@ -40,6 +40,9 @@ class SecurityConfig {
                 auth.requestMatchers(
                     // OAuth 시작 / 콜백 — 로그인 *전* 이라 인증 없이 호출돼야 함
                     "/api/v1/auth/oauth/**",
+                    // refresh / logout — refresh_token 쿠키만 가지고 호출. access 가 만료된 상태에서도 가능해야 하므로 permitAll.
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/logout",
                     "/actuator/health",
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람 (실 API 호출은 Authorization 필요)
                     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",

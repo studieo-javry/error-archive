@@ -114,9 +114,12 @@ class ErrorCaseRepositoryAdapter(
             fingerprint = snapshot?.fingerprint,
             exceptionClass = snapshot?.exceptionClass,
             createdAt = createdAt,
+            updatedAt = updatedAt,
             occurredAt = occurredAt,
             tags = tags,
             descriptionRaw = description,
+            resolvedAt = resolvedAt,
+            resolvedByUserId = resolvedByUserId,
         )
     }
 

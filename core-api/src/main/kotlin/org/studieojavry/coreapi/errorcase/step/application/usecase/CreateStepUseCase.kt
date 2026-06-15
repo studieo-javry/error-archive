@@ -59,7 +59,7 @@ class CreateStepUseCase(
 
         // OPEN + 첫 step → IN_PROGRESS 자동 전환
         if (errorCase.status == ErrorCaseStatus.OPEN && existingCount == 0) {
-            errorCase.transitionTo(ErrorCaseStatus.IN_PROGRESS)
+            errorCase.transitionTo(ErrorCaseStatus.IN_PROGRESS, command.authorUserId)
             errorCaseRepository.update(errorCase)
         }
 

@@ -41,7 +41,11 @@ data class ErrorCaseSummary(
     val fingerprint: String?,
     val exceptionClass: String?,
     val createdAt: LocalDateTime,
+    val updatedAt: LocalDateTime,
     val occurredAt: LocalDateTime?,
     val tags: List<String>,
     val descriptionRaw: String?,
+    /** RESOLVED 로 전환된 마지막 시각 — 없으면 null. timeline 의 RESOLVED 활동 시각. */
+    val resolvedAt: LocalDateTime? = null,
+    val resolvedByUserId: Long? = null,
 )

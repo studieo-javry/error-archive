@@ -27,7 +27,11 @@ class ErrorCase private constructor(
     var status: ErrorCaseStatus,
     val occurredAt: LocalDateTime?,
     val createdAt: LocalDateTime,
-    var updatedAt: LocalDateTime
+    var updatedAt: LocalDateTime,
+    /** RESOLVED 로 전환된 마지막 시각 — 다른 status 로 다시 바뀌어도 *유지* (timeline 기록용). */
+    var resolvedAt: LocalDateTime? = null,
+    /** RESOLVED 로 전환한 actor. timeline 의 "Resolved a case" 활동 주체 식별. */
+    var resolvedByUserId: Long? = null,
 ) {
     init {
         require(title.isNotBlank()) { "Title cannot be blank" }
@@ -41,7 +45,7 @@ class ErrorCase private constructor(
         this.updatedAt = LocalDateTime.now()
     }
 
-    fun transitionTo(next: ErrorCaseStatus) {
+    fun transitionTo(next: ErrorCaseStatus, actorUserId: Long) {
         if (status == next) return
         val allowed = when (status) {
             ErrorCaseStatus.DRAFT -> setOf(ErrorCaseStatus.OPEN, ErrorCaseStatus.CLOSED)
@@ -52,6 +56,10 @@ class ErrorCase private constructor(
         }
         require(next in allowed) { "illegal status transition: $status → $next" }
         this.status = next
+        if (next == ErrorCaseStatus.RESOLVED) {
+            this.resolvedAt = LocalDateTime.now()
+            this.resolvedByUserId = actorUserId
+        }
         touch()
     }
 
@@ -137,7 +145,9 @@ class ErrorCase private constructor(
             status: ErrorCaseStatus,
             occurredAt: LocalDateTime?,
             createdAt: LocalDateTime,
-            updatedAt: LocalDateTime
+            updatedAt: LocalDateTime,
+            resolvedAt: LocalDateTime? = null,
+            resolvedByUserId: Long? = null,
         ): ErrorCase = ErrorCase(
             id = id,
             ownerUserId = ownerUserId,
@@ -153,7 +163,9 @@ class ErrorCase private constructor(
             status = status,
             occurredAt = occurredAt,
             createdAt = createdAt,
-            updatedAt = updatedAt
+            updatedAt = updatedAt,
+            resolvedAt = resolvedAt,
+            resolvedByUserId = resolvedByUserId,
         )
     }
 }

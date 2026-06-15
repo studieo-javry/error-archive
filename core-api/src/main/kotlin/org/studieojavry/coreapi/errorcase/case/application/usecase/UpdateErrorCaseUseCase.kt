@@ -69,7 +69,8 @@ class UpdateErrorCaseUseCase(
             visibility = newVisibility,
         )
         // 상태 전이는 도메인 transitionTo 가 검증. 같은 상태면 no-op.
-        command.status?.let { errorCase.transitionTo(it) }
+        // RESOLVED 전환 시 transitionTo 내부에서 resolvedAt + resolvedByUserId 자동 세팅.
+        command.status?.let { errorCase.transitionTo(it, command.requesterUserId) }
         errorCaseRepository.update(errorCase)
 
         // 스니펫·첨부·태그 선언형 재설정(diff). 같은 트랜잭션.

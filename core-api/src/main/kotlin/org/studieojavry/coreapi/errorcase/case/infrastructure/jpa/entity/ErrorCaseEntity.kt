@@ -61,5 +61,11 @@ class ErrorCaseEntity(
     var updatedAt: LocalDateTime,
 
     @Column(name = "owner_user_id", nullable = false)
-    var ownerUserId: Long
+    var ownerUserId: Long,
+
+    @Column(name = "resolved_at")
+    var resolvedAt: LocalDateTime? = null,
+
+    @Column(name = "resolved_by_user_id")
+    var resolvedByUserId: Long? = null,
 )

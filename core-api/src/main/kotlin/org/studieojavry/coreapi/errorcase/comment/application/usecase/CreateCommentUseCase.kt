@@ -35,6 +35,8 @@ class CreateCommentUseCase(
     private val iamUserQuery: IamUserQueryPort,
     private val notificationPublisher: NotificationPublisherPort,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val caseWatchlistRepository:
+        org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort,
 ) {
     @Transactional
     fun invoke(command: CreateCommentCommand): Comment {
@@ -159,6 +161,9 @@ class CreateCommentUseCase(
                 meta = mapOf("errorCaseId" to command.errorCaseId),
             )
         )
+
+        // 자동 watchlist — "발 담군" 사용자를 향후 활동 알림 수신자로 (멱등). owner 본인은 옵션이지만 ok.
+        runCatching { caseWatchlistRepository.add(command.errorCaseId, command.authorUserId) }
 
         return saved
     }

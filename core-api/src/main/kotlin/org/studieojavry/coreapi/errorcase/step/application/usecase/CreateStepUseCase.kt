@@ -35,6 +35,8 @@ class CreateStepUseCase(
     private val attemptTypeCatalog: StepAttemptTypeCatalogPort,
     private val access: ErrorCaseAccess,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val caseWatchlistRepository:
+        org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort,
 ) {
     @Transactional
     fun invoke(command: CreateStepCommand): Result {
@@ -78,6 +80,9 @@ class CreateStepUseCase(
 
         // IN_PROGRESS 에서 RESOLVED step → 케이스 RESOLVED 추천(전환은 사용자 확인)
         val suggestResolve = command.status == StepStatus.RESOLVED && errorCase.status == ErrorCaseStatus.IN_PROGRESS
+
+        // 자동 watchlist (멱등) — step 추가자를 향후 활동 알림 수신자로
+        runCatching { caseWatchlistRepository.add(command.errorCaseId, command.authorUserId) }
 
         return Result(step = saved, caseStatus = errorCase.status, suggestResolve = suggestResolve)
     }

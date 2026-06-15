@@ -61,6 +61,9 @@ class ƒErrorCaseController(
     private val markCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase,
     private val unmarkCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.UnmarkCaseMeTooUseCase,
     private val getCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase,
+    private val registerCaseViewUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RegisterCaseViewUseCase,
+    private val addCaseToWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase,
+    private val removeCaseFromWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveCaseFromWatchlistUseCase,
 ) {
 
     @Operation(
@@ -284,6 +287,10 @@ class ƒErrorCaseController(
         } catch (e: ErrorCaseAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         }
+        // owner 가 자기 case 를 본 시각 갱신 — 홈 대시보드 unreadCount 계산용
+        if (errorCase.ownerUserId == userId) {
+            runCatching { registerCaseViewUseCase.invoke(userId = userId, errorCaseId = id) }
+        }
         val mt = getCaseMeTooUseCase.invoke(id, userId)
         return ErrorCaseDetailResponse.from(
             errorCase,
@@ -339,6 +346,52 @@ class ƒErrorCaseController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
         }
         return MeTooResponse(r.count, r.taggedByMe, r.userIds)
+    }
+
+    @Operation(
+        summary = "케이스 watchlist 추가 (즐겨찾기, 멱등)",
+        description = """
+            *향후* 케이스 활동을 받아보기 위한 명시적 follow. me-too 와 *완전 별개* — 알림/feed 용.
+            **권한**: 케이스 읽기 가능 (PUBLIC 또는 워크스페이스 멤버 또는 owner).
+            **자동 등록**: 댓글/step/solution 작성 시에도 자동 추가됨 (use case 단).
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "추가됨(또는 이미 있음)"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "읽기 권한 없음", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "케이스 없음", content = [Content()]),
+    )
+    @PostMapping("/{id}/watchlist")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun addToWatchlist(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable id: Long,
+    ) {
+        try {
+            addCaseToWatchlistUseCase.invoke(id, userId)
+        } catch (e: ErrorCaseNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: ErrorCaseAccessDeniedException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        }
+    }
+
+    @Operation(
+        summary = "케이스 watchlist 해제 (멱등)",
+        description = "표시 안 한 사용자가 호출해도 204."
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "해제됨(또는 원래 없음)"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @DeleteMapping("/{id}/watchlist")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun removeFromWatchlist(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable id: Long,
+    ) {
+        removeCaseFromWatchlistUseCase.invoke(id, userId)
     }
 
     @Operation(

@@ -2,9 +2,12 @@ package org.studieojavry.coreapi.errorcase.case.application.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentDeleter
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseViewRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
@@ -38,9 +41,16 @@ class DeleteErrorCaseUseCase(
     private val commentRepository: CommentRepositoryPort,
     private val tagRepository: ErrorCaseTagRepositoryPort,
     private val meTooRepository: CaseMeTooRepositoryPort,
+    private val caseViewRepository: CaseViewRepositoryPort,
+    private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
 ) {
     private val log = KotlinLogging.logger {}
 
+    /**
+     * `@Transactional` 은 *JPQL `@Modifying` DELETE 가 한 transactional context 안에서 실행되어야* 하므로 필요.
+     * AttachmentDeleter/SnippetDeleter 는 자체 `@Transactional` 메서드 — PROPAGATION_REQUIRED 디폴트라 본 메서드의 부모 transaction inlining.
+     */
+    @Transactional
     fun invoke(errorCaseId: Long, requesterUserId: Long) {
         val ownerUserId = errorCaseRepository.findOwnerUserIdById(errorCaseId)
             ?: throw ErrorCaseNotFoundException(errorCaseId)
@@ -70,8 +80,12 @@ class DeleteErrorCaseUseCase(
         // "나도 겪었어요" cascade
         meTooRepository.deleteAllByCaseId(errorCaseId)
 
+        // case_view (사용자별 마지막 조회 시각) + case_watchlist (즐겨찾기) cascade
+        caseViewRepository.deleteAllByCaseId(errorCaseId)
+        caseWatchlistRepository.deleteAllByCaseId(errorCaseId)
+
         errorCaseRepository.deleteById(errorCaseId)
-        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments) by user=$requesterUserId" }
+        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist) by user=$requesterUserId" }
     }
 }
 

@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.solution.infrastructure.jpa.adapter
 
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
@@ -36,6 +37,12 @@ class SolutionRepositoryAdapter(
             )
         }
     }
+
+    override fun findRecentByAuthor(authorUserId: Long, since: java.time.LocalDateTime, limit: Int): List<Solution> =
+        jpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
+
+    override fun countByAuthorSince(authorUserId: Long, since: java.time.LocalDateTime): Long =
+        jpa.countByAuthorSince(authorUserId, since)
 
     override fun delete(id: Long) = jpa.deleteById(id)
     override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }

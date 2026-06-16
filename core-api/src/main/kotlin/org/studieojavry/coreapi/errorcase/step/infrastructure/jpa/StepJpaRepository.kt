@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.step.infrastructure.jpa
 
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -17,6 +18,29 @@ interface StepJpaRepository : JpaRepository<StepEntity, Long> {
     @Modifying(clearAutomatically = true)
     @Query("delete from StepEntity s where s.errorCaseId = :caseId")
     fun deleteAllByErrorCaseId(@Param("caseId") errorCaseId: Long): Int
+
+    // ── Recent Activity ───────────────────────────────────────
+    @Query("""
+        select s from StepEntity s
+         where s.authorUserId = :authorUserId
+           and s.createdAt >= :since
+         order by s.createdAt desc, s.id desc
+    """)
+    fun findRecentByAuthor(
+        @Param("authorUserId") authorUserId: Long,
+        @Param("since") since: LocalDateTime,
+        pageable: Pageable,
+    ): List<StepEntity>
+
+    @Query("""
+        select count(s) from StepEntity s
+         where s.authorUserId = :authorUserId
+           and s.createdAt >= :since
+    """)
+    fun countByAuthorSince(
+        @Param("authorUserId") authorUserId: Long,
+        @Param("since") since: LocalDateTime,
+    ): Long
 
     /** watchlist-feed unread 계산용 — globalSince 이후 활동을 case-id 별로 fetch. */
     @Query("""

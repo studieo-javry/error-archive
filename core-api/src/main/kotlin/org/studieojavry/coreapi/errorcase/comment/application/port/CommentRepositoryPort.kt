@@ -24,6 +24,13 @@ interface CommentRepositoryPort {
 
     fun deleteAllByErrorCaseId(errorCaseId: Long)
 
+    // ── Recent Activity (home dashboard) ──────────────────────
+    /** 내가 쓴 (deleted 제외) 최근 댓글, since 이후. createdAt DESC, id DESC. */
+    fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Comment>
+
+    /** since 이후 + author = authorUserId + deleted 제외 댓글 수. activity summary 산정용. */
+    fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
+
     /** watchlist-feed 활동 fetch — caseIds 별 globalSince 이후 (deleted 제외) 댓글, literal source=`COMMENT_POSTED`. */
     fun findActivitiesByCaseIdsSince(
         caseIds: Collection<Long>,

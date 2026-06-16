@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.comment.infrastructure.jpa.adapter
 
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.domain.model.Comment
@@ -47,6 +48,12 @@ class CommentRepositoryAdapter(
     override fun deleteAllByErrorCaseId(errorCaseId: Long) {
         commentJpa.deleteAllByErrorCaseId(errorCaseId)
     }
+
+    override fun findRecentByAuthor(authorUserId: Long, since: java.time.LocalDateTime, limit: Int) =
+        commentJpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
+
+    override fun countByAuthorSince(authorUserId: Long, since: java.time.LocalDateTime): Long =
+        commentJpa.countByAuthorSince(authorUserId, since)
 
     override fun findActivitiesByCaseIdsSince(
         caseIds: Collection<Long>,

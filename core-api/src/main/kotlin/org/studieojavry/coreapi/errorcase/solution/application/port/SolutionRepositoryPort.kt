@@ -19,6 +19,13 @@ interface SolutionRepositoryPort {
         globalSince: LocalDateTime,
     ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow>
 
+    // ── Recent Activity (home dashboard) ──────────────────────
+    /** 내가 만든 최근 solution, since 이후. createdAt DESC, id DESC. */
+    fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Solution>
+
+    /** since 이후 + author = authorUserId solution 수. activity summary 산정용. */
+    fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
+
     fun delete(id: Long)
     fun deleteAllByErrorCaseId(errorCaseId: Long)
 }

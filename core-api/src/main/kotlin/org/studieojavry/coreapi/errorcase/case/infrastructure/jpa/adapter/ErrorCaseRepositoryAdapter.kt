@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.adapter
 
 import jakarta.persistence.EntityManager
 import jakarta.persistence.criteria.Predicate
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
@@ -102,7 +103,35 @@ class ErrorCaseRepositoryAdapter(
 
     override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
         if (caseIds.isEmpty()) return emptyList()
-        val entities = errorCaseRepo.findAllByIdIn(caseIds)
+        return hydrateSummaries(errorCaseRepo.findAllByIdIn(caseIds))
+    }
+
+    override fun findRecentByOwner(ownerUserId: Long, limit: Int): List<ErrorCaseSummary> {
+        val entities = errorCaseRepo.findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
+            ownerUserId, PageRequest.of(0, limit)
+        )
+        return hydrateSummaries(entities)
+    }
+
+    override fun findRecentlyResolvedByActor(
+        actorUserId: Long,
+        since: LocalDateTime,
+        limit: Int,
+    ): List<ErrorCaseSummary> {
+        val entities = errorCaseRepo
+            .findAllByResolvedByUserIdAndResolvedAtGreaterThanEqualOrderByResolvedAtDescIdDesc(
+                actorUserId, since, PageRequest.of(0, limit),
+            )
+        return hydrateSummaries(entities)
+    }
+
+    override fun countCreatedByOwnerSince(ownerUserId: Long, since: LocalDateTime): Long =
+        errorCaseRepo.countByOwnerUserIdAndCreatedAtGreaterThanEqual(ownerUserId, since)
+
+    override fun countResolvedByActorSince(actorUserId: Long, since: LocalDateTime): Long =
+        errorCaseRepo.countByResolvedByUserIdAndResolvedAtGreaterThanEqual(actorUserId, since)
+
+    private fun hydrateSummaries(entities: List<ErrorCaseEntity>): List<ErrorCaseSummary> {
         val ids = entities.mapNotNull { it.id }
         val tagsByCaseId: Map<Long, List<String>> = if (ids.isEmpty()) emptyMap() else
             tagRepo.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(ids)

@@ -26,4 +26,11 @@ interface StepRepositoryPort {
 
     fun delete(id: Long)
     fun deleteAllByErrorCaseId(errorCaseId: Long)
+
+    // ── Recent Activity (home dashboard) ──────────────────────
+    /** 내가 만든 최근 step, since 이후. createdAt DESC, id DESC. */
+    fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Step>
+
+    /** since 이후 + author = authorUserId step 수. activity summary 산정용. */
+    fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
 }

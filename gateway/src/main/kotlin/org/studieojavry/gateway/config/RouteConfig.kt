@@ -58,7 +58,8 @@ class RouteConfig {
                 path("/api/v1/users/me/activity-grass/**")
                     .or(path("/api/v1/users/me/activity-grass"))
                     .or(path("/api/v1/users/*/activity-grass/**"))
-                    .or(path("/api/v1/users/*/activity-grass")),
+                    .or(path("/api/v1/users/*/activity-grass"))
+                    .or(path("/api/v1/users/me/kpis")),
                 http()
             )
             .before(uri("http://localhost:8083"))

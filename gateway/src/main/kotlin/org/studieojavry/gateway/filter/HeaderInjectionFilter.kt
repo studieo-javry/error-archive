@@ -54,8 +54,9 @@ class HeaderInjectionFilter(
         uri.startsWith("/api/v1/users/me/notification-settings") -> AUDIENCE_NOTI_API
         uri.startsWith("/api/v1/users/me/notifications") -> AUDIENCE_NOTI_API
         uri.startsWith("/api/v1/users/me/device-tokens") -> AUDIENCE_NOTI_API
-        // insight-api (잔디) — /me 또는 /{userId}/activity-grass
+        // insight-api (잔디 + KPI) — /activity-grass, /me/kpis
         uri.contains("/activity-grass") -> AUDIENCE_INSIGHT_API
+        uri == "/api/v1/users/me/kpis" -> AUDIENCE_INSIGHT_API
         // publish-api — /api/v1/publishments/* (인증 필요) + /p/* (인증 X 이지만 토큰 있어도 무해)
         uri.startsWith("/api/v1/publishments") || uri.startsWith("/p/") -> AUDIENCE_PUBLISH_API
         // core-api 가 *서버* 인 모든 경로. 새 endpoint 추가 시 여기 갱신 필수

@@ -61,6 +61,12 @@ class ActivityDailyRepositoryAdapter(
         )
     }
 
+    override fun sumCountByType(userId: Long, type: ActivityType): Long =
+        jpa.sumCountByType(userId, type.name)
+
+    override fun sumCountByTypeSince(userId: Long, type: ActivityType, since: LocalDate): Long =
+        jpa.sumCountByTypeSince(userId, type.name, since)
+
     override fun findInRange(userId: Long, from: LocalDate, to: LocalDate): List<ActivityDaily> =
         jpa.findInRange(userId, from, to).map { entity ->
             val breakdown = try {

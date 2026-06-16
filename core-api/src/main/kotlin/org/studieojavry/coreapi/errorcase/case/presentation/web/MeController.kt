@@ -12,22 +12,72 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyRecentActivitiesUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyWatchlistFeedUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyWatchlistUseCase
+import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.ActivitySummaryResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.ErrorCaseSummaryResponse
+import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.RecentActivitiesListResponse
+import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.RecentActivityResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.WatchlistFeedItemResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.WatchlistFeedResponse
 
 @Tag(
     name = "users-me",
-    description = "현재 사용자(`/users/me/*`) 대시보드 endpoint. 홈 화면용 watchlist / watchlist-feed."
+    description = "현재 사용자(`/users/me/*`) 대시보드 endpoint. 홈/마이페이지 dashboard 위젯 데이터."
 )
 @RestController
 @RequestMapping("/api/v1/users/me")
 class MeController(
     private val getMyWatchlistUseCase: GetMyWatchlistUseCase,
     private val getMyWatchlistFeedUseCase: GetMyWatchlistFeedUseCase,
+    private val getMyRecentActivitiesUseCase: GetMyRecentActivitiesUseCase,
 ) {
+
+    @Operation(
+        summary = "내 최근 활동 timeline",
+        description = """
+            홈/마이페이지 dashboard timeline 용. **내가** 최근 N일 안에 한 활동.
+
+            **type 종류**
+            - `CASE_CREATED` — 케이스를 만들었음
+            - `CASE_RESOLVED` — 내가 RESOLVED 로 전환한 케이스
+            - `COMMENT_POSTED` — 댓글을 작성 (deleted 제외)
+            - `STEP_ADDED` — step 을 추가
+            - `SOLUTION_REGISTERED` — solution 을 등록
+
+            **정렬**: `occurredAt DESC`. 같은 케이스에서 여러 활동이면 각각 별도 row.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(
+            responseCode = "200", description = "OK",
+            content = [Content(schema = Schema(implementation = RecentActivitiesListResponse::class))]
+        ),
+    )
+    @GetMapping("/recent-activities")
+    fun recentActivities(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "활동 기준 윈도우 (일). 기본 7.")
+        @RequestParam(defaultValue = "7") windowDays: Int,
+        @Parameter(description = "응답 항목 수. 1~100. 기본 30.")
+        @RequestParam(defaultValue = "30") limit: Int,
+    ): RecentActivitiesListResponse {
+        val result = getMyRecentActivitiesUseCase.invoke(
+            GetMyRecentActivitiesUseCase.Input(
+                userId = userId,
+                windowDays = windowDays,
+                limit = limit,
+            )
+        )
+        return RecentActivitiesListResponse(
+            items = result.items.map { RecentActivityResponse.from(it) },
+            windowDays = result.windowDays,
+            summary = ActivitySummaryResponse(
+                byType = result.summary.byType.mapKeys { it.key.name },
+            ),
+        )
+    }
 
     @Operation(
         summary = "내 watchlist 목록",

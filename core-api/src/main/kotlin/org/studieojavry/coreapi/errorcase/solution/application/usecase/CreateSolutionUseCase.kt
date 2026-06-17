@@ -24,8 +24,6 @@ class CreateSolutionUseCase(
     private val solutionRepository: SolutionRepositoryPort,
     private val access: ErrorCaseAccess,
     private val activityEventPublisher: ActivityEventPublisherPort,
-    private val caseWatchlistRepository:
-        org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort,
 ) {
     @Transactional
     fun invoke(command: CreateSolutionCommand): Solution {
@@ -64,8 +62,7 @@ class CreateSolutionUseCase(
             )
         )
 
-        // 자동 watchlist (멱등) — solution 등록자를 향후 활동 알림 수신자로
-        runCatching { caseWatchlistRepository.add(command.errorCaseId, command.authorUserId) }
+        // watchlist 자동 등록은 하지 않음 — 등록 여부는 사용자가 POST /error-cases/{id}/watchlist 로 직접 선택.
 
         return saved
     }

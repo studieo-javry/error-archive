@@ -14,8 +14,9 @@ import java.time.LocalDateTime
  *  - 본인 케이스도 추가 가능 (스스로 활동 알림 받음 — 협업 흐름)
  *  - 토글: 누름 ↔ 해제 — POST 멱등, DELETE 멱등.
  *
- * 자동 등록 정책 (use case 단):
- *  - 댓글 작성 / step 추가 / solution 등록 시 작성자 자동 upsert.
+ * 등록은 항상 사용자의 명시적 선택(opt-in) — 댓글/step/solution 작성이 자동으로
+ * watchlist 에 편입시키지 않는다. 답글/멘션 알림(1회성)과 watchlist(지속 추적)는
+ * 별개의 약속이라 사용자가 직접 골라야 한다는 판단.
  */
 class CaseWatchlist private constructor(
     val id: Long?,

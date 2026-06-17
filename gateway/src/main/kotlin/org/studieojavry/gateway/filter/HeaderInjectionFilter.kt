@@ -66,9 +66,13 @@ class HeaderInjectionFilter(
             uri.startsWith("/api/v1/error-attachments") ||
             uri.startsWith("/api/v1/error-snippets") ||
             uri.startsWith("/api/v1/step-attempt-types") ||
-            // 홈 대시보드 위젯 (MeController). iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
-            uri.startsWith("/api/v1/users/me/recent-activities") ||
-            uri.startsWith("/api/v1/users/me/watchlist") -> AUDIENCE_CORE_API   // watchlist + watchlist-feed
+            // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
+            // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
+            uri.startsWith("/api/v1/users/me/recent-active-cases") ||
+            uri.startsWith("/api/v1/users/me/watchlist") ||   // watchlist + watchlist-feed
+            uri.startsWith("/api/v1/users/me/following-feed") ||
+            uri.startsWith("/api/v1/users/me/suggested-followees") ||
+            (uri.startsWith("/api/v1/users/") && uri.endsWith("/recent-activities")) -> AUDIENCE_CORE_API
         else -> AUDIENCE_IAM_API
     }
 

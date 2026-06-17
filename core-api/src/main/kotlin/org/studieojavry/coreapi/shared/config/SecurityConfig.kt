@@ -30,11 +30,16 @@ class SecurityConfig {
         http: HttpSecurity,
         internalTokenFilter: InternalTokenAuthenticationFilter,
         devHeaderAuthFilter: ObjectProvider<DevHeaderAuthFilter>,
+        devCorsSource: ObjectProvider<org.springframework.web.cors.UrlBasedCorsConfigurationSource>,
         authEntryPoint: ProblemDetailAuthenticationEntryPoint,
         accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
+            .cors { c ->
+                // local profile 한정으로 DevCorsConfig 가 source 주입. 그 외 환경에선 비활성.
+                devCorsSource.ifAvailable { c.configurationSource(it) }
+            }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers("/actuator/health").permitAll()

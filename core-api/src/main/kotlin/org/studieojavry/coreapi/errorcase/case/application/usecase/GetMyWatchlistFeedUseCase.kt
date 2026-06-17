@@ -1,7 +1,9 @@
 package org.studieojavry.coreapi.errorcase.case.application.usecase
 
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseActivitySource
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseViewRepositoryPort
@@ -11,6 +13,7 @@ import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
+import org.studieojavry.coreapi.shared.config.CacheConfig
 import java.time.LocalDateTime
 
 /**
@@ -34,7 +37,14 @@ class GetMyWatchlistFeedUseCase(
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
     private val caseViewRepository: CaseViewRepositoryPort,
+    private val authorSummaryReader: AuthorSummaryReaderPort,
 ) {
+    /**
+     * key = `userId:limit` — 다른 limit 요청이 서로의 결과를 오염시키지 않도록 param 포함.
+     * TTL 30초. watchlist add/remove 시 `DashboardCacheInvalidator.evictWatchlistFeed(userId)` 로
+     * 그 userId 의 모든 variant 를 prefix 제거. (watcher 케이스 활동은 30초 TTL 자연 만료 의존.)
+     */
+    @Cacheable(cacheNames = [CacheConfig.CACHE_WATCHLIST_FEED], key = "#input.userId + ':' + #input.limit")
     @Transactional(readOnly = true)
     fun invoke(input: Input): Result {
         val limit = input.limit.coerceIn(1, MAX_LIMIT)
@@ -100,7 +110,14 @@ class GetMyWatchlistFeedUseCase(
                 .thenByDescending { it.lastActivityAt }
         ).take(limit)
 
-        return Result(items = sorted)
+        // 5. actor 프로필 hydration — "누가 활동했는지" 를 이름/아바타로 렌더하도록 batch 조회.
+        // viewerUserId = null: actor 의 isFollowing 은 이 위젯에서 안 쓰므로 iam follow-check 생략.
+        // (following-feed 와 동일 패턴 · 응답 노출 상위 limit 만 hydrate.)
+        val actorIds = sorted.mapNotNull { it.latestActivityActorUserId }.toSet()
+        val authors = if (actorIds.isEmpty()) emptyMap()
+        else authorSummaryReader.read(actorIds, viewerUserId = null)
+
+        return Result(items = sorted, authors = authors)
     }
 
     /**
@@ -159,7 +176,11 @@ class GetMyWatchlistFeedUseCase(
         val unreadActivityCount: Long,
     )
 
-    data class Result(val items: List<Item>)
+    data class Result(
+        val items: List<Item>,
+        /** actor(latestActivityActorUserId) 별 프로필 — 응답에서 카드의 활동 주체를 이름/아바타로 렌더. */
+        val authors: Map<Long, AuthorSummaryReaderPort.AuthorSummary> = emptyMap(),
+    )
 
     companion object {
         private const val DEFAULT_LIMIT = 20

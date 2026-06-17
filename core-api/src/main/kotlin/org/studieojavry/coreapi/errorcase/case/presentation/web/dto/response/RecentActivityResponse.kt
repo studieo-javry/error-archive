@@ -4,15 +4,33 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyRecentAc
 import java.time.LocalDateTime
 
 /**
- * 홈 대시보드의 "Recent My Activities" timeline 항목.
+ * my-page "Recent activities" timeline 항목.
  *
  * `caseTitle` 은 해당 케이스가 *현재 존재할 때만* 제공 — 삭제된 케이스의 활동이면 null.
+ *
+ * **type-specific enrichment** 필드는 해당 type 일 때만 채워짐:
+ *  - COMMENT_POSTED → `commentPreview` (앞 60자, 공백 정규화), `commentIsReply`
+ *  - STEP_ADDED → `stepTitle`, `stepAttemptType` (null 가능)
+ *  - SOLUTION_REGISTERED → `solutionTitle`, `solutionStepCount`
+ *  - CASE_CREATED / CASE_RESOLVED → enrichment 필드 모두 null
  */
 data class RecentActivityResponse(
     val type: String,
     val caseId: Long,
     val caseTitle: String?,
     val occurredAt: LocalDateTime,
+    val commentPreview: String? = null,
+    val commentIsReply: Boolean = false,
+    val stepTitle: String? = null,
+    val stepAttemptType: String? = null,
+    val solutionTitle: String? = null,
+    val solutionStepCount: Int? = null,
+    val resolvedAfterSteps: Int? = null,
+    /** case-level. All types 공통 — FE badge 렌더용. PUBLIC / WORKSPACE / PRIVATE. */
+    val caseVisibility: String? = null,
+    val caseWorkspaceId: Long? = null,
+    /** viewer 가 그 workspace 멤버일 때만 채워짐. non-member 면 null (badge 는 workspaceId 만으로 미표시). */
+    val caseWorkspaceName: String? = null,
 ) {
     companion object {
         fun from(i: GetMyRecentActivitiesUseCase.Item) = RecentActivityResponse(
@@ -20,6 +38,16 @@ data class RecentActivityResponse(
             caseId = i.caseId,
             caseTitle = i.caseTitle,
             occurredAt = i.occurredAt,
+            commentPreview = i.commentPreview,
+            commentIsReply = i.commentIsReply,
+            stepTitle = i.stepTitle,
+            stepAttemptType = i.stepAttemptType,
+            solutionTitle = i.solutionTitle,
+            solutionStepCount = i.solutionStepCount,
+            resolvedAfterSteps = i.resolvedAfterSteps,
+            caseVisibility = i.caseVisibility,
+            caseWorkspaceId = i.caseWorkspaceId,
+            caseWorkspaceName = i.caseWorkspaceName,
         )
     }
 }

@@ -67,6 +67,24 @@ class RouteConfig {
             .filter(retry(2))
             .build()
 
+    // core-api 도 `/api/v1/users/me/*` (홈 대시보드 위젯) 를 갖는다. iam 의 `/api/v1/users/**`
+    // 서브셋이므로 noti/insight 처럼 iamApiRoute *위* 에 carve-out. 이게 없으면 위젯 호출이
+    // iam-api 로 잘못 라우팅되어 404 가 난다.
+    // ⚠️ MeController 에 me-scoped endpoint 를 추가하면 여기 + HeaderInjectionFilter.resolveAudience 도 갱신할 것.
+    @Bean
+    fun coreApiUserRoute(): RouterFunction<ServerResponse> =
+        route("core-api-user")
+            .route(
+                path("/api/v1/users/me/recent-activities")
+                    .or(path("/api/v1/users/me/watchlist"))
+                    .or(path("/api/v1/users/me/watchlist-feed")),
+                http()
+            )
+            .before(uri("http://localhost:8081"))
+            .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
+            .filter(retry(2))
+            .build()
+
     @Bean
     fun iamApiRoute(): RouterFunction<ServerResponse> =
         route("iam-api")

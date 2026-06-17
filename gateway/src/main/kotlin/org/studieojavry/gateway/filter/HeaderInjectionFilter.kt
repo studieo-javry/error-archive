@@ -61,10 +61,14 @@ class HeaderInjectionFilter(
         uri.startsWith("/api/v1/publishments") || uri.startsWith("/p/") -> AUDIENCE_PUBLISH_API
         // core-api 가 *서버* 인 모든 경로. 새 endpoint 추가 시 여기 갱신 필수
         // (안 그러면 aud=iam-api 로 토큰 발급되어 core-api 가 401 반환).
+        // ⚠️ RouteConfig 의 coreApiRoute / coreApiUserRoute 와 반드시 정합해야 한다.
         uri.startsWith("/api/v1/error-cases") ||
             uri.startsWith("/api/v1/error-attachments") ||
             uri.startsWith("/api/v1/error-snippets") ||
-            uri.startsWith("/api/v1/step-attempt-types") -> AUDIENCE_CORE_API
+            uri.startsWith("/api/v1/step-attempt-types") ||
+            // 홈 대시보드 위젯 (MeController). iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
+            uri.startsWith("/api/v1/users/me/recent-activities") ||
+            uri.startsWith("/api/v1/users/me/watchlist") -> AUDIENCE_CORE_API   // watchlist + watchlist-feed
         else -> AUDIENCE_IAM_API
     }
 

@@ -13,6 +13,7 @@ import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPo
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.AttemptType
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
+import org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator
 import java.time.Instant
 
 
@@ -35,6 +36,7 @@ class CreateStepUseCase(
     private val attemptTypeCatalog: StepAttemptTypeCatalogPort,
     private val access: ErrorCaseAccess,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val cacheInvalidator: DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(command: CreateStepCommand): Result {
@@ -80,6 +82,9 @@ class CreateStepUseCase(
         val suggestResolve = command.status == StepStatus.RESOLVED && errorCase.status == ErrorCaseStatus.IN_PROGRESS
 
         // watchlist 자동 등록은 하지 않음 — 등록 여부는 사용자가 POST /error-cases/{id}/watchlist 로 직접 선택.
+        // 캐시 무효화 — case owner 의 recent-active + 작성자의 my-recent-activities
+        runCatching { cacheInvalidator.evictRecentActive(errorCase.ownerUserId) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(command.authorUserId) }
 
         return Result(step = saved, caseStatus = errorCase.status, suggestResolve = suggestResolve)
     }

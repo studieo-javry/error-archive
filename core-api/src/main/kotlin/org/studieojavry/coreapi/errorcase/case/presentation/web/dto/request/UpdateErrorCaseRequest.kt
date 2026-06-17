@@ -1,8 +1,6 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.Max
-import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Size
 
 /**
@@ -27,11 +25,6 @@ data class UpdateErrorCaseRequest(
 
     @field:Schema(description = "본문(마크다운). `@snippet(...)`/`@attach(...)` 토큰 포함 가능")
     val description: String?,
-
-    @field:Schema(description = "심각도 1..4", example = "3", minimum = "1", maximum = "4")
-    @field:Min(1)
-    @field:Max(4)
-    val severity: Int?,
 
     // environment 는 자유 태그로 일반화됨 — 아래 tags 필드(일괄 교체) 또는 POST/DELETE /tags 단건 endpoint 사용.
 

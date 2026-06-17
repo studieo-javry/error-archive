@@ -7,6 +7,7 @@ import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
 import org.studieojavry.coreapi.errorcase.step.infrastructure.jpa.StepJpaRepository
 import org.studieojavry.coreapi.errorcase.step.infrastructure.jpa.entity.StepEntity
+import java.time.LocalDateTime
 
 @Component
 class StepRepositoryAdapter(
@@ -25,9 +26,29 @@ class StepRepositoryAdapter(
     override fun existsSuccessByErrorCaseId(errorCaseId: Long): Boolean =
         jpa.existsByErrorCaseIdAndStatus(errorCaseId, StepStatus.RESOLVED)
 
+    override fun delete(id: Long) = jpa.deleteById(id)
+    override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }
+
+    // ── Recent Activity ───────────────────────────────────────
+    override fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Step> =
+        jpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
+
+    override fun findMaxCreatedAtByCaseIds(caseIds: Collection<Long>): Map<Long, LocalDateTime> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.findMaxCreatedAtGrouped(caseIds).associate { it.errorCaseId to it.value }
+    }
+
+    override fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.countGrouped(caseIds).associate { it.errorCaseId to it.count }
+    }
+
+    override fun countSinceExcludingAuthor(errorCaseId: Long, since: LocalDateTime, excludeUserId: Long): Long =
+        jpa.countSinceExcludingAuthor(errorCaseId, since, excludeUserId)
+
     override fun findActivitiesByCaseIdsSince(
         caseIds: Collection<Long>,
-        globalSince: java.time.LocalDateTime,
+        globalSince: LocalDateTime,
     ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow> {
         if (caseIds.isEmpty()) return emptyList()
         return jpa.findActivitiesByCaseIdsSince(caseIds, globalSince).map {
@@ -41,12 +62,6 @@ class StepRepositoryAdapter(
         }
     }
 
-    override fun findRecentByAuthor(authorUserId: Long, since: java.time.LocalDateTime, limit: Int): List<Step> =
-        jpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
-
-    override fun countByAuthorSince(authorUserId: Long, since: java.time.LocalDateTime): Long =
+    override fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long =
         jpa.countByAuthorSince(authorUserId, since)
-
-    override fun delete(id: Long) = jpa.deleteById(id)
-    override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }
 }

@@ -15,14 +15,32 @@ data class ErrorCaseSearchCriteria(
     val workspaceId: Long?,
     val ownerUserId: Long?,
     val status: ErrorCaseStatus?,
-    val severityCode: Int?,
     val fingerprint: String?,
     /** 공개 검색 endpoint 가 PUBLIC 으로 강제하기 위해 사용. null 이면 미적용. */
     val visibility: Visibility?,
     val cursorCreatedAt: LocalDateTime?,
     val cursorId: Long?,
-    val limit: Int
+    val limit: Int,
+    /** 검색어 — title 또는 tag 부분 매치 (case-insensitive). null 이면 미적용. */
+    val q: String? = null,
+    /** 정렬 기준. Default = CREATED. cursor keyset 도 이 필드 기반으로 동작한다. */
+    val sortBy: SortBy = SortBy.CREATED,
 )
+
+/** ErrorCase 목록 정렬 옵션. cursor keyset 도 이 필드 기반. */
+enum class SortBy {
+    /** case.createdAt DESC (기본). */
+    CREATED,
+    /** case.updatedAt DESC — 최근 활동 순. */
+    UPDATED,
+    ;
+    companion object {
+        fun fromCode(code: String?): SortBy = when (code?.lowercase()) {
+            "updated" -> UPDATED
+            else -> CREATED // default 포함 unknown
+        }
+    }
+}
 
 /**
  * 목록 항목(요약) — 상세보다 가볍게(스니펫/첨부 본문 제외).
@@ -36,7 +54,6 @@ data class ErrorCaseSummary(
     val title: String,
     val status: ErrorCaseStatus,
     val visibility: Visibility,
-    val severityCode: Int?,
     val workspaceId: Long?,
     val fingerprint: String?,
     val exceptionClass: String?,

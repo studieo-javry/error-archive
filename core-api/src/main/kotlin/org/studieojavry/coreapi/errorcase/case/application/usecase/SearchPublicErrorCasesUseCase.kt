@@ -39,7 +39,6 @@ class SearchPublicErrorCasesUseCase(
                 workspaceId = null,
                 ownerUserId = null,
                 status = input.status,
-                severityCode = input.severity,
                 fingerprint = input.fingerprint,
                 visibility = Visibility.PUBLIC,
                 cursorCreatedAt = cursor?.first,
@@ -80,7 +79,6 @@ class SearchPublicErrorCasesUseCase(
 
     data class Input(
         val status: ErrorCaseStatus?,
-        val severity: Int?,
         val fingerprint: String?,
         val cursor: String?,
         val size: Int,

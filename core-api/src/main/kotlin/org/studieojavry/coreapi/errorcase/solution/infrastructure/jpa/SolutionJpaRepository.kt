@@ -5,7 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
-import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.CaseActivityProjection
+import org.studieojavry.coreapi.errorcase.comment.infrastructure.jpa.CaseActivityProjection
+import org.studieojavry.coreapi.errorcase.comment.infrastructure.jpa.CaseCountProjection
+import org.studieojavry.coreapi.errorcase.comment.infrastructure.jpa.CaseDateProjection
 import org.studieojavry.coreapi.errorcase.solution.infrastructure.jpa.entity.SolutionEntity
 import java.time.LocalDateTime
 
@@ -39,16 +41,37 @@ interface SolutionJpaRepository : JpaRepository<SolutionEntity, Long> {
     ): List<SolutionEntity>
 
     @Query("""
-        select count(s) from SolutionEntity s
-         where s.authorUserId = :authorUserId
-           and s.createdAt >= :since
+        select s.errorCaseId as errorCaseId, max(s.createdAt) as value
+          from SolutionEntity s
+         where s.errorCaseId in :caseIds
+         group by s.errorCaseId
     """)
-    fun countByAuthorSince(
-        @Param("authorUserId") authorUserId: Long,
+    fun findMaxCreatedAtGrouped(
+        @Param("caseIds") caseIds: Collection<Long>,
+    ): List<CaseDateProjection>
+
+    @Query("""
+        select s.errorCaseId as errorCaseId, count(s) as count
+          from SolutionEntity s
+         where s.errorCaseId in :caseIds
+         group by s.errorCaseId
+    """)
+    fun countGrouped(
+        @Param("caseIds") caseIds: Collection<Long>,
+    ): List<CaseCountProjection>
+
+    @Query("""
+        select count(s) from SolutionEntity s
+         where s.errorCaseId = :errorCaseId
+           and s.createdAt > :since
+           and s.authorUserId <> :excludeUserId
+    """)
+    fun countSinceExcludingAuthor(
+        @Param("errorCaseId") errorCaseId: Long,
         @Param("since") since: LocalDateTime,
+        @Param("excludeUserId") excludeUserId: Long,
     ): Long
 
-    /** watchlist-feed unread 계산용 — globalSince 이후 활동을 case-id 별로 fetch. */
     @Query("""
         select s.errorCaseId as errorCaseId, s.id as activityId,
                s.createdAt as createdAt, s.authorUserId as authorUserId,
@@ -61,4 +84,14 @@ interface SolutionJpaRepository : JpaRepository<SolutionEntity, Long> {
         @Param("caseIds") caseIds: Collection<Long>,
         @Param("globalSince") globalSince: LocalDateTime,
     ): List<CaseActivityProjection>
+
+    @Query("""
+        select count(s) from SolutionEntity s
+         where s.authorUserId = :authorUserId
+           and s.createdAt >= :since
+    """)
+    fun countByAuthorSince(
+        @Param("authorUserId") authorUserId: Long,
+        @Param("since") since: LocalDateTime,
+    ): Long
 }

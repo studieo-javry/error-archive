@@ -34,6 +34,10 @@ class CaseWatchlistRepositoryAdapter(
     override fun findCaseIdsByUserId(userId: Long, limit: Int): List<Long> =
         jpa.findCaseIdsByUserId(userId, PageRequest.of(0, limit))
 
+    override fun findEntriesByUserId(userId: Long, limit: Int): List<CaseWatchlistRepositoryPort.Entry> =
+        jpa.findEntriesByUserId(userId, PageRequest.of(0, limit))
+            .map { CaseWatchlistRepositoryPort.Entry(caseId = it.caseId, addedAt = it.addedAt) }
+
     override fun deleteAllByCaseId(errorCaseId: Long): Int = jpa.deleteAllByErrorCaseId(errorCaseId)
 
     override fun findCoOccurringUserIds(userId: Long, limit: Int): Map<Long, Long> {

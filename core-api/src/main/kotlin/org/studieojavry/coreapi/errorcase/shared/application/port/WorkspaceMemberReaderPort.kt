@@ -8,4 +8,10 @@ package org.studieojavry.coreapi.errorcase.shared.application.port
  */
 interface WorkspaceMemberReaderPort {
     fun findMemberIds(workspaceId: Long): List<Long>
+
+    /**
+     * userId 가 속한 *모든 워크스페이스의 다른 멤버* userIds (자기 제외, distinct).
+     * suggested-followees 추천의 *W* 신호.
+     */
+    fun findCoMemberIds(userId: Long, size: Int = 200): List<Long>
 }

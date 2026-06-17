@@ -12,7 +12,6 @@ data class UpdateErrorCaseCommand(
     val project: String?,
     val paste: String?,
     val description: String?,
-    val severityCode: Int?,
     /**
      * 태그 선언형 재설정. null=유지, []=전부 제거, [..]=그 집합으로 diff.
      * 각 element 는 서버가 정규화(trim·소문자·≤32). 케이스당 max 20.

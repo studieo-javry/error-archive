@@ -29,6 +29,7 @@ class CreateErrorCaseUseCase(
     private val errorSnapshotExtractor: ErrorSnaphostExtractorPort,
     private val tagRepository: ErrorCaseTagRepositoryPort,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
 ) {
 
     @Transactional
@@ -60,7 +61,7 @@ class CreateErrorCaseUseCase(
         val snapshot = command.paste?.takeIf { it.isNotBlank() }?.let { buildSnapshot(it) }
         val meta = Meta.create(
             workspaceId = command.workspaceId,
-            severityCode = command.severityCode,
+            severityCode = null,
         )
 
         // 태그 정규화: trim·소문자·distinct, 빈 값 제거, max 20개 컷
@@ -99,6 +100,10 @@ class CreateErrorCaseUseCase(
                 meta = mapOf("visibility" to command.visibility.name),
             )
         )
+
+        // 캐시 무효화 — 새 case owner 의 recent-active + my-recent-activities (CASE_CREATED 항목 반영)
+        runCatching { cacheInvalidator.evictRecentActive(command.userId) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(command.userId) }
 
         return Result(
             id = requireNotNull(saved.id) { "saved error case must have id" },

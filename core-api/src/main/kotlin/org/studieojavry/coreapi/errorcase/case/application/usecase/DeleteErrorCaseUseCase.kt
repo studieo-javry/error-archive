@@ -43,6 +43,7 @@ class DeleteErrorCaseUseCase(
     private val meTooRepository: CaseMeTooRepositoryPort,
     private val caseViewRepository: CaseViewRepositoryPort,
     private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
+    private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -86,6 +87,11 @@ class DeleteErrorCaseUseCase(
 
         errorCaseRepository.deleteById(errorCaseId)
         log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist) by user=$requesterUserId" }
+
+        // 캐시 무효화 — 삭제 후 owner 의 recent-active + my-recent-activities 갱신 필수
+        // (삭제된 case 관련 activity 항목이 사라져야 함)
+        runCatching { cacheInvalidator.evictRecentActive(ownerUserId) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(ownerUserId) }
     }
 }
 

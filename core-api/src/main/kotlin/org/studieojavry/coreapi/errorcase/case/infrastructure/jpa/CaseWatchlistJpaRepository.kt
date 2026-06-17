@@ -21,6 +21,19 @@ interface CaseWatchlistJpaRepository : JpaRepository<CaseWatchlistEntity, Long> 
     """)
     fun findCaseIdsByUserId(@Param("userId") userId: Long, pageable: Pageable): List<Long>
 
+    /**
+     * Library page 용 · case-id + addedAt (=w.createdAt) 쌍.
+     * order by created_at desc 는 sort=added 기본 정렬과 일치 —
+     * 다른 sort 는 UseCase 가 in-memory 로 재정렬.
+     */
+    @Query("""
+        select w.errorCaseId as caseId, w.createdAt as addedAt
+          from CaseWatchlistEntity w
+         where w.userId = :userId
+         order by w.createdAt desc, w.id desc
+    """)
+    fun findEntriesByUserId(@Param("userId") userId: Long, pageable: Pageable): List<CaseWatchlistEntryProjection>
+
     @Modifying(clearAutomatically = true)
     @Query("delete from CaseWatchlistEntity w where w.errorCaseId = :caseId and w.userId = :userId")
     fun deleteByErrorCaseIdAndUserId(@Param("caseId") errorCaseId: Long, @Param("userId") userId: Long): Int
@@ -43,4 +56,10 @@ interface CaseWatchlistJpaRepository : JpaRepository<CaseWatchlistEntity, Long> 
         @Param("userId") userId: Long,
         pageable: org.springframework.data.domain.Pageable,
     ): List<org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.UserCountProjection>
+}
+
+/** Watchlist 목록 페이지용 projection — case id + 담긴 시각. */
+interface CaseWatchlistEntryProjection {
+    val caseId: Long
+    val addedAt: java.time.LocalDateTime
 }

@@ -5,8 +5,10 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
+import org.studieojavry.coreapi.errorcase.case.application.port.SortBy
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import java.time.LocalDateTime
 import java.util.Base64
 
@@ -43,12 +45,13 @@ class ListErrorCasesUseCase(
                 workspaceId = input.workspaceId,
                 ownerUserId = ownerFilter,
                 status = input.status,
-                severityCode = input.severity,
                 fingerprint = input.fingerprint,
-                visibility = null,
+                visibility = input.visibility,
                 cursorCreatedAt = cursor?.first,
                 cursorId = cursor?.second,
-                limit = size + 1
+                limit = size + 1,
+                q = input.q,
+                sortBy = input.sortBy,
             )
         )
 
@@ -56,14 +59,20 @@ class ListErrorCasesUseCase(
         val items = if (hasNext) rows.take(size) else rows
         val nextCursor = items.lastOrNull()
             ?.takeIf { hasNext }
-            ?.let { encodeCursor(it.createdAt, it.id) }
+            ?.let { last ->
+                val sortAt = when (input.sortBy) {
+                    SortBy.CREATED -> last.createdAt
+                    SortBy.UPDATED -> last.updatedAt
+                }
+                encodeCursor(sortAt, last.id)
+            }
 
         return Result(items = items, nextCursor = nextCursor, hasNext = hasNext)
     }
 
-    private fun encodeCursor(createdAt: LocalDateTime, id: Long): String =
+    private fun encodeCursor(sortAt: LocalDateTime, id: Long): String =
         Base64.getUrlEncoder().withoutPadding()
-            .encodeToString("$createdAt|$id".toByteArray(Charsets.UTF_8))
+            .encodeToString("$sortAt|$id".toByteArray(Charsets.UTF_8))
 
     /** 잘못된 커서는 무시(null) → 처음부터. */
     private fun decodeCursor(cursor: String?): Pair<LocalDateTime, Long>? {
@@ -81,10 +90,15 @@ class ListErrorCasesUseCase(
         val requesterUserId: Long,
         val workspaceId: Long?,
         val status: ErrorCaseStatus?,
-        val severity: Int?,
         val fingerprint: String?,
+        /** visibility 필터(PUBLIC/WORKSPACE/PRIVATE). null 이면 미적용. */
+        val visibility: Visibility? = null,
         val cursor: String?,
-        val size: Int
+        val size: Int,
+        /** 검색어 — title 또는 tag 부분 매치 (case-insensitive). */
+        val q: String? = null,
+        /** 정렬 · CREATED (default) / UPDATED. */
+        val sortBy: SortBy = SortBy.CREATED,
     )
 
     data class Result(

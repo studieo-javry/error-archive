@@ -1,8 +1,6 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.Max
-import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
@@ -34,12 +32,6 @@ data class CreateErrorCaseRequest(
 
     @field:Schema(description = "워크스페이스 ID — 지정 시 WRITE+ 역할 필요. 미지정이면 개인 케이스", example = "1")
     val workspaceId: Long?,
-
-    // Severity enum code 범위(S1=1 .. S4=4). enum 이 바뀌면 같이 갱신.
-    @field:Schema(description = "심각도 1=S1(Outage), 2=S2(Degraded), 3=S3(Minor), 4=S4(Info)", example = "2", minimum = "1", maximum = "4")
-    @field:Min(1)
-    @field:Max(4)
-    val severity: Int?,
 
     @field:Schema(description = "자유 태그 목록(예: 환경/언어/스택). trim·소문자·중복 제거. 케이스당 최대 20개. 생성 후에는 POST /tags 로 1건씩 추가 가능.", example = "[\"k8s\",\"java\",\"prod\"]")
     val tags: List<String>? = null,

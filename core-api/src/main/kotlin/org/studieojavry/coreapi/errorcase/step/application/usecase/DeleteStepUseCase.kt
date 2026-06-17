@@ -2,9 +2,11 @@ package org.studieojavry.coreapi.errorcase.step.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
+import org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator
 
 
 /**
@@ -15,6 +17,8 @@ import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 class DeleteStepUseCase(
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
+    private val errorCaseRepository: ErrorCaseRepositoryPort,
+    private val cacheInvalidator: DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(stepId: Long, requesterUserId: Long) {
@@ -30,5 +34,10 @@ class DeleteStepUseCase(
             )
         }
         stepRepository.delete(stepId)
+
+        // 캐시 무효화 — case owner 의 recent-active + 작성자의 my-recent-activities (Create 와 대칭).
+        val ownerUserId = errorCaseRepository.findOwnerUserIdById(step.errorCaseId)
+        runCatching { ownerUserId?.let { cacheInvalidator.evictRecentActive(it) } }
+        runCatching { cacheInvalidator.evictMyRecentActivities(step.authorUserId) }
     }
 }

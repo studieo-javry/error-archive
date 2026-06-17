@@ -44,6 +44,7 @@ class UpdateErrorCaseUseCase(
     private val workspaceMemberReader: WorkspaceMemberReaderPort,
     private val notificationPublisher: NotificationPublisherPort,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(command: UpdateErrorCaseCommand): ErrorCase {
@@ -66,7 +67,7 @@ class UpdateErrorCaseUseCase(
 
         val newMeta = Meta.create(
             workspaceId = errorCase.meta.workspaceId, // 워크스페이스 이동은 불가(범위 밖)
-            severityCode = command.severityCode ?: errorCase.meta.severity?.code,
+            severityCode = errorCase.meta.severity?.code, // MVP1: severity 유지만, 변경 X
         )
         val newSnapshot = if (command.paste != null) buildSnapshot(command.paste) else errorCase.snapshot
 
@@ -104,6 +105,11 @@ class UpdateErrorCaseUseCase(
         reconcileSnippets(command.snippetMarkerIds, command.errorCaseId, command.requesterUserId)
         reconcileAttachments(command.attachmentMarkerIds, command.errorCaseId, command.requesterUserId)
         reconcileTags(command.tags, command.errorCaseId)
+
+        // 캐시 무효화 — case owner 의 recent-active (status 전이 / meta 변경 반영)
+        // + actor 의 my-recent-activities (RESOLVED 전환 시 CASE_RESOLVED summary 반영. 단순화 위해 매 update 시 evict)
+        runCatching { cacheInvalidator.evictRecentActive(errorCase.ownerUserId) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(command.requesterUserId) }
 
         // 재연결이 반영된 최신 애그리거트를 다시 로드해 반환(벌크 UPDATE 후 영속성 컨텍스트는 clear 됨).
         return errorCaseRepository.findById(command.errorCaseId)

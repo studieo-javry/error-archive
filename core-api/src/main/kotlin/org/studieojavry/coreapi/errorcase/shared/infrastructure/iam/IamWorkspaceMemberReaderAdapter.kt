@@ -1,7 +1,6 @@
 package org.studieojavry.coreapi.errorcase.shared.infrastructure.iam
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.body
@@ -13,7 +12,7 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceMembe
  */
 @Component
 class IamWorkspaceMemberReaderAdapter(
-    @Qualifier("iamApiRestClient") private val iamApiRestClient: RestClient,
+    private val iamApiRestClient: RestClient,
 ) : WorkspaceMemberReaderPort {
 
     private val logger = KotlinLogging.logger {}
@@ -28,6 +27,20 @@ class IamWorkspaceMemberReaderAdapter(
                 ?: emptyList()
         }.getOrElse { e ->
             logger.warn(e) { "iam workspace member fetch failed (workspaceId=$workspaceId) — fallback emptyList" }
+            emptyList()
+        }
+    }
+
+    override fun findCoMemberIds(userId: Long, size: Int): List<Long> {
+        return runCatching {
+            iamApiRestClient.get()
+                .uri("/internal/workspaces/co-members?userId=$userId&size=$size")
+                .retrieve()
+                .body<Response>()
+                ?.userIds
+                ?: emptyList()
+        }.getOrElse { e ->
+            logger.warn(e) { "iam workspace co-members fetch failed (userId=$userId) — fallback emptyList" }
             emptyList()
         }
     }

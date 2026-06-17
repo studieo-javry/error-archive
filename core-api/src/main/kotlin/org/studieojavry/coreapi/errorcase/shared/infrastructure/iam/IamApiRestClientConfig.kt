@@ -38,7 +38,9 @@ class IamApiRestClientConfig {
         RestClient.builder()
             .baseUrl(properties.baseUrl)
             // connect/read timeout — iam-api 가 느려지거나 멈춰도 홈 대시보드 등 호출 스레드가
-            // 무한정 매달리지 않도록 소켓 레벨 하드 캡. gateway 10s 보다 짧게.
+            // 무한정 매달리지 않도록 소켓 레벨 하드 캡. CircuitBreaker 5s TimeLimiter 안쪽,
+            // gateway 10s 보다 짧게. cb.run() 으로 감싼 호출은 물론, 감싸지 않은 raw 호출
+            // (following-feed 의 following-ids / author hydration 등) 도 이걸로 보호된다.
             .requestFactory(
                 ClientHttpRequestFactoryBuilder.detect().build(
                     HttpClientSettings.defaults()

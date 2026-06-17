@@ -28,14 +28,26 @@ interface CommentRepositoryPort {
     /** 내가 쓴 (deleted 제외) 최근 댓글, since 이후. createdAt DESC, id DESC. */
     fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Comment>
 
-    /** since 이후 + author = authorUserId + deleted 제외 댓글 수. activity summary 산정용. */
-    fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
+    /** case-id 별 마지막 (deleted 제외) 댓글 createdAt. */
+    fun findMaxCreatedAtByCaseIds(caseIds: Collection<Long>): Map<Long, LocalDateTime>
 
-    /** watchlist-feed 활동 fetch — caseIds 별 globalSince 이후 (deleted 제외) 댓글, literal source=`COMMENT_POSTED`. */
+    /** case-id 별 (deleted 제외) 댓글 수. */
+    fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long>
+
+    /** 특정 case 에서 since 이후 + author != excludeUserId + deleted 제외 댓글 수. unread 산정용. */
+    fun countSinceExcludingAuthor(errorCaseId: Long, since: LocalDateTime, excludeUserId: Long): Long
+
+    /** case-id 별 since 이후 + deleted 제외 댓글 수 (일괄). delta 산정용 — author 제외 없음. */
+    fun countByCaseIdsSince(caseIds: Collection<Long>, since: LocalDateTime): Map<Long, Long>
+
+    /** unread 정렬용 batch — globalSince 이후 활동 fetch. caller 가 case-id 별 lastViewedAt + author != me 필터. */
     fun findActivitiesByCaseIdsSince(
         caseIds: Collection<Long>,
         globalSince: LocalDateTime,
     ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow>
+
+    /** since 이후 + author = authorUserId + deleted 제외 댓글 수. activity summary 산정용. */
+    fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
 
     // ── Reactions ──────────────────────────────────────────────
     fun findReactionsByCommentIds(commentIds: List<Long>): List<CommentReaction>

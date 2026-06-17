@@ -6,6 +6,7 @@ import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooReposit
 import org.studieojavry.coreapi.errorcase.case.domain.model.CaseMeToo
 import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.CaseMeTooJpaRepository
 import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.entity.CaseMeTooEntity
+import java.time.LocalDateTime
 
 @Component
 class CaseMeTooRepositoryAdapter(
@@ -34,6 +35,21 @@ class CaseMeTooRepositoryAdapter(
         jpa.findAllByErrorCaseIdOrderByCreatedAtAscIdAsc(errorCaseId).map { it.toDomain() }
 
     override fun count(errorCaseId: Long): Long = jpa.countByErrorCaseId(errorCaseId)
+
+    override fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.countByCaseIdsGrouped(caseIds).associate { it.errorCaseId to it.count }
+    }
+
+    override fun countByCaseIdsSince(caseIds: Collection<Long>, since: LocalDateTime): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.countByCaseIdsSinceGrouped(caseIds, since).associate { it.errorCaseId to it.count }
+    }
+
+    override fun findCoOccurringUserIds(userId: Long, limit: Int): Map<Long, Long> {
+        return jpa.findCoOccurringUserIds(userId, org.springframework.data.domain.PageRequest.of(0, limit))
+            .associate { it.userId to it.count }
+    }
 
     override fun exists(errorCaseId: Long, userId: Long): Boolean =
         jpa.findByErrorCaseIdAndUserId(errorCaseId, userId) != null

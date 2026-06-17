@@ -16,7 +16,7 @@ import java.time.LocalDateTime
  *
  * 등록은 항상 사용자의 명시적 선택(opt-in) — 댓글/step/solution 작성이 자동으로
  * watchlist 에 편입시키지 않는다. 답글/멘션 알림(1회성)과 watchlist(지속 추적)는
- * 별개의 약속이라 사용자가 직접 골라야 한다는 판단.
+ * 별개의 약속이라 사용자가 직접 골라야 한다는 판단 (2026-07-08 재검토, 자동 upsert 제거).
  */
 class CaseWatchlist private constructor(
     val id: Long?,

@@ -24,6 +24,8 @@ class CreateSolutionUseCase(
     private val solutionRepository: SolutionRepositoryPort,
     private val access: ErrorCaseAccess,
     private val activityEventPublisher: ActivityEventPublisherPort,
+    private val cacheInvalidator:
+        org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(command: CreateSolutionCommand): Solution {
@@ -63,6 +65,9 @@ class CreateSolutionUseCase(
         )
 
         // watchlist 자동 등록은 하지 않음 — 등록 여부는 사용자가 POST /error-cases/{id}/watchlist 로 직접 선택.
+        // 캐시 무효화 — case owner 의 recent-active + 작성자의 my-recent-activities
+        runCatching { cacheInvalidator.evictRecentActive(errorCase.ownerUserId) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(command.authorUserId) }
 
         return saved
     }

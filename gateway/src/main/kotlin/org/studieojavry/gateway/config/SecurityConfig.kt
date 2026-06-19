@@ -43,12 +43,18 @@ class SecurityConfig {
                     "/api/v1/auth/oauth/**",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
-                    "/actuator/health",
+                    // health probe — local(/actuator) + prod(base-path=/internal/actuator) 둘 다.
+                    "/actuator/health", "/actuator/health/**",
+                    "/internal/actuator/health", "/internal/actuator/health/**",
                     "/__fallback/**",
                     // 정적 아바타 이미지 — 공개 read (이미지 fetch 에 Authorization 안 가도록)
                     "/avatars/**",
                     // 공개 publish 페이지 + 공개 export (인증 X — 누구나 열람/다운로드)
                     "/p/**", "/api/v1/publishments/by-slug/**",
+                    // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 로그아웃 상태에서도 열람 가능해야 함.
+                    //  `*` 는 /me 도 매칭하나, insight 의 myGrass 가 principal null 이면 스스로 401 → 무해.
+                    //  로그인 사용자는 토큰이 있어 gateway 가 aud=insight-api 내부토큰을 주입(resolveAudience).
+                    "/api/v1/users/*/activity-grass",
                     // Swagger UI(aggregator) + 게이트웨이 자체 docs + 다운스트림 docs 프록시 경로
                     "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/api-docs/**"
                 ).permitAll()

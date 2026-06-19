@@ -38,8 +38,8 @@ services:
       KAFKA_PROCESS_ROLES: controller,broker
       KAFKA_CONTROLLER_QUORUM_VOTERS: 0@localhost:9093
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      # PLAINTEXT 는 docker network 내부 용 (kafka-ui 등) — host 가 아니라 service 명으로 advertise.
-      # EXTERNAL 은 호스트 용 — spring-kafka 가 호스트에서 9094 로 붙는다.
+      # PLAINTEXT 는 *docker network 내부* 용 (kafka-ui 등) — host 가 아니라 service 명으로 advertise.
+      # EXTERNAL 은 *호스트* 용 — spring-kafka 가 호스트에서 9094 로 붙는다.
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER

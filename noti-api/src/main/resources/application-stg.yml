@@ -1,0 +1,74 @@
+# ===================================================================
+# stg — staging. 운영과 동일 정책, 로깅/풀만 완화. 비밀·키는 ENV/Secret 주입.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+  datasource:
+    url: ${NOTI_DB_URL}
+    username: ${NOTI_DB_USERNAME}
+    password: ${NOTI_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 운영과 동일 — Flyway 로만 스키마 변경
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: noti-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+  mail:
+    host: ${NOTI_MAIL_HOST}
+    port: ${NOTI_MAIL_PORT:587}
+    username: ${NOTI_MAIL_USERNAME}
+    password: ${NOTI_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: noti-api
+    key-id: ${NOTI_INTERNAL_ISSUER_KEY_ID:noti-api}
+    private-key-pem: ${NOTI_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: noti-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      core-api: ${INTERNAL_AUTH_CORE_API_PUBLIC_KEY}
+
+# N1: noti → iam-api 호출 대상. stg 도 필수 env(기본값 없이 강제).
+noti:
+  iam-api:
+    base-url: ${NOTI_IAM_API_BASE_URL}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+# N2: k8s liveness/readiness 프로브 그룹 활성.
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true

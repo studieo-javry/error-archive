@@ -23,6 +23,10 @@ iam:
     audience: ${NOTI_JWT_AUDIENCE:noti-api}
 
 noti:
+  # noti → iam-api(수신자 contact 조회) base-url. 기본값(localhost) 없음 — prod 에서 env 미설정 시
+  # fail-fast(IamApiProperties @Pattern). local=application-local.yml, test=application-test.yml 이 제공.
+  iam-api:
+    base-url: ${NOTI_IAM_API_BASE_URL}
   # 발송 모드 — 환경별로 logging(default 안전) / smtp / fcm 활성화
   email:
     provider: ${NOTI_EMAIL_PROVIDER:smtp}   # smtp | logging

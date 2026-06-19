@@ -1,0 +1,101 @@
+# ===================================================================
+# test — contextLoads 검증용. 외부 서비스(Kafka/IAM/SMTP) 불요.
+# - DB: H2 in-memory (PostgreSQL 모드), Hibernate create-drop → Flyway off
+# - Kafka: bootstrap localhost:1 (consumer 컨테이너는 연결 실패해도 컨텍스트 로드엔 무해)
+# - email=logging, push=off 로 외부 발송 어댑터 비활성
+# - internal-auth 키는 local dev 테스트 키 재사용 (아래 블록은 local yml 과 동일)
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  flyway:
+    enabled: false
+
+  datasource:
+    url: "jdbc:h2:mem:noti-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1"
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate.dialect: org.hibernate.dialect.H2Dialect
+
+  kafka:
+    bootstrap-servers: localhost:1
+    consumer:
+      group-id: noti-api-test
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+noti:
+  iam-api:
+    base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
+  email:
+    provider: logging
+  push:
+    enabled: false
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: noti-api
+    key-id: noti-api-local-1
+    private-key-pem: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDpcgV4RmGpjwXp
+      6u8A4olgAiM30kRIybn7xzp9tHji8UsPivum+2qMNw9wQX8KwgLSKT5gaer5yipj
+      6Z05lrPOXj7nTw07yRhph+0GXofa+HIQXBsbqTxwhfl4HQC5j3Qap2igEMLi9nMl
+      bQGWPXj8qZcbj8ckP9lbXClL5ZBWh30cxgBg46ZODpHepYhauNiMpIhOJLPSlyBV
+      zjD5M2HDSNawPh+rHLTC7Y3mfeWDKksRQj/sLvSpaX+csqrDzyFTEtrb24g4LyMV
+      cayEbcID9dRyFgkZO76zD4+ZMtQPDnIJJQMRVKMcrh0nqlnPQanSGuq0E5b+z5mK
+      cuzOTtshAgMBAAECggEAJh4NEJeFaNdGouxOfDmBLuEKeRnnNm9h49+jCFWIi53U
+      oMQT1S8mNaDj73NyWAJXzZMYcUu6J3FAPLIvjvCxiVfQM5qv0XxDdS/RnwGecz2v
+      +kXf00Nt7/2gP2GU9bebwKJnLgOunrqZEJpc8Pg2oiLa3pA6dwvJ5OYGhDMGv2nu
+      SIim//HpWNxTIt88nBOv8axlmq85aVr2aosZexNqYzmfg8nAcelcqb54I4LYtTbZ
+      8XDjIa/0sRnX+ZJzWQE4zif6LeG90vD9LSqVWjpXFT3ZNcV8Hk6fpcVZwnJU6Elw
+      wzTmJ+TcZN0QOUkm5Lx1URlHETxakAFhZEgXpfTxhQKBgQD2uTk6yN17ocFCJn1L
+      oJjTBI0V/XgZPxuWwUg5AScZ8J+WHB9OorEoAjbf3Js/OqkRnuaNUZV2XL2nkbgb
+      kXEiZBGxzsj2TCHWS3mSBmdgXFQnro8nCaW/0f/5cOf7/0Os1tKBergO4ecA4G7G
+      LoxvOScDvuU3KaWBHATZ6BpO2wKBgQDyOP4O84471M+9Wo+9kZ3IyFESBetBfzX5
+      jTbnDRpJ0S17G7vFDjbPTdUKekCEpWJoZotWrZGElwLZnKK9bdN8ePMiKiQQk/jR
+      rW9Mo6/kc6wkb4pg4bUxOkUQ0MGEe94rsO5O2kP2Guzh/lSSaQ37YSyMQN0KfaGt
+      T/DET56oswKBgEnnW7Q3HNj+r/QPsXJo7b4v288deM8fLzVuOiMRLFRB1pvRWrNk
+      Wmqgly1hWIONH72uemMUcA/fYdQC+0IOw/PIQ+CeD2ZvkacuPoE2N9sObQrh5/GK
+      m0KlNebTIjpC0VPBmZa9Wsrich66G5Rztw9N8FjX4rMuX2wYJ3/aXZ8HAoGBAJVi
+      NL0/0/5uVtgu2+tLvQWxFN6Kq/Yu4DjRsIR6fjX8PZJpHjp/c6oSFEtr7hJgdPpy
+      E4kXbmFZSLawdWViMEXZygjN+IQI3jFiRvv7D2VTOV0XNT5etQJxL1sZg9+TDQfh
+      DHexAKztGh6eXcYV6DuaSIEPF8N6i5V5ccGAYRclAoGAOpJd9Fhi2gRZFzdZUmPE
+      485gJmc4LdBvQv9Jp/qsvXAdxkkDFYSfSkwwkvP1nH4L6UC0dUdFOcM4BMJJ1Ofm
+      2M/sutjejlB5NdN2xY1KEvkXleBTV+CVGx+7KF8WA0Xpr3+UN00q7uQ4euEB+NYJ
+      eF18XJatl25lQqw3N4UMi6U=
+      -----END PRIVATE KEY-----
+  verifier:
+    audience: noti-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----

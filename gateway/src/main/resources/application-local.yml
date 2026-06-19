@@ -80,6 +80,13 @@ internal-auth:
       -----END PRIVATE KEY-----
 
 gateway:
+  # G2: 다운스트림 base-url — local 은 localhost 포트. RouteConfig 가 DownstreamProperties 로 주입받아 사용.
+  downstream:
+    iam-api: http://localhost:8080
+    core-api: http://localhost:8081
+    noti-api: http://localhost:8082
+    insight-api: http://localhost:8083
+    publish-api: http://localhost:8084
   cors:
     allowed-origins:
       - http://localhost:5173

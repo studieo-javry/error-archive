@@ -1,0 +1,80 @@
+# ===================================================================
+# prod — production. 가장 엄격.
+# - 시크릿(JWT secret / internal issuer 개인키)은 ENV/Secret 로만 주입(평문 금지).
+# - JWT issuer/audience 는 iam-api 가 발급하는 값과 반드시 일치해야 검증 통과.
+# - 다운스트림 base-url 은 k8s Service DNS 를 ENV 로 주입.
+# - swagger(aggregator) off, actuator 는 /internal/actuator 로 숨김.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+server:
+  port: ${GATEWAY_PORT:8000}
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+# G3: 사용자 JWT 검증 — secret 은 iam-api 와 공유(ENV). issuer/audience 는 prod iam 발급값과 일치.
+#     secret 의 @Size(min=64) 가 미해소 ${IAM_JWT_SECRET}(짧은 literal)을 부팅 실패로 잡는다(fail-fast).
+iam:
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.studieo-javry.com"
+    audience: "prod-clients"
+
+# G4: 내부 토큰 발급자(issuer) — gateway 가 downstream 용 단명 JWT 를 서명.
+#     개인키는 ENV 주입(평문 금지). 미설정 시 PEM 파싱 실패로 부팅 실패(fail-fast).
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: gateway
+    key-id: ${GATEWAY_INTERNAL_ISSUER_KEY_ID:gateway}
+    private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
+
+gateway:
+  # G2: 다운스트림 base-url — k8s Service DNS 를 ENV 로 주입(예: http://core-api:8081).
+  #     미해소 placeholder 는 ^https?://.+ 패턴 위반 → 부팅 실패(fail-fast, DownstreamProperties).
+  downstream:
+    iam-api: ${GATEWAY_IAM_API_URI}
+    core-api: ${GATEWAY_CORE_API_URI}
+    noti-api: ${GATEWAY_NOTI_API_URI}
+    insight-api: ${GATEWAY_INSIGHT_API_URI}
+    publish-api: ${GATEWAY_PUBLISH_API_URI}
+  # G5: CORS 허용 origin — prod FE origin. (비밀 아님 → 직접 명시. 필요 시 ENV 로 override.)
+  cors:
+    allowed-origins:
+      - https://app.studieo-javry.com
+    allow-credentials: true
+
+# swagger aggregator 는 prod 노출 안 함.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
+
+# G7: actuator 하드닝 — /internal/actuator 로 경로 숨김, health/info/prometheus/gateway 만.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+      base-path: /internal/actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true                          # /health/liveness, /health/readiness (k8s probe)
+    gateway:
+      access: read_only

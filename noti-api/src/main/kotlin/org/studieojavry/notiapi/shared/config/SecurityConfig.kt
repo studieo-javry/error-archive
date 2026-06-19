@@ -47,7 +47,9 @@ class SecurityConfig {
                 if (isLocal) {
                     auth.requestMatchers("/__dev/**").permitAll()
                 }
-                auth.requestMatchers("/actuator/health").permitAll()
+                auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    // prod 는 base-path=/internal/actuator → 프로브가 이 경로. 인증 없이 열려야 kubelet 200.
+                    .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // 모든 인증된 호출 — internal JWT (X-Internal-Auth, aud=noti-api).

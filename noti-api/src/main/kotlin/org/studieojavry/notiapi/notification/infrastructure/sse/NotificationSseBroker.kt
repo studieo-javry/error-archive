@@ -16,7 +16,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * in-memory SSE broker — userId → 활성 SseEmitter 다중 (한 user 가 여러 탭/디바이스 열 수 있음).
  *
  * 단일 인스턴스 한정 — 멀티 인스턴스 환경에서는 user 가 인스턴스 A 에 붙어있는데
- * 이벤트가 인스턴스 B 에서 발행되면 못 받음. MVP1 은 noti-api 단일 노드 가정.
+ * 이벤트가 인스턴스 B 에서 발행되면 *실시간* push 를 못 받음. MVP1 은 noti-api 단일 노드 가정.
+ * ※ [N4·보류] 현재 배포는 noti 1인스턴스라 문제없음. 알림은 DB 에 적재되고 재접속 시 catchup 으로
+ *   가져오므로 **유실은 아니며**, 스케일아웃(2노드+) 시점에만 아래 확장이 필요.
  * 후속 확장: Redis pub/sub 으로 노드 간 fan-out.
  *
  * 정리 정책:

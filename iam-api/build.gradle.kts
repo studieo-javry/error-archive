@@ -58,6 +58,15 @@ dependencies {
   // Kotlin data class default value / nullable 을 Jackson 이 인식하게.
   // Boot 4 → Jackson 3 이라 groupId 가 `tools.jackson.module`.
   implementation("tools.jackson.module:jackson-module-kotlin")
+  // Flyway — stg/prod 스키마 마이그레이션 (ddl-auto=validate 와 함께). PG 15+ 는 database-postgresql 모듈 필요.
+  // ★ Boot 4.0 은 autoconfig 를 모듈로 분리 → flyway-core 만으로는 마이그레이션이 자동 실행되지 않는다.
+  //    spring-boot-flyway (FlywayAutoConfiguration) 를 반드시 함께 추가해야 부팅 시 migrate 가 동작.
+  implementation("org.springframework.boot:spring-boot-flyway")
+  implementation("org.flywaydb:flyway-core")
+  implementation("org.flywaydb:flyway-database-postgresql")
+  // AWS S3 SDK — avatar 스토리지(비-local 프로파일). S3 호환(MinIO/OCI Object Storage) 공통.
+  implementation(platform("software.amazon.awssdk:bom:2.28.16"))
+  implementation("software.amazon.awssdk:s3")
   runtimeOnly("org.postgresql:postgresql")
   testRuntimeOnly("com.h2database:h2")
   testImplementation("org.springframework.boot:spring-boot-starter-test")

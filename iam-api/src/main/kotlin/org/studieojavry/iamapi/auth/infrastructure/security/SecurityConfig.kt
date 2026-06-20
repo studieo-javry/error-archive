@@ -81,7 +81,10 @@ class SecurityConfig {
                     // refresh / logout — refresh_token 쿠키만 가지고 호출. access 가 만료된 상태에서도 가능해야 하므로 permitAll.
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
-                    "/actuator/health",
+                    // health probe — 기본 경로 + prod 의 base-path(/internal/actuator) 하위,
+                    // readiness/liveness 그룹(/health/**) 까지 permit (k8s probe 401 방지).
+                    "/actuator/health", "/actuator/health/**",
+                    "/internal/actuator/health", "/internal/actuator/health/**",
                     // 정적 아바타 이미지 — 공개 read. 업로드/삭제는 별도 endpoint 라 인증 필요.
                     "/avatars/**",
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람 (실 API 호출은 Authorization 필요)

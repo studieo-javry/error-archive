@@ -12,6 +12,8 @@ spring:
     activate:
       on-profile: dev
 
+  flyway:
+    enabled: false   # dev: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
   datasource:
     url: ${IAM_DB_URL}                         # 기본값 없음 — 누락 시 즉시 실패
     username: ${IAM_DB_USERNAME}

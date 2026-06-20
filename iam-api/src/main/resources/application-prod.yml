@@ -13,14 +13,31 @@ spring:
     activate:
       on-profile: prod
 
+  flyway:
+    enabled: true
+    baseline-on-migrate: false   # 신규 DB 전제. 이미 스키마가 있는 DB 에 처음 도입할 땐 true + baseline-version 지정
+
+  # C2: outbox relayer 가 알림/활동 이벤트를 Kafka 로 발행 (iam 은 producer)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
   datasource:
     url: ${IAM_DB_URL}
     username: ${IAM_DB_USERNAME}
     password: ${IAM_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 30
-      minimum-idle: 5
+      # ★ 무료티어 PG 1인스턴스(max_connections=100) 5개 서비스 공유 → 풀 합계 100 미만 필수.
+      #   배분: core 18 / iam 15 / publish·noti·insight 10 = 합 63.
+      maximum-pool-size: 15       # iam = 인증(사용자 대면)
+      minimum-idle: 2
       connection-timeout: 5000
       max-lifetime: 1800000
 
@@ -46,6 +63,17 @@ logging:
     console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
 
 iam:
+  # H1: 아바타 = S3 호환(OCI Object Storage). local 만 디스크, 그 외는 이 설정 사용.
+  #     아바타 URL 은 DB 에 영구 저장 → 안정 공개 URL. 버킷은 public-read(또는 CDN 전면) 필요.
+  avatar:
+    public-base-url: ${IAM_AVATAR_PUBLIC_BASE_URL}   # 예: https://cdn.example.com/avatars 또는 OCI 버킷 공개 URL
+    s3:
+      bucket: ${IAM_AVATAR_BUCKET}
+      region: ${IAM_AVATAR_REGION}
+      endpoint: ${IAM_AVATAR_S3_ENDPOINT}            # OCI 호환 endpoint
+      path-style: ${IAM_AVATAR_S3_PATH_STYLE:true}
+      access-key: ${IAM_AVATAR_S3_ACCESS_KEY}        # OCI Customer Secret Key
+      secret-key: ${IAM_AVATAR_S3_SECRET_KEY}
   jwt:
     secret: ${IAM_JWT_SECRET}
     issuer: "https://iam.studieo-javry.com"
@@ -74,9 +102,29 @@ management:
   endpoint:
     health:
       show-details: never                      # 외부에 health 상세 노출 금지
+      probes:
+        enabled: true                          # /health/liveness, /health/readiness (k8s probe)
 
 server:
   error:
     include-message: never                     # 운영은 에러 메시지 클라이언트에 노출 X
     include-stacktrace: never
     include-binding-errors: never
+# C2: outbox → kafka 로 알림/활동 이벤트 발행 (local 에만 있던 설정을 운영에도).
+#     미설정 시 NoOp fallback 이라 팔로우·초대 알림 + 잔디(activity) 가 발행되지 않음.
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+# C1: 내부 서비스 인증 verifier — gateway/core/noti/insight/publish 가 보낸 내부 JWT(X-Internal-Auth) 검증.
+#     이 블록이 없으면 다른 서비스의 iam 내부 엔드포인트 호출이 전부 인증 실패한다.
+#     값은 공개키(비밀 아님)지만 회전 편의를 위해 env 주입.
+internal-auth:
+  verifier:
+    audience: iam-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      core-api: ${INTERNAL_AUTH_CORE_API_PUBLIC_KEY}
+      noti-api: ${INTERNAL_AUTH_NOTI_API_PUBLIC_KEY}
+      insight-api: ${INTERNAL_AUTH_INSIGHT_API_PUBLIC_KEY}
+      publish-api: ${INTERNAL_AUTH_PUBLISH_API_PUBLIC_KEY}

@@ -42,13 +42,15 @@ class SmtpInvitationEmailSenderAdapter(
         workspaceName: String,
         invitedByDisplayName: String,
         role: WorkspaceRole,
-        acceptUrl: String
+        acceptUrl: String,
+        expiresAt: Instant,
     ) {
         val body = renderBody(
             workspaceName = workspaceName,
             invitedByDisplayName = invitedByDisplayName,
             role = role,
-            acceptUrl = acceptUrl
+            acceptUrl = acceptUrl,
+            expiresAt = expiresAt,
         )
         val subject = "${properties.subjectPrefix} $workspaceName 워크스페이스 초대"
 
@@ -72,14 +74,14 @@ class SmtpInvitationEmailSenderAdapter(
         workspaceName: String,
         invitedByDisplayName: String,
         role: WorkspaceRole,
-        acceptUrl: String
+        acceptUrl: String,
+        expiresAt: Instant,
     ): String = template
         .replace("{{workspaceName}}", escapeHtml(workspaceName))
         .replace("{{invitedByDisplayName}}", escapeHtml(invitedByDisplayName))
         .replace("{{roleLabel}}", role.displayLabel())
-        // expiresAt 은 현재 port 시그니처에 없어 어댑터 시점에선 모름. 임시로 "관리자 안내 참고" 로 표기.
-        // 추후 InvitationEmailSenderPort 에 expiresAt 인자 추가하면 실제 값으로 치환.
-        .replace("{{expiresAt}}", "관리자 안내 참고")
+        // 만료시각은 절대시각(KST)으로 표기. 수신자 대부분이 국내(KST)라 타임존을 명시해 혼동을 줄인다.
+        .replace("{{expiresAt}}", "${expiryFormatter.format(expiresAt)} (KST)")
         .replace("{{acceptUrl}}", acceptUrl)
 
     private fun WorkspaceRole.displayLabel(): String = when (this) {

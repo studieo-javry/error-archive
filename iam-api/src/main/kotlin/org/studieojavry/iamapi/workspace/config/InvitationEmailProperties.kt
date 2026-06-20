@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
+import org.springframework.scheduling.annotation.EnableAsync
 import org.springframework.validation.annotation.Validated
 
 @Validated
@@ -25,5 +26,6 @@ data class InvitationEmailProperties(
 )
 
 @Configuration
+@EnableAsync   // 초대 메일을 커밋 후 별도 스레드에서 발송 (WorkspaceInvitationEmailListener)
 @EnableConfigurationProperties(InvitationEmailProperties::class)
 class InvitationEmailConfigRegistration

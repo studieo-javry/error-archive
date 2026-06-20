@@ -1,6 +1,7 @@
 package org.studieojavry.iamapi.workspace.application.port
 
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceRole
+import java.time.Instant
 
 interface InvitationEmailSenderPort {
     fun send(
@@ -8,6 +9,7 @@ interface InvitationEmailSenderPort {
         workspaceName: String,
         invitedByDisplayName: String,
         role: WorkspaceRole,
-        acceptUrl: String
+        acceptUrl: String,
+        expiresAt: Instant,
     )
 }

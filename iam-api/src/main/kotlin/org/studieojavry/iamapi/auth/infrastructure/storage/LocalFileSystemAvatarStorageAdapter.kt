@@ -1,6 +1,7 @@
 package org.studieojavry.iamapi.auth.infrastructure.storage
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import org.studieojavry.iamapi.auth.application.port.AvatarStoragePort
 import org.studieojavry.iamapi.auth.config.AvatarStorageProperties
@@ -19,6 +20,7 @@ import java.util.UUID
  * 기존 avatarUrl 을 보존했다가 `delete(oldUrl)` 호출.
  */
 @Component
+@Profile("local")   // 비-local 은 S3AvatarStorageAdapter (dev=MinIO / prod=OCI)
 class LocalFileSystemAvatarStorageAdapter(
     private val properties: AvatarStorageProperties,
 ) : AvatarStoragePort {

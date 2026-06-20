@@ -1,6 +1,7 @@
 package org.studieojavry.iamapi.auth.infrastructure.storage
 
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Profile
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 import org.studieojavry.iamapi.auth.config.AvatarStorageProperties
@@ -12,6 +13,7 @@ import java.io.File
  * http://localhost:8000/avatars/{userId}/{file} 로 접근한다.
  */
 @Configuration
+@Profile("local")   // local 디스크 저장분만 정적 서빙. 비-local 은 S3/OCI 공개 URL 로 직접 서빙.
 class AvatarStaticResourceConfig(
     private val properties: AvatarStorageProperties,
 ) : WebMvcConfigurer {

@@ -53,11 +53,8 @@ class AttachmentEntity(
     @Column(nullable = false, length = 20)
     var kind: AttachmentKind,
 
-    @Column(name = "storage_url", nullable = false, length = 1000)
-    var storageUrl: String,
-
-    @Column(name = "preview_text", columnDefinition = "TEXT")
-    var previewText: String? = null,
+    @Column(name = "object_key", nullable = false, length = 512)
+    var objectKey: String,
 
     @Column(name = "uploaded_by_user_id", nullable = false)
     var uploadedByUserId: Long,

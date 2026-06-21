@@ -21,8 +21,7 @@ class AttachmentRepositoryAdapter(
             it.contentType = attachment.contentType
             it.size = attachment.size
             it.kind = attachment.kind
-            it.storageUrl = attachment.storageUrl
-            it.previewText = attachment.previewText
+            it.objectKey = attachment.objectKey
             // uploadedByUserId / uploadedAt 은 업로드 시점에 고정 — 갱신하지 않음
         } ?: AttachmentEntity(
             markerId = attachment.markerId,
@@ -32,8 +31,7 @@ class AttachmentRepositoryAdapter(
             contentType = attachment.contentType,
             size = attachment.size,
             kind = attachment.kind,
-            storageUrl = attachment.storageUrl,
-            previewText = attachment.previewText,
+            objectKey = attachment.objectKey,
             uploadedByUserId = attachment.uploadedByUserId,
             uploadedAt = attachment.uploadedAt
         )
@@ -67,6 +65,10 @@ class AttachmentRepositoryAdapter(
         jpa.findByErrorCaseIdIsNullAndUploadedAtBeforeOrderByUploadedAtAsc(threshold, PageRequest.of(0, limit))
             .map { it.toDomain() }
 
+    override fun findUnlinkedByUploader(uploaderUserId: Long, limit: Int): List<Attachment> =
+        jpa.findByErrorCaseIdIsNullAndUploadedByUserIdOrderByUploadedAtDesc(uploaderUserId, PageRequest.of(0, limit))
+            .map { it.toDomain() }
+
     private fun AttachmentEntity.toDomain(): Attachment = Attachment(
         markerId = markerId,
         title = title,
@@ -75,8 +77,7 @@ class AttachmentRepositoryAdapter(
         contentType = contentType,
         size = size,
         kind = kind,
-        storageUrl = storageUrl,
-        previewText = previewText,
+        objectKey = objectKey,
         uploadedByUserId = uploadedByUserId,
         uploadedAt = uploadedAt,
         errorCaseId = errorCaseId

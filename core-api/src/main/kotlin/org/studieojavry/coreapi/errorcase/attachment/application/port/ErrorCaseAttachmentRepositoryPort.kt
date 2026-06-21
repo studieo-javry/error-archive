@@ -29,4 +29,11 @@ interface ErrorCaseAttachmentRepositoryPort {
      * GC 배치 루프가 사용. (오래된 것부터)
      */
     fun findUnlinkedOlderThan(threshold: Instant, limit: Int): List<Attachment>
+
+    /**
+     * 특정 업로더의 미연결(pending) 첨부를 최신순으로 limit 만큼 조회.
+     * 작성 화면의 "이번에 올린 첨부" 트레이 재조회용(GET /error-attachments/mine?linked=false).
+     * 인덱스: ix_attachment_uploader_orphan (uploaded_by_user_id, error_case_id).
+     */
+    fun findUnlinkedByUploader(uploaderUserId: Long, limit: Int): List<Attachment>
 }

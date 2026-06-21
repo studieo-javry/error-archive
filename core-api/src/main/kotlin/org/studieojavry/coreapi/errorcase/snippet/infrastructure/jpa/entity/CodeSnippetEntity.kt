@@ -15,6 +15,8 @@ import java.time.Instant
     indexes = [
         Index(name = "ix_snippet_marker", columnList = "marker_id", unique = true),
         Index(name = "ix_snippet_error_case", columnList = "error_case_id"),
+        // 작성자별 pending(미연결) 조회용 (GET /error-snippets/mine). 첨부 ix_attachment_uploader_orphan 과 대칭.
+        Index(name = "ix_snippet_uploader_orphan", columnList = "uploaded_by_user_id, error_case_id"),
         // orphan GC 쿼리(error_case_id IS NULL AND uploaded_at < ?) 전용 (첨부와 동일).
         Index(name = "ix_snippet_orphan_gc", columnList = "error_case_id, uploaded_at")
     ]

@@ -31,4 +31,11 @@ interface CodeSnippetRepositoryPort {
 
     /** 미연결(errorCaseId IS NULL) + uploadedAt 가 threshold 이전인 orphan 스니펫을 오래된 순 limit 만큼. */
     fun findUnlinkedOlderThan(threshold: Instant, limit: Int): List<CodeSnippet>
+
+    /**
+     * 특정 작성자의 미연결(pending) 스니펫을 최신순으로 limit 만큼 조회.
+     * 작성 화면 "추가한 스니펫" 트레이 재조회용(GET /error-snippets/mine?linked=false).
+     * 첨부의 findUnlinkedByUploader 와 대칭.
+     */
+    fun findUnlinkedByUploader(uploaderUserId: Long, limit: Int): List<CodeSnippet>
 }

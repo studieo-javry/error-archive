@@ -11,11 +11,13 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
@@ -24,6 +26,7 @@ import org.studieojavry.coreapi.errorcase.snippet.application.command.CreateSnip
 import org.studieojavry.coreapi.errorcase.snippet.application.command.UpdateSnippetCommand
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.CreateSnippetUseCase
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.DeleteSnippetUseCase
+import org.studieojavry.coreapi.errorcase.snippet.application.usecase.ListMyPendingSnippetsUseCase
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.SnippetAccessDeniedException
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.SnippetDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.SnippetNotFoundException
@@ -32,6 +35,7 @@ import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.request.C
 import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.request.CodeSnippetUpdateRequest
 import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.response.CodeSnippetCreateResponse
 import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.response.CodeSnippetDetailResponse
+import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.response.MyPendingSnippetResponse
 
 
 /**
@@ -46,8 +50,48 @@ import org.studieojavry.coreapi.errorcase.snippet.presentation.web.dto.response.
 class SnippetController(
     private val createSnippetUseCase: CreateSnippetUseCase,
     private val updateSnippetUseCase: UpdateSnippetUseCase,
-    private val deleteSnippetUseCase: DeleteSnippetUseCase
+    private val deleteSnippetUseCase: DeleteSnippetUseCase,
+    private val listMyPendingSnippetsUseCase: ListMyPendingSnippetsUseCase,
 ) {
+
+    @Operation(
+        summary = "내 미연결(pending) 스니펫 목록",
+        description = """
+            작성자 본인이 만들었지만 아직 케이스에 연결되지 않은 스니펫 목록(code 포함).
+
+            **용도**: 작성 화면 "추가한 스니펫" 트레이 재조회. 스니펫은 DB 텍스트라 presigned URL 없이 code 를 직접 반환.
+            **파라미터**: `linked`(선택, 기본 false). 현재 false(pending)만 지원 — 연결된 스니펫은 케이스 상세로. `linked=true` 는 400.
+
+            최신순, 최대 100건, 본인 것만.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "400", description = "linked=true 미지원", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()])
+    )
+    @GetMapping("/mine")
+    fun listMine(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "연결 상태 필터 — 현재 false(pending)만 지원") @RequestParam(required = false, defaultValue = "false") linked: Boolean,
+    ): List<MyPendingSnippetResponse> {
+        if (linked) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "linked=true is not supported; use case detail response for linked snippets")
+        }
+        return listMyPendingSnippetsUseCase.invoke(userId).map {
+            MyPendingSnippetResponse(
+                markerId = it.markerId,
+                embedToken = it.embedToken,
+                title = it.title,
+                language = it.language,
+                filePathOrClass = it.filePathOrClass,
+                lineRange = it.lineRange,
+                caption = it.caption,
+                code = it.code,
+                uploadedAt = it.uploadedAt,
+            )
+        }
+    }
 
     @Operation(
         summary = "스니펫 생성 (독립)",

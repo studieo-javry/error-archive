@@ -69,6 +69,10 @@ class CodeSnippetRepositoryAdapter(
         jpa.findByErrorCaseIdIsNullAndUploadedAtBeforeOrderByUploadedAtAsc(threshold, PageRequest.of(0, limit))
             .map { it.toDomain() }
 
+    override fun findUnlinkedByUploader(uploaderUserId: Long, limit: Int): List<CodeSnippet> =
+        jpa.findByErrorCaseIdIsNullAndUploadedByUserIdOrderByUploadedAtDesc(uploaderUserId, PageRequest.of(0, limit))
+            .map { it.toDomain() }
+
     private fun CodeSnippetEntity.toDomain(): CodeSnippet = CodeSnippet(
         markerId = markerId,
         title = title,

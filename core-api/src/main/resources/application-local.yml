@@ -1,13 +1,8 @@
 # ===================================================================
 # local — 개발자 로컬 머신.
-# - DB: docker-compose 의 PostgreSQL (localhost:5433, core_db)
+# - DB: docker-compose 의 PostgreSQL (localhost:5432, core_db)
 # - JWT: iam-api 와 동일한 secret (local 평문 placeholder)
 # - 8081 포트로 바인드 (iam-api 가 8080 점유)
-#
-# ⚠️  필수 환경변수 (없으면 부팅 실패):
-#     CORE_DB_USERNAME, CORE_DB_PASSWORD
-#     IAM_JWT_SECRET                       (≥ 64자, iam-api 와 동일)
-#     CORE_INTERNAL_AUTH_PRIVATE_KEY_PEM   (RSA 비밀키, multiline)
 # ===================================================================
 
 server:
@@ -18,9 +13,11 @@ spring:
     activate:
       on-profile: local
 
+  flyway:
+    enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
   datasource:
     url: jdbc:postgresql://localhost:5433/core_db
-    username: ${CORE_DB_USERNAME}
+    username: core
     password: ${CORE_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -49,6 +46,7 @@ logging:
   level:
     org.studieojavry: DEBUG
     org.hibernate.SQL: DEBUG
+    org.springframework.security: DEBUG   # 인증 필터/토큰 디버깅 — local 전용(운영에 새면 안 됨)
 
 iam:
   jwt:
@@ -58,19 +56,45 @@ iam:
 
 core:
   attachment:
-    storage-path: "./var/attachments"
-    public-base-url: "http://localhost:8081/api/v1/error-attachments"
+    orphan-ttl: "24h"
+    orphan-gc-batch-size: 500
+    s3:
+      bucket: "error-archive-attachments"
+      region: "us-east-1"
+      # 호스트에서 bootRun → 앱도 localhost:9000. (앱을 docker 안에서 돌리면 internal 만 http://minio:9000)
+      endpoint-internal: "http://localhost:9000"
+      endpoint-public: "http://localhost:9000"   # 브라우저 도달 주소 (presigned URL 호스트)
+      path-style: true
+      access-key: ${CORE_ATTACHMENT_S3_ACCESS_KEY}
+      secret-key: ${CORE_ATTACHMENT_S3_SECRET_KEY}
+    presign:
+      public-ttl: "15m"
+      restricted-ttl: "5m"
   iam-api:
     base-url: "http://localhost:8080"
   noti-api:
     base-url: "http://localhost:8082"
+  # Outbox + Relayer (adaptive polling). default 값 그대로지만 가독성·운영 조정 여지 위해 명시.
+  outbox:
+    busy-delay-ms: 200
+    idle-initial-delay-ms: 1000
+    idle-max-delay-ms: 5000
+    idle-multiplier: 2.0
+    batch-size: 50
+    max-attempts: 10
+    base-backoff-ms: 5000
+    max-backoff-ms: 3600000
+    sent-ttl-days: 30
 
+# 알림 publisher 모드 — `kafka`(default) 또는 `http`(레거시 직접 호출)
 noti:
   publisher:
     mode: "${NOTI_PUBLISHER_MODE:kafka}"
 
 # 내부 서비스 인증.
-# 공개키는 inline (보안 영향 없음). 비밀키는 env 주입.
+#  - verifier: 게이트웨이가 보낸 토큰(iss=gateway, aud=core-api) 검증.
+#  - issuer  : iam-api 호출 시 core-api 가 자기 키로 새 토큰(iss=core-api, aud=iam-api) 발급.
+# 아래 키는 로컬 개발용 테스트 키. 운영에선 ENV 로 주입.
 internal-auth:
   ttl-seconds: 60
   verifier:

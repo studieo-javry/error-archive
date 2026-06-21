@@ -11,6 +11,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
@@ -118,14 +120,46 @@ class InternalCasePublishDataController(
                     markerId = it.markerId,
                     fileName = it.fileName,
                     kind = it.kind.name,
-                    storageUrl = it.storageUrl,
-                    previewText = it.previewText,
+                    contentType = it.contentType,
+                    // storageUrl 필드는 이제 object key 를 실어보낸다(절대 URL 폐기). publish-api 의
+                    // 첨부 렌더는 이 key 로 자체 presign/fetch 한다(안정 파일 라우트).
+                    storageUrl = it.objectKey,
                 )
             },
         )
     }
 
+    @Operation(
+        summary = "케이스 배치 status (원본 살아있는지 / 마지막 수정 시각)",
+        description = """
+            publish-api 가 발행물의 원본 case 라이프사이클(삭제/수정)을 lazy 판정할 때 사용.
+            요청한 caseId 중 *존재하는* 것만 `{id, updatedAt}` 로 반환 —
+            응답에 없는 id 는 삭제된 것으로 간주(publish-api 가 SOURCE_DELETED 처리).
+            권한 검사 없음(updatedAt 메타데이터만, internal-only).
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @PostMapping("/status")
+    @Transactional(readOnly = true)
+    fun getStatuses(
+        @Parameter(hidden = true) @AuthenticationPrincipal callerUserId: Long?,
+        @RequestBody request: CaseStatusRequest,
+    ): CaseStatusResponse {
+        callerUserId ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing principal")
+        if (request.caseIds.isEmpty()) return CaseStatusResponse(emptyList())
+        val statuses = errorCaseRepository.findSummariesByIds(request.caseIds.toSet())
+            .map { CaseStatusItem(id = it.id, updatedAt = it.updatedAt) }
+        return CaseStatusResponse(statuses)
+    }
+
     // ──────────────────────── DTO ────────────────────────
+    data class CaseStatusRequest(val caseIds: List<Long>)
+    data class CaseStatusResponse(val statuses: List<CaseStatusItem>)
+    data class CaseStatusItem(val id: Long, val updatedAt: LocalDateTime)
+
     data class CaseFullDataResponse(
         val id: Long,
         val ownerUserId: Long,
@@ -181,7 +215,7 @@ class InternalCasePublishDataController(
         val markerId: String,
         val fileName: String,
         val kind: String,
+        val contentType: String,
         val storageUrl: String,
-        val previewText: String?,
     )
 }

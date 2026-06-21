@@ -323,8 +323,7 @@ class ErrorCaseRepositoryAdapter(
         contentType = contentType,
         size = size,
         kind = kind,
-        storageUrl = storageUrl,
-        previewText = previewText,
+        objectKey = objectKey,
         uploadedByUserId = uploadedByUserId,
         uploadedAt = uploadedAt,
         errorCaseId = errorCaseId

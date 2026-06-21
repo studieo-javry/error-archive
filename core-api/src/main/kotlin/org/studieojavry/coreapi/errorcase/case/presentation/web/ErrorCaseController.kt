@@ -22,16 +22,28 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentPresigner
+import org.studieojavry.coreapi.errorcase.attachment.config.PresignTtlProperties
 import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.case.application.command.UpdateErrorCaseCommand
+import org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.CountMyCasesByStatusUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.CreateErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.DeleteErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseAccessDeniedException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
+import org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ListErrorCasesUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RegisterCaseViewUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveCaseFromWatchlistUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.UnmarkCaseMeTooUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.UpdateErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAccessDeniedException
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
@@ -56,17 +68,30 @@ class ƒErrorCaseController(
     private val updateErrorCaseUseCase: UpdateErrorCaseUseCase,
     private val deleteErrorCaseUseCase: DeleteErrorCaseUseCase,
     private val listErrorCasesUseCase: ListErrorCasesUseCase,
-    private val searchPublicErrorCasesUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase,
-    private val addErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase,
-    private val removeErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase,
-    private val markCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase,
-    private val unmarkCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.UnmarkCaseMeTooUseCase,
-    private val getCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase,
-    private val registerCaseViewUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RegisterCaseViewUseCase,
-    private val addCaseToWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase,
-    private val removeCaseFromWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveCaseFromWatchlistUseCase,
-    private val countMyCasesByStatusUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.CountMyCasesByStatusUseCase,
+    private val searchPublicErrorCasesUseCase: SearchPublicErrorCasesUseCase,
+    private val addErrorCaseTagUseCase: AddErrorCaseTagUseCase,
+    private val removeErrorCaseTagUseCase: RemoveErrorCaseTagUseCase,
+    private val markCaseMeTooUseCase: MarkCaseMeTooUseCase,
+    private val unmarkCaseMeTooUseCase: UnmarkCaseMeTooUseCase,
+    private val getCaseMeTooUseCase: GetCaseMeTooUseCase,
+    private val registerCaseViewUseCase: RegisterCaseViewUseCase,
+    private val addCaseToWatchlistUseCase: AddCaseToWatchlistUseCase,
+    private val removeCaseFromWatchlistUseCase: RemoveCaseFromWatchlistUseCase,
+    private val countMyCasesByStatusUseCase: CountMyCasesByStatusUseCase,
+    private val attachmentPresigner: AttachmentPresigner,
+    private val presignTtl: PresignTtlProperties,
 ) {
+
+    /**
+     * 가시성별 TTL 로 첨부 objectKey → (inline URL, download URL) presign.
+     * 상세 조회는 이미 read 권한을 통과한 뒤라(가시성 검사 완료) 이 시점 발급이 안전하다.
+     */
+    private fun attachmentUrlResolver(visibility: Visibility) =
+        ErrorCaseDetailResponse.AttachmentUrlResolver { objectKey ->
+            val ttl = if (visibility == Visibility.PUBLIC)
+                presignTtl.publicTtl else presignTtl.restrictedTtl
+            attachmentPresigner.viewUrl(objectKey, ttl) to attachmentPresigner.downloadUrl(objectKey, ttl)
+        }
 
     @Operation(
         summary = "에러 케이스 생성",
@@ -238,7 +263,7 @@ class ƒErrorCaseController(
     ): org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.StatusCountsResponse {
         val result = try {
             countMyCasesByStatusUseCase.invoke(
-                org.studieojavry.coreapi.errorcase.case.application.usecase.CountMyCasesByStatusUseCase.Input(
+                CountMyCasesByStatusUseCase.Input(
                     requesterUserId = userId,
                     workspaceId = workspaceId,
                     q = q?.trim()?.takeIf { it.isNotBlank() },
@@ -287,7 +312,7 @@ class ƒErrorCaseController(
                 .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid status: $status") }
         }
         val result = searchPublicErrorCasesUseCase.invoke(
-            org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase.Input(
+            SearchPublicErrorCasesUseCase.Input(
                 status = parsedStatus,
                 fingerprint = fingerprint,
                 cursor = cursor,
@@ -338,6 +363,7 @@ class ƒErrorCaseController(
         return ErrorCaseDetailResponse.from(
             errorCase,
             ErrorCaseDetailResponse.MeTooDto(mt.count, mt.taggedByMe, mt.userIds),
+            attachmentUrlResolver(errorCase.visibility),
         )
     }
 
@@ -498,7 +524,7 @@ class ƒErrorCaseController(
             // 도메인 transitionTo 의 require 위반(허용되지 않은 상태 전이 등)
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
         }
-        return ErrorCaseDetailResponse.from(updated)
+        return ErrorCaseDetailResponse.from(updated, attachmentUrls = attachmentUrlResolver(updated.visibility))
     }
 
     @Operation(

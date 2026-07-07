@@ -25,7 +25,7 @@ services:
   # Kafka (KRaft 모드 — Zookeeper 불요). Apache 공식 이미지.
   # core-api 가 publish (user-activity.v1), insight-api 가 consume.
   kafka:
-    image: apache/kafka:3.8.0
+    image: apache/kafka-native:3.8.0
     container_name: insight-kafka
     restart: unless-stopped
     ports:

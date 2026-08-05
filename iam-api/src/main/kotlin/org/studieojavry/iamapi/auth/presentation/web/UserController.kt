@@ -189,7 +189,7 @@ UserController(
         )
     )
     @DeleteMapping("/me")
-    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     fun deleteMe(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @Parameter(hidden = true) response: HttpServletResponse,
@@ -219,7 +219,7 @@ UserController(
         ApiResponse(responseCode = "409", description = "PENDING_DELETION 도 ACTIVE 도 아닌 상태", content = [Content()])
     )
     @PostMapping("/me/restore")
-    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     fun restoreMe(@Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt) {
         val userId = currentUserId(jwt)
         try {
@@ -249,9 +249,9 @@ UserController(
     fun searchUsers(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = "displayName prefix (대소문자 무시). 빈 값=최근 가입 순.", example = "ji")
-        @org.springframework.web.bind.annotation.RequestParam(required = false) q: String?,
+        @RequestParam(required = false) q: String?,
         @Parameter(description = "1..20", example = "10")
-        @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "10") limit: Int,
+        @RequestParam(required = false, defaultValue = "10") limit: Int,
     ): List<UserSearchResponse> {
         val viewerId = currentUserId(jwt)
         return searchUsersUseCase.invoke(q, limit, viewerId).map {

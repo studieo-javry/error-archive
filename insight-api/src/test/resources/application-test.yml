@@ -5,6 +5,8 @@
 # ===================================================================
 
 spring:
+  flyway:
+    enabled: false   # test: H2 + Hibernate create-drop 로 스키마 관리 → Flyway off (PG 전용 DDL 회피)
   datasource:
     url: jdbc:h2:mem:insight-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver

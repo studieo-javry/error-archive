@@ -32,7 +32,7 @@ class DownloadAttachmentUseCase(
 
         authorize(attachment, requesterUserId)
 
-        val bytes = attachmentStoragePort.load(attachment.markerId, attachment.fileName)
+        val bytes = attachmentStoragePort.getBytes(attachment.objectKey)
 
         return Result(
             markerId = attachment.markerId,
@@ -81,7 +81,6 @@ class DownloadAttachmentUseCase(
     )
 }
 
-class AttachmentNotFoundException(val markerId: String) :
-    RuntimeException("attachment not found: markerId=$markerId")
+// AttachmentNotFoundException 는 DeleteAttachmentUseCase.kt 에 단일 선언(같은 패키지 공유) — 여기선 중복 선언 제거.
 
 class AttachmentDownloadForbiddenException(message: String) : RuntimeException(message)

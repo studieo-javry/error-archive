@@ -11,7 +11,7 @@ import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.core.ProducerFactory
 
 /**
- * Spring Boot 4 는 spring-kafka 의 KafkaAutoConfiguration 을 *별도 starter* 로 분리했고
+ * Spring Boot 4 는 spring-kafka 의 KafkaAutoConfiguration 을 별도 starter로 분리했고
  * 현재 의존성으로는 자동 빈 등록이 일어나지 않는다. `noti.publisher.mode=kafka` 일 때만 활성화되도록
  * 같은 조건으로 producer factory + KafkaTemplate 를 직접 정의한다.
  *

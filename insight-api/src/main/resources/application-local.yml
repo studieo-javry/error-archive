@@ -22,6 +22,8 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
 
+  flyway:
+    enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
   datasource:
     url: jdbc:postgresql://localhost:5435/insight_db
     username: insight
@@ -44,6 +46,11 @@ logging:
     org.studieojavry: DEBUG
     org.hibernate.SQL: DEBUG
 
+# base yml 에서 기본값을 뺐으므로 local 은 여기서 concrete 값 제공(iam-api 포트 8080).
+insight:
+  iam-api:
+    base-url: "http://localhost:8080"
+
 # 내부 서비스 인증
 #   verifier — gateway / core-api / iam-api 가 보낸 토큰(aud=insight-api) 검증
 #   issuer   — insight-api 가 iam-api 로 user timezone 조회 시 발급 (aud=iam-api)
@@ -52,14 +59,30 @@ internal-auth:
   issuer:
     name: insight-api
     key-id: insight-api-local-1
-    # 실 PEM 은 .env.local 의 INSIGHT_API_INTERNAL_AUTH_PRIVATE_KEY_PEM 에 (gitignored).
     private-key-pem: ${INSIGHT_API_INTERNAL_AUTH_PRIVATE_KEY_PEM}
   verifier:
     audience: insight-api
     known-issuers:
-      # 실 PEM 은 .env.local 의 INSIGHT_API_VERIFIER_*_PUBLIC_KEY_PEM 에 (gitignored).
-      gateway: ${INSIGHT_API_VERIFIER_GATEWAY_PUBLIC_KEY_PEM}
-      core-api: ${INSIGHT_API_VERIFIER_CORE_API_PUBLIC_KEY_PEM}
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----
 
 # local 한정 actuator 노출. SecurityConfig 가 local profile 에서 /actuator/** permitAll.
 # prod/stg 는 application.yml 기본 (health 만) 유지.

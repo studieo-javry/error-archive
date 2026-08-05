@@ -2,7 +2,9 @@ package org.studieojavry.coreapi.errorcase.comment.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator
 
 /**
  * 댓글 삭제 — 작성자 본인만. **soft delete**: body 는 placeholder("(삭제된 본문)") 로,
@@ -12,6 +14,8 @@ import org.studieojavry.coreapi.errorcase.comment.application.port.CommentReposi
 @Service
 class DeleteCommentUseCase(
     private val commentRepository: CommentRepositoryPort,
+    private val errorCaseRepository: ErrorCaseRepositoryPort,
+    private val cacheInvalidator: DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(commentId: Long, requesterUserId: Long) {
@@ -29,5 +33,10 @@ class DeleteCommentUseCase(
         commentRepository.deleteSuggestionByCommentId(commentId)
         c.softDelete()
         commentRepository.save(c)
+
+        // 캐시 무효화 — case owner 의 recent-active + 작성자의 my-recent-activities (Create 와 대칭).
+        val ownerUserId = errorCaseRepository.findOwnerUserIdById(c.errorCaseId)
+        runCatching { ownerUserId?.let { cacheInvalidator.evictRecentActive(it) } }
+        runCatching { cacheInvalidator.evictMyRecentActivities(c.authorUserId) }
     }
 }

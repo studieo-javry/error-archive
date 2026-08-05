@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
@@ -14,7 +15,13 @@ import org.studieojavry.notiapi.notification.domain.NotificationType
 import java.time.Instant
 
 @Entity
-@Table(name = "noti_notification")
+@Table(
+    name = "noti_notification",
+    indexes = [
+        // inbox 조회: WHERE recipient_user_id = ? ORDER BY created_at DESC
+        Index(name = "ix_noti_recipient_created", columnList = "recipient_user_id, created_at DESC"),
+    ],
+)
 class NotificationEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

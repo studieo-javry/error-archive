@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
+import org.studieojavry.coreapi.errorcase.case.application.port.SortBy
+import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.entity.ErrorCaseTagEntity
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import java.time.LocalDateTime
@@ -41,6 +43,68 @@ class ErrorCaseRepositoryAdapter(
 
     override fun deleteById(errorCaseId: Long) = errorCaseRepo.deleteById(errorCaseId)
 
+    override fun findRecentByOwner(ownerUserId: Long, limit: Int): List<ErrorCaseSummary> {
+        val entities = errorCaseRepo.findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
+            ownerUserId, PageRequest.of(0, limit)
+        )
+        return hydrateSummaries(entities)
+    }
+
+    override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
+        if (caseIds.isEmpty()) return emptyList()
+        val entities = errorCaseRepo.findAllByIdIn(caseIds)
+        return hydrateSummaries(entities)
+    }
+
+    override fun findRecentlyResolvedByActor(
+        actorUserId: Long,
+        since: LocalDateTime,
+        limit: Int,
+    ): List<ErrorCaseSummary> {
+        val entities = errorCaseRepo
+            .findAllByResolvedByUserIdAndResolvedAtGreaterThanEqualOrderByResolvedAtDescIdDesc(
+                actorUserId, since, PageRequest.of(0, limit),
+            )
+        return hydrateSummaries(entities)
+    }
+
+    override fun countCreatedByOwnerSince(ownerUserId: Long, since: LocalDateTime): Long =
+        errorCaseRepo.countByOwnerUserIdAndCreatedAtGreaterThanEqual(ownerUserId, since)
+
+    override fun countResolvedByActorSince(actorUserId: Long, since: LocalDateTime): Long =
+        errorCaseRepo.countByResolvedByUserIdAndResolvedAtGreaterThanEqual(actorUserId, since)
+
+    override fun findRecentPublicByOwners(
+        ownerUserIds: Collection<Long>,
+        limit: Int,
+    ): List<ErrorCaseSummary> {
+        if (ownerUserIds.isEmpty()) return emptyList()
+        val entities = errorCaseRepo
+            .findAllByOwnerUserIdInAndVisibilityOrderByCreatedAtDescIdDesc(
+                ownerUserIds, Visibility.PUBLIC, PageRequest.of(0, limit),
+            )
+        return hydrateSummaries(entities)
+    }
+
+    override fun findTopOwnersOfRecentPublic(since: LocalDateTime, limit: Int): List<Long> {
+        return errorCaseRepo.findTopOwnersOfRecentPublic(since, PageRequest.of(0, limit))
+            .map { it.userId }
+    }
+
+    override fun findRandomPublicCaseOwners(limit: Int): List<Long> {
+        if (limit <= 0) return emptyList()
+        return errorCaseRepo.findRandomPublicCaseOwners(limit)
+    }
+
+    private fun hydrateSummaries(entities: List<ErrorCaseEntity>): List<ErrorCaseSummary> {
+        val ids = entities.mapNotNull { it.id }
+        val tagsByCaseId: Map<Long, List<String>> = if (ids.isEmpty()) emptyMap() else
+            tagRepo.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(ids)
+                .groupBy { it.errorCaseId }
+                .mapValues { (_, rows) -> rows.map { it.tag } }
+        return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
+    }
+
     override fun findById(errorCaseId: Long): ErrorCase? {
         val entity = errorCaseRepo.findById(errorCaseId).orElse(null) ?: return null
         val snippets = snippetRepo.findAllByErrorCaseId(errorCaseId).map { it.toDomain() }
@@ -69,23 +133,41 @@ class ErrorCaseRepositoryAdapter(
         criteria.ownerUserId?.let { preds += cb.equal(root.get<Long>("ownerUserId"), it) }
         criteria.status?.let { preds += cb.equal(root.get<ErrorCaseStatus>("status"), it) }
         criteria.visibility?.let { preds += cb.equal(root.get<Visibility>("visibility"), it) }
-        criteria.severityCode?.let { preds += cb.equal(root.get<MetaEmbeddable>("meta").get<Int>("severityCode"), it) }
         criteria.fingerprint?.let {
             preds += cb.equal(root.get<ErrorSnapshotEmbeddable>("snapshot").get<String>("fingerprint"), it)
         }
-        // keyset: (createdAt < c) OR (createdAt = c AND id < cId)
+        // q: title ILIKE %q% OR EXISTS tag t WHERE t.error_case_id = c.id AND t.tag ILIKE %q%
+        criteria.q?.trim()?.takeIf { it.isNotBlank() }?.let { q ->
+            val pattern = "%${q.lowercase()}%"
+            val titleMatch = cb.like(cb.lower(root.get("title")), pattern)
+            val tagSub = cq.subquery(Long::class.java)
+            val tagRoot = tagSub.from(ErrorCaseTagEntity::class.java)
+            tagSub.select(tagRoot.get("errorCaseId"))
+                .where(
+                    cb.equal(tagRoot.get<Long>("errorCaseId"), root.get<Long>("id")),
+                    cb.like(cb.lower(tagRoot.get("tag")), pattern),
+                )
+            val tagMatch = cb.exists(tagSub)
+            preds += cb.or(titleMatch, tagMatch)
+        }
+
+        // Cursor: keyset — sortBy 필드 기반. (sortAt < c) OR (sortAt = c AND id < cId).
+        val sortField = when (criteria.sortBy) {
+            SortBy.CREATED -> "createdAt"
+            SortBy.UPDATED -> "updatedAt"
+        }
         if (criteria.cursorCreatedAt != null && criteria.cursorId != null) {
-            val createdAt = root.get<LocalDateTime>("createdAt")
+            val sortAt = root.get<LocalDateTime>(sortField)
             val idPath = root.get<Long>("id")
             preds += cb.or(
-                cb.lessThan(createdAt, criteria.cursorCreatedAt),
-                cb.and(cb.equal(createdAt, criteria.cursorCreatedAt), cb.lessThan(idPath, criteria.cursorId))
+                cb.lessThan(sortAt, criteria.cursorCreatedAt),
+                cb.and(cb.equal(sortAt, criteria.cursorCreatedAt), cb.lessThan(idPath, criteria.cursorId))
             )
         }
 
         cq.select(root)
             .where(*preds.toTypedArray())
-            .orderBy(cb.desc(root.get<LocalDateTime>("createdAt")), cb.desc(root.get<Long>("id")))
+            .orderBy(cb.desc(root.get<LocalDateTime>(sortField)), cb.desc(root.get<Long>("id")))
 
         val entities = em.createQuery(cq)
             .setMaxResults(criteria.limit)
@@ -101,43 +183,50 @@ class ErrorCaseRepositoryAdapter(
         return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
     }
 
-    override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
-        if (caseIds.isEmpty()) return emptyList()
-        return hydrateSummaries(errorCaseRepo.findAllByIdIn(caseIds))
-    }
+    /**
+     * search 필터 (workspaceId / ownerUserId / q / visibility) 를 그대로 적용,
+     * status 는 무시하고 status 별 개수. Library 페이지의 status filter chip 카운트용.
+     * cursor / sortBy 는 무의미하므로 무시.
+     */
+    override fun countByStatus(
+        criteria: ErrorCaseSearchCriteria
+    ): Map<ErrorCaseStatus, Long> {
+        val cb = em.criteriaBuilder
+        val cq = cb.createQuery(Array<Any>::class.java)
+        val root = cq.from(ErrorCaseEntity::class.java)
+        val preds = mutableListOf<Predicate>()
 
-    override fun findRecentByOwner(ownerUserId: Long, limit: Int): List<ErrorCaseSummary> {
-        val entities = errorCaseRepo.findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
-            ownerUserId, PageRequest.of(0, limit)
-        )
-        return hydrateSummaries(entities)
-    }
+        criteria.workspaceId?.let { preds += cb.equal(root.get<MetaEmbeddable>("meta").get<Long>("workspaceId"), it) }
+        criteria.ownerUserId?.let { preds += cb.equal(root.get<Long>("ownerUserId"), it) }
+        criteria.visibility?.let { preds += cb.equal(root.get<Visibility>("visibility"), it) }
+        criteria.fingerprint?.let {
+            preds += cb.equal(root.get<ErrorSnapshotEmbeddable>("snapshot").get<String>("fingerprint"), it)
+        }
+        criteria.q?.trim()?.takeIf { it.isNotBlank() }?.let { q ->
+            val pattern = "%${q.lowercase()}%"
+            val titleMatch = cb.like(cb.lower(root.get("title")), pattern)
+            val tagSub = cq.subquery(Long::class.java)
+            val tagRoot = tagSub.from(ErrorCaseTagEntity::class.java)
+            tagSub.select(tagRoot.get("errorCaseId"))
+                .where(
+                    cb.equal(tagRoot.get<Long>("errorCaseId"), root.get<Long>("id")),
+                    cb.like(cb.lower(tagRoot.get("tag")), pattern),
+                )
+            preds += cb.or(titleMatch, cb.exists(tagSub))
+        }
 
-    override fun findRecentlyResolvedByActor(
-        actorUserId: Long,
-        since: LocalDateTime,
-        limit: Int,
-    ): List<ErrorCaseSummary> {
-        val entities = errorCaseRepo
-            .findAllByResolvedByUserIdAndResolvedAtGreaterThanEqualOrderByResolvedAtDescIdDesc(
-                actorUserId, since, PageRequest.of(0, limit),
-            )
-        return hydrateSummaries(entities)
-    }
+        val statusPath = root.get<ErrorCaseStatus>("status")
+        cq.multiselect(statusPath, cb.count(root))
+            .where(*preds.toTypedArray())
+            .groupBy(statusPath)
 
-    override fun countCreatedByOwnerSince(ownerUserId: Long, since: LocalDateTime): Long =
-        errorCaseRepo.countByOwnerUserIdAndCreatedAtGreaterThanEqual(ownerUserId, since)
-
-    override fun countResolvedByActorSince(actorUserId: Long, since: LocalDateTime): Long =
-        errorCaseRepo.countByResolvedByUserIdAndResolvedAtGreaterThanEqual(actorUserId, since)
-
-    private fun hydrateSummaries(entities: List<ErrorCaseEntity>): List<ErrorCaseSummary> {
-        val ids = entities.mapNotNull { it.id }
-        val tagsByCaseId: Map<Long, List<String>> = if (ids.isEmpty()) emptyMap() else
-            tagRepo.findAllByErrorCaseIdInOrderByCreatedAtAscIdAsc(ids)
-                .groupBy { it.errorCaseId }
-                .mapValues { (_, rows) -> rows.map { it.tag } }
-        return entities.map { it.toSummary(tagsByCaseId[it.id] ?: emptyList()) }
+        val rows = em.createQuery(cq).resultList
+        return rows.associate { row ->
+            @Suppress("UNCHECKED_CAST")
+            val status = row[0] as ErrorCaseStatus
+            val count = row[1] as Long
+            status to count
+        }
     }
 
     private fun ErrorCaseEntity.toSummary(tags: List<String>): ErrorCaseSummary {
@@ -149,7 +238,6 @@ class ErrorCaseRepositoryAdapter(
             title = title,
             status = status,
             visibility = visibility,
-            severityCode = m?.severityCode,
             workspaceId = m?.workspaceId,
             fingerprint = snapshot?.fingerprint,
             exceptionClass = snapshot?.exceptionClass,
@@ -201,7 +289,9 @@ class ErrorCaseRepositoryAdapter(
         occurredAt = occurredAt,
         createdAt = createdAt,
         updatedAt = updatedAt,
-        ownerUserId = ownerUserId
+        ownerUserId = ownerUserId,
+        resolvedAt = resolvedAt,
+        resolvedByUserId = resolvedByUserId,
     )
 
     private fun ErrorSnapshot.toEmbeddable(): ErrorSnapshotEmbeddable = ErrorSnapshotEmbeddable(
@@ -233,8 +323,7 @@ class ErrorCaseRepositoryAdapter(
         contentType = contentType,
         size = size,
         kind = kind,
-        storageUrl = storageUrl,
-        previewText = previewText,
+        objectKey = objectKey,
         uploadedByUserId = uploadedByUserId,
         uploadedAt = uploadedAt,
         errorCaseId = errorCaseId
@@ -272,7 +361,9 @@ class ErrorCaseRepositoryAdapter(
             status = status,
             occurredAt = occurredAt,
             createdAt = createdAt,
-            updatedAt = updatedAt
+            updatedAt = updatedAt,
+            resolvedAt = resolvedAt,
+            resolvedByUserId = resolvedByUserId,
         )
     }
 }

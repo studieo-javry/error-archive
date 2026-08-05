@@ -1,6 +1,8 @@
 package org.studieojavry.coreapi.errorcase.shared.infrastructure.iam
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder
+import org.springframework.boot.http.client.HttpClientSettings
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.core.context.SecurityContextHolder
@@ -8,6 +10,7 @@ import org.springframework.web.client.RestClient
 import org.studieojavry.coreapi.errorcase.shared.config.IamApiProperties
 import org.studieojavry.internalauth.InternalTokenAuthenticationFilter
 import org.studieojavry.internalauth.InternalTokenIssuer
+import java.time.Duration
 
 /**
  * iam-api 호출용 RestClient.
@@ -34,11 +37,22 @@ class IamApiRestClientConfig {
     ): RestClient =
         RestClient.builder()
             .baseUrl(properties.baseUrl)
+            // connect/read timeout — iam-api 가 느려지거나 멈춰도 홈 대시보드 등 호출 스레드가
+            // 무한정 매달리지 않도록 소켓 레벨 하드 캡. CircuitBreaker 5s TimeLimiter 안쪽,
+            // gateway 10s 보다 짧게. cb.run() 으로 감싼 호출은 물론, 감싸지 않은 raw 호출
+            // (following-feed 의 following-ids / author hydration 등) 도 이걸로 보호된다.
+            .requestFactory(
+                ClientHttpRequestFactoryBuilder.detect().build(
+                    HttpClientSettings.defaults()
+                        .withConnectTimeout(Duration.ofSeconds(2))
+                        .withReadTimeout(Duration.ofSeconds(4))
+                )
+            )
             .requestInterceptor { request, body, execution ->
-                logger.info { "[filter] thread=${Thread.currentThread().name}" }
-                logger.info { "[before currentUser] auth=${SecurityContextHolder.getContext().authentication}" }
+                logger.debug { "[filter] thread=${Thread.currentThread().name}" }
+                logger.debug { "[before currentUser] auth=${SecurityContextHolder.getContext().authentication}" }
                 val user = currentUser()
-                logger.info { "IamApiRestClient: user=$user" }
+                logger.debug { "IamApiRestClient: user=$user" }
                 user?.let { (userId, roles) ->
                     val token = internalTokenIssuer.issue(
                         subject = userId,

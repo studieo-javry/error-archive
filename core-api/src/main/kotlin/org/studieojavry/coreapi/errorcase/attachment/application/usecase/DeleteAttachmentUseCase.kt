@@ -37,3 +37,6 @@ class DeleteAttachmentUseCase(
 }
 
 class AttachmentDeleteForbiddenException(message: String) : RuntimeException(message)
+
+class AttachmentNotFoundException(val markerId: String) :
+    RuntimeException("attachment not found: markerId=$markerId")

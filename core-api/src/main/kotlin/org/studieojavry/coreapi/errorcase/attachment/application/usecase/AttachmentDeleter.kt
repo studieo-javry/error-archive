@@ -8,7 +8,7 @@ import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseA
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
 
 /**
- * 첨부 1건을 삭제하는 **단일 루틴**. orphan GC / 명시적 삭제 / (추후) 케이스 삭제 cascade 가
+ * 첨부 1건을 삭제하는 **단일 루틴**. orphan GC / 명시적 삭제 / 케이스 삭제 cascade(DeleteErrorCaseUseCase)가
  * 모두 이걸 재사용해 삭제 경로가 갈라지지 않게 한다.
  *
  * 순서·멱등성:
@@ -29,7 +29,7 @@ class AttachmentDeleter(
 
     @Transactional
     fun delete(attachment: Attachment) {
-        storage.delete(attachment.markerId, attachment.fileName)
+        storage.delete(attachment.objectKey)
         repository.deleteByMarkerId(attachment.markerId)
         log.debug { "[attachment] deleted markerId=${attachment.markerId} (errorCaseId=${attachment.errorCaseId})" }
     }

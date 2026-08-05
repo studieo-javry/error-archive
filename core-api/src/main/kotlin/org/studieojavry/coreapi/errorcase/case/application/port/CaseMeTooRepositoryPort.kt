@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.case.application.port
 
 import org.studieojavry.coreapi.errorcase.case.domain.model.CaseMeToo
+import java.time.LocalDateTime
 
 interface CaseMeTooRepositoryPort {
 
@@ -13,6 +14,18 @@ interface CaseMeTooRepositoryPort {
     fun listByCaseId(errorCaseId: Long): List<CaseMeToo>
 
     fun count(errorCaseId: Long): Long
+
+    /** case-id 별 me-too 총 수 (일괄). 카드 표시용. */
+    fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long>
+
+    /** case-id 별 since 이후 새 me-too 수 (일괄). delta 산정용. */
+    fun countByCaseIdsSince(caseIds: Collection<Long>, since: LocalDateTime): Map<Long, Long>
+
+    /**
+     * userId 가 me-too 한 case 들에 *함께 me-too* 한 *다른* userId 들 + 겹침 case 수.
+     * suggested-followees 의 *M* 신호. count DESC 정렬, limit.
+     */
+    fun findCoOccurringUserIds(userId: Long, limit: Int): Map<Long, Long>
 
     fun exists(errorCaseId: Long, userId: Long): Boolean
 

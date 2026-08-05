@@ -6,6 +6,8 @@
 # ===================================================================
 
 spring:
+  flyway:
+    enabled: false   # test: H2 + Hibernate create-drop 로 스키마 관리 → Flyway off (PG 전용 DDL 회피)
   datasource:
     url: jdbc:h2:mem:core-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -28,6 +30,8 @@ noti:
     mode: http
 
 core:
+  iam-api:
+    base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
   noti-api:
     base-url: "http://localhost:8082"
 

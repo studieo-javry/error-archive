@@ -23,7 +23,7 @@ import org.studieojavry.notiapi.notification.presentation.dto.UpdateNotification
 @Tag(
     name = "notifications-me",
     description = """
-        Settings → Notifications. 채널(`email`/`inApp`) × 카테고리 매트릭스 + master switch.
+        Settings → Notifications. 채널(email/inApp) × 카테고리 매트릭스 + master switch.
         Security alerts 는 양 채널 모두 *강제 on* — 변경 불가.
 
         본 API 는 게이트웨이를 통해서만 호출 가능 (X-Internal-Auth 헤더 검증).

@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import org.studieojavry.iamapi.workspace.application.port.InvitationEmailSenderPort
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceRole
+import java.time.Instant
 
 /**
  * SMTP 미연동 fallback 어댑터. 실제 발송 대신 로그만 남긴다.
@@ -21,11 +22,12 @@ class LoggingInvitationEmailSenderAdapter : InvitationEmailSenderPort {
         workspaceName: String,
         invitedByDisplayName: String,
         role: WorkspaceRole,
-        acceptUrl: String
+        acceptUrl: String,
+        expiresAt: Instant,
     ) {
         log.info(
-            "[invitation-email] to={} workspace={} invitedBy={} role={} acceptUrl={}",
-            toEmail, workspaceName, invitedByDisplayName, role, acceptUrl
+            "[invitation-email] to={} workspace={} invitedBy={} role={} expiresAt={} acceptUrl={}",
+            toEmail, workspaceName, invitedByDisplayName, role, expiresAt, acceptUrl
         )
     }
 }

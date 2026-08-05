@@ -14,6 +14,4 @@ data class AttachmentUploadRequest(
     val size: Long, // 사용자가 업로드한 파일 크기
 
     val kind: String, // UI/도메인 처리 목적의 카테고리 ex) image / json / text / document ···
-    val previewData: String?,
-    val previewText: String?
 )

@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator
 
 /**
  * "나도 겪었어요" 토글 use case 들.
@@ -25,6 +26,7 @@ data class CaseMeTooResult(
 class MarkCaseMeTooUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val meTooRepository: CaseMeTooRepositoryPort,
+    private val cacheInvalidator: DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(errorCaseId: Long, requesterUserId: Long): CaseMeTooResult {
@@ -34,6 +36,8 @@ class MarkCaseMeTooUseCase(
             throw CaseMeTooSelfNotAllowedException(errorCaseId)
         }
         meTooRepository.add(errorCaseId, requesterUserId)
+        // 캐시 무효화 — case owner 의 recent-active (me-too delta 반영)
+        runCatching { cacheInvalidator.evictRecentActive(ownerUserId) }
         return readResult(errorCaseId, requesterUserId)
     }
 
@@ -53,12 +57,14 @@ class MarkCaseMeTooUseCase(
 class UnmarkCaseMeTooUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val meTooRepository: CaseMeTooRepositoryPort,
+    private val cacheInvalidator: DashboardCacheInvalidator,
 ) {
     @Transactional
     fun invoke(errorCaseId: Long, requesterUserId: Long): CaseMeTooResult {
-        errorCaseRepository.findOwnerUserIdById(errorCaseId)
+        val ownerUserId = errorCaseRepository.findOwnerUserIdById(errorCaseId)
             ?: throw ErrorCaseNotFoundException(errorCaseId)
         meTooRepository.remove(errorCaseId, requesterUserId)
+        runCatching { cacheInvalidator.evictRecentActive(ownerUserId) }
         val rows = meTooRepository.listByCaseId(errorCaseId)
         val userIds = rows.map { it.userId }
         return CaseMeTooResult(

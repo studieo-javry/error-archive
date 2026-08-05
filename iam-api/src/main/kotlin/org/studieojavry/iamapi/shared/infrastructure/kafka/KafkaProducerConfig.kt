@@ -1,4 +1,4 @@
-package org.studieojavry.iamapi.shared.infrastructure.outbox
+package org.studieojavry.iamapi.shared.infrastructure.kafka
 
 import org.apache.kafka.clients.producer.ProducerConfig
 import org.apache.kafka.common.serialization.StringSerializer
@@ -11,18 +11,17 @@ import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.core.ProducerFactory
 
 /**
- * Spring Boot 4 는 spring-kafka 의 KafkaAutoConfiguration 을 별도 starter 로 분리했고
- * 현재 의존성(spring-kafka 만)으로는 KafkaTemplate 자동 빈 등록이 일어나지 않는다.
- * core-api / noti-api 와 동일 패턴 — `noti.publisher.mode=kafka` 일 때만 활성화.
+ * Spring Boot 4 의 spring-kafka 는 KafkaAutoConfiguration 이 별도 starter 라
+ * 의존성만 추가해도 자동 빈이 안 올라옴. `noti.publisher.mode=kafka` 일 때만 직접 등록.
  *
- * KafkaTopicSender 가 KafkaTemplate<String, String> 을 inject 해서 outbox row 를 발행.
+ * core-api 와 동일 패턴. 같은 broker / 같은 timeout 설정.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "noti.publisher", name = ["mode"], havingValue = "kafka")
 class KafkaProducerConfig {
 
     @Bean
-    fun outboxProducerFactory(
+    fun iamProducerFactory(
         @Value("\${spring.kafka.bootstrap-servers:localhost:9094}") bootstrapServers: String,
         @Value("\${spring.kafka.producer.acks:1}") acks: String,
         @Value("\${spring.kafka.producer.properties.delivery.timeout.ms:8000}") deliveryTimeoutMs: Int,
@@ -40,7 +39,7 @@ class KafkaProducerConfig {
     }
 
     @Bean
-    fun outboxKafkaTemplate(
+    fun iamKafkaTemplate(
         producerFactory: ProducerFactory<String, String>,
     ): KafkaTemplate<String, String> = KafkaTemplate(producerFactory)
 }

@@ -31,6 +31,8 @@ spring:
       mail.smtp.auth: "${NOTI_MAIL_SMTP_AUTH:false}"
       mail.smtp.starttls.enable: "${NOTI_MAIL_STARTTLS:false}"
 
+  flyway:
+    enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
   datasource:
     url: jdbc:postgresql://localhost:5434/noti_db
     username: noti
@@ -61,11 +63,32 @@ internal-auth:
   issuer:
     name: noti-api
     key-id: noti-api-local-1
-    # 실 PEM 은 .env.local 의 NOTI_API_INTERNAL_AUTH_PRIVATE_KEY_PEM 에 (gitignored).
     private-key-pem: ${NOTI_API_INTERNAL_AUTH_PRIVATE_KEY_PEM}
   verifier:
     audience: noti-api
     known-issuers:
-      # 실 PEM 은 .env.local 의 NOTI_API_VERIFIER_*_PUBLIC_KEY_PEM 에 (gitignored).
-      gateway: ${NOTI_API_VERIFIER_GATEWAY_PUBLIC_KEY_PEM}
-      core-api: ${NOTI_API_VERIFIER_CORE_API_PUBLIC_KEY_PEM}
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----
+
+# base yml 에서 iam-api base-url 기본값을 뺐으므로 local 은 여기서 concrete 값 제공(iam-api 포트 8080).
+noti:
+  iam-api:
+    base-url: "http://localhost:8080"

@@ -22,19 +22,32 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentPresigner
+import org.studieojavry.coreapi.errorcase.attachment.config.PresignTtlProperties
 import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.case.application.command.UpdateErrorCaseCommand
+import org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.CountMyCasesByStatusUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.CreateErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.DeleteErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseAccessDeniedException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
+import org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ListErrorCasesUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RegisterCaseViewUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveCaseFromWatchlistUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase
+import org.studieojavry.coreapi.errorcase.case.application.usecase.UnmarkCaseMeTooUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.UpdateErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAccessDeniedException
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request.CreateErrorCaseRequest
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request.UpdateErrorCaseRequest
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.CreateErrorCaseResponse
@@ -55,16 +68,30 @@ class ƒErrorCaseController(
     private val updateErrorCaseUseCase: UpdateErrorCaseUseCase,
     private val deleteErrorCaseUseCase: DeleteErrorCaseUseCase,
     private val listErrorCasesUseCase: ListErrorCasesUseCase,
-    private val searchPublicErrorCasesUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase,
-    private val addErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddErrorCaseTagUseCase,
-    private val removeErrorCaseTagUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveErrorCaseTagUseCase,
-    private val markCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase,
-    private val unmarkCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.UnmarkCaseMeTooUseCase,
-    private val getCaseMeTooUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase,
-    private val registerCaseViewUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RegisterCaseViewUseCase,
-    private val addCaseToWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase,
-    private val removeCaseFromWatchlistUseCase: org.studieojavry.coreapi.errorcase.case.application.usecase.RemoveCaseFromWatchlistUseCase,
+    private val searchPublicErrorCasesUseCase: SearchPublicErrorCasesUseCase,
+    private val addErrorCaseTagUseCase: AddErrorCaseTagUseCase,
+    private val removeErrorCaseTagUseCase: RemoveErrorCaseTagUseCase,
+    private val markCaseMeTooUseCase: MarkCaseMeTooUseCase,
+    private val unmarkCaseMeTooUseCase: UnmarkCaseMeTooUseCase,
+    private val getCaseMeTooUseCase: GetCaseMeTooUseCase,
+    private val registerCaseViewUseCase: RegisterCaseViewUseCase,
+    private val addCaseToWatchlistUseCase: AddCaseToWatchlistUseCase,
+    private val removeCaseFromWatchlistUseCase: RemoveCaseFromWatchlistUseCase,
+    private val countMyCasesByStatusUseCase: CountMyCasesByStatusUseCase,
+    private val attachmentPresigner: AttachmentPresigner,
+    private val presignTtl: PresignTtlProperties,
 ) {
+
+    /**
+     * 가시성별 TTL 로 첨부 objectKey → (inline URL, download URL) presign.
+     * 상세 조회는 이미 read 권한을 통과한 뒤라(가시성 검사 완료) 이 시점 발급이 안전하다.
+     */
+    private fun attachmentUrlResolver(visibility: Visibility) =
+        ErrorCaseDetailResponse.AttachmentUrlResolver { objectKey ->
+            val ttl = if (visibility == Visibility.PUBLIC)
+                presignTtl.publicTtl else presignTtl.restrictedTtl
+            attachmentPresigner.viewUrl(objectKey, ttl) to attachmentPresigner.downloadUrl(objectKey, ttl)
+        }
 
     @Operation(
         summary = "에러 케이스 생성",
@@ -92,7 +119,7 @@ class ƒErrorCaseController(
             """)])]
         ),
         ApiResponse(
-            responseCode = "400", description = "잘못된 입력 (검증 실패 / 미존재 marker / 타인 소유 marker / 이미 연결된 marker / severity 범위 밖)",
+            responseCode = "400", description = "잘못된 입력 (검증 실패 / 미존재 marker / 타인 소유 marker / 이미 연결된 marker)",
             content = [Content(examples = [ExampleObject(value = """
                 {"type":"about:blank","title":"Bad Request","status":400,"detail":"snippet(s) not owned by requester: [7a7d35e9]","instance":"/api/v1/error-cases"}
             """)])]
@@ -122,7 +149,6 @@ class ƒErrorCaseController(
                     snippetMarkerIds = request.snippetMarkerIds,
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     workspaceId = request.workspaceId,
-                    severityCode = request.severity,
                     tags = request.tags,
                     occurredAt = request.occurredAt,
                     visibility = request.visibility,
@@ -161,7 +187,6 @@ class ƒErrorCaseController(
 
             **필터**(선택, 모두 AND)
             - `status` — `OPEN`/`IN_PROGRESS`/`RESOLVED` 등(`ErrorCaseStatus`). 잘못된 값 → 400.
-            - `severity` — 1..4(`@Min/@Max` 미적용; 잘못된 값은 빈 결과).
             - `fingerprint` — 동일 지문(중복 사례 묶어보기).
         """
     )
@@ -176,14 +201,22 @@ class ƒErrorCaseController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "워크스페이스 ID — 지정 시 그 워크스페이스 전체, 미지정 시 본인 케이스") @RequestParam(required = false) workspaceId: Long?,
         @Parameter(description = "케이스 상태 (OPEN/IN_PROGRESS/RESOLVED 등)", example = "OPEN") @RequestParam(required = false) status: String?,
-        @Parameter(description = "심각도 코드 1(S1)~4(S4)", example = "2") @RequestParam(required = false) severity: Int?,
         @Parameter(description = "fingerprint(SHA-256 hex). 같은 에러 묶어보기") @RequestParam(required = false) fingerprint: String?,
+        @Parameter(description = "visibility 필터 (PUBLIC/WORKSPACE/PRIVATE)", example = "PUBLIC") @RequestParam(required = false) visibility: String?,
+        @Parameter(description = "검색어 — title 또는 tag 부분 매치 (case-insensitive).") @RequestParam(required = false) q: String?,
+        @Parameter(description = "정렬 · `created` (default, createdAt DESC) / `updated` (updatedAt DESC — 최근 활동 순).")
+        @RequestParam(required = false, defaultValue = "created") sort: String,
         @Parameter(description = "다음 페이지 커서(이전 응답의 nextCursor)") @RequestParam(required = false) cursor: String?,
-        @Parameter(description = "페이지 크기(기본 20, 최대 100)", example = "20") @RequestParam(required = false, defaultValue = "20") size: Int
+        @Parameter(description = "페이지 크기(기본 20, 최대 100). `size` 는 deprecated 별칭.") @RequestParam(required = false) limit: Int?,
+        @Parameter(description = "[deprecated] `limit` 사용. 하위호환 유지.", deprecated = true) @RequestParam(required = false, defaultValue = "20") size: Int,
     ): ErrorCaseListResponse {
         val parsedStatus = status?.takeIf { it.isNotBlank() }?.let {
             runCatching { ErrorCaseStatus.valueOf(it.uppercase()) }
                 .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid status: $status") }
+        }
+        val parsedVisibility = visibility?.takeIf { it.isNotBlank() }?.let {
+            runCatching { Visibility.valueOf(it.uppercase()) }
+                .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid visibility: $visibility") }
         }
         val result = try {
             listErrorCasesUseCase.invoke(
@@ -191,10 +224,12 @@ class ƒErrorCaseController(
                     requesterUserId = userId,
                     workspaceId = workspaceId,
                     status = parsedStatus,
-                    severity = severity,
                     fingerprint = fingerprint,
+                    visibility = parsedVisibility,
                     cursor = cursor,
-                    size = size
+                    size = limit ?: size,   // limit 우선, 없으면 size(deprecated) 하위호환
+                    q = q?.trim()?.takeIf { it.isNotBlank() },
+                    sortBy = org.studieojavry.coreapi.errorcase.case.application.port.SortBy.fromCode(sort),
                 )
             )
         } catch (e: ErrorCaseAccessDeniedException) {
@@ -208,6 +243,42 @@ class ƒErrorCaseController(
     }
 
     @Operation(
+        summary = "내 (혹은 워크스페이스) 케이스의 status 별 개수",
+        description = """
+            Library > My cases 페이지의 status filter chip 카운트용.
+            list 와 동일한 필터 (workspaceId / q) 적용 · status 는 groupBy 대상이라 필터 X.
+            응답은 3 status (OPEN / IN_PROGRESS / RESOLVED) 모두 포함 (없으면 0) + total.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "워크스페이스 비멤버", content = [Content()])
+    )
+    @GetMapping("/status-counts")
+    fun statusCounts(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "워크스페이스 ID — 미지정 시 본인 케이스") @RequestParam(required = false) workspaceId: Long?,
+        @Parameter(description = "검색어 — title 또는 tag 부분 매치.") @RequestParam(required = false) q: String?,
+    ): org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.StatusCountsResponse {
+        val result = try {
+            countMyCasesByStatusUseCase.invoke(
+                CountMyCasesByStatusUseCase.Input(
+                    requesterUserId = userId,
+                    workspaceId = workspaceId,
+                    q = q?.trim()?.takeIf { it.isNotBlank() },
+                )
+            )
+        } catch (e: ErrorCaseAccessDeniedException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        }
+        return org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.StatusCountsResponse(
+            byStatus = result.byStatus.mapKeys { it.key.name },
+            total = result.total,
+        )
+    }
+
+    @Operation(
         summary = "공개 에러 케이스 검색 (cursor 무한스크롤)",
         description = """
             `visibility=PUBLIC` 인 모든 케이스를 cursor 기반으로 조회. 인증된 사용자라면 누구나.
@@ -217,7 +288,6 @@ class ƒErrorCaseController(
 
             **필터** (선택, 모두 AND, 향후 확장)
             - `status` — `OPEN`/`IN_PROGRESS`/`RESOLVED` 등. 잘못된 값 → 400.
-            - `severity` — 1..4.
             - `fingerprint` — 같은 지문 묶어보기.
 
             **응답** — 본인 목록과 동일 schema(`ErrorCaseSummaryResponse`) — `tags`, `descriptionPreview` 포함.
@@ -233,7 +303,6 @@ class ƒErrorCaseController(
     fun searchPublic(
         @Parameter(hidden = true) @AuthenticationPrincipal viewerUserId: Long?,
         @Parameter(description = "케이스 상태 (OPEN/IN_PROGRESS/RESOLVED 등)", example = "OPEN") @RequestParam(required = false) status: String?,
-        @Parameter(description = "심각도 코드 1(S1)~4(S4)", example = "2") @RequestParam(required = false) severity: Int?,
         @Parameter(description = "fingerprint(SHA-256 hex)") @RequestParam(required = false) fingerprint: String?,
         @Parameter(description = "다음 페이지 커서") @RequestParam(required = false) cursor: String?,
         @Parameter(description = "페이지 크기(기본 20, 최대 100)", example = "20") @RequestParam(required = false, defaultValue = "20") size: Int,
@@ -243,9 +312,8 @@ class ƒErrorCaseController(
                 .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid status: $status") }
         }
         val result = searchPublicErrorCasesUseCase.invoke(
-            org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase.Input(
+            SearchPublicErrorCasesUseCase.Input(
                 status = parsedStatus,
-                severity = severity,
                 fingerprint = fingerprint,
                 cursor = cursor,
                 size = size,
@@ -295,6 +363,7 @@ class ƒErrorCaseController(
         return ErrorCaseDetailResponse.from(
             errorCase,
             ErrorCaseDetailResponse.MeTooDto(mt.count, mt.taggedByMe, mt.userIds),
+            attachmentUrlResolver(errorCase.visibility),
         )
     }
 
@@ -414,7 +483,7 @@ class ƒErrorCaseController(
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수정 후 전체 애그리거트 반환"),
         ApiResponse(
-            responseCode = "400", description = "잘못된 입력 (severity 범위 밖 / 미존재·타인 소유·이미 연결된 marker)",
+            responseCode = "400", description = "잘못된 입력 (미존재·타인 소유·이미 연결된 marker)",
             content = [Content(examples = [ExampleObject(value = """
                 {"type":"about:blank","title":"Bad Request","status":400,"detail":"unknown snippet marker(s): [nope_xyz]","instance":"/api/v1/error-cases/15"}
             """)])]
@@ -438,7 +507,6 @@ class ƒErrorCaseController(
                     project = request.project,
                     paste = request.paste,
                     description = request.description,
-                    severityCode = request.severity,
                     tags = request.tags,
                     snippetMarkerIds = request.snippetMarkerIds,
                     attachmentMarkerIds = request.attachmentMarkerIds,
@@ -456,7 +524,7 @@ class ƒErrorCaseController(
             // 도메인 transitionTo 의 require 위반(허용되지 않은 상태 전이 등)
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
         }
-        return ErrorCaseDetailResponse.from(updated)
+        return ErrorCaseDetailResponse.from(updated, attachmentUrls = attachmentUrlResolver(updated.visibility))
     }
 
     @Operation(

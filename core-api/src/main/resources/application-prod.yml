@@ -1,0 +1,113 @@
+# ===================================================================
+# prod — production. 가장 엄격.
+# - DB: prod PostgreSQL. 접속 정보 + 내부 인증 키는 모두 ENV/Secret 로 주입(평문 금지).
+# - ddl-auto: validate. 스키마 변경은 Flyway 마이그레이션(db/migration)으로만.
+# - S3/첨부 설정은 base application.yml 의 ${CORE_ATTACHMENT_S3_*} 로 이미 ENV 주입됨.
+# - actuator 최소 노출 + 에러 메시지 차단.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false    # 신규 DB 전제. 이미 스키마가 있는 DB 에 처음 도입할 땐 true + baseline-version 지정
+
+  datasource:
+    url: ${CORE_DB_URL}
+    username: ${CORE_DB_USERNAME}
+    password: ${CORE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:                       # DB Connection Pool (HikariCP)
+      # ★ 무료티어 PG 1인스턴스(max_connections=100)에 5개 서비스 공유 → 풀 합계가 100 을 넘으면 안 됨.
+      #   배분: core 18 / iam 15 / publish·noti·insight 10 = 합 63 (예약·Flyway·모니터링 여유 확보).
+      maximum-pool-size: 18       # core = 메인 API(가장 무거움)
+      minimum-idle: 2             # 한가할 때 상시 커넥션 최소화(무료티어 RAM 절약)
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 절대 update/create 금지
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all                    # prod 는 유실 방지 위해 all
+      properties:
+        delivery.timeout.ms: 8000  # 한 번의 전송 시도에서 브로커의 응답 (ack) 울 기다리는 최대 시간
+        request.timeout.ms: 5000   # send() 호출부터 최종 성공/포기까지의 전체 마감시간 (재시도·대기 다 포함)
+
+# outbox → kafka 로 알림 발행
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+# 첨부 스토리지 = OCI Object Storage (S3 호환 API).
+#  - endpoint: https://<namespace>.compat.objectstorage.<region>.oraclecloud.com  (internal=public 동일)
+#  - access/secret: OCI 콘솔 > Identity > 내 프로필 > Customer Secret Keys 로 발급한 키 (OCI API 서명키 아님)
+#  - path-style: OCI 호환은 true 권장
+core:
+  attachment:
+    s3:
+      bucket: ${CORE_ATTACHMENT_BUCKET}
+      region: ${CORE_ATTACHMENT_REGION}                        # 예: ap-chuncheon-1 / ap-seoul-1
+      endpoint-internal: ${CORE_ATTACHMENT_S3_ENDPOINT}        # OCI 호환 endpoint
+      endpoint-public: ${CORE_ATTACHMENT_S3_ENDPOINT_PUBLIC:${CORE_ATTACHMENT_S3_ENDPOINT}}
+      path-style: ${CORE_ATTACHMENT_S3_PATH_STYLE:true}
+      access-key: ${CORE_ATTACHMENT_S3_ACCESS_KEY}             # OCI Customer Secret Key (access)
+      secret-key: ${CORE_ATTACHMENT_S3_SECRET_KEY}             # OCI Customer Secret Key (secret)
+  # core → iam-api 호출(작성자/워크스페이스/팔로우 조회) 대상. prod 필수 — 기본값 없이 강제:
+  # CORE_IAM_API_BASE_URL 미설정 시 부팅 실패로 조기 발견(localhost 로 조용히 실패하는 것 방지).
+  iam-api:
+    base-url: ${CORE_IAM_API_BASE_URL}
+
+# 내부 서비스 인증 — 키는 ENV 주입(평문 금지).
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: core-api
+    key-id: ${CORE_INTERNAL_ISSUER_KEY_ID:core-api}
+    private-key-pem: ${CORE_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: core-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      publish-api: ${INTERNAL_AUTH_PUBLISH_API_PUBLIC_KEY}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /internal/actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true                    # /health/liveness, /health/readiness (k8s 프로브)
+
+# C5: 운영에선 API 문서/Swagger UI 비공개(내부 구조 노출 차단). 내부 문서가 필요하면 gateway 레벨에서 제한적으로 열 것.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never

@@ -12,7 +12,6 @@ data class CreateErrorCaseCommand(
     val snippetMarkerIds: List<String>,
     val attachmentMarkerIds: List<String>,
     val workspaceId: Long?,
-    val severityCode: Int?,
     val tags: List<String>?,
     val occurredAt: LocalDateTime?,
     /** 가시성. 기본 PUBLIC. WORKSPACE 는 workspaceId 필수. workspaceId 있는 PUBLIC 은 워크스페이스 ADMIN 만. */

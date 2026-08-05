@@ -11,8 +11,8 @@ class Attachment(
     val contentType: String,
     val size: Long,
     val kind: AttachmentKind,
-    val storageUrl: String,
-    val previewText: String?,
+    /** 스토리지 오브젝트 키(예: `attachments/f0/f0c12ab9`). 절대 URL 은 조회 시 presign 으로 생성. */
+    val objectKey: String,
     val uploadedByUserId: Long,
     val uploadedAt: Instant,
     val errorCaseId: Long? = null
@@ -22,7 +22,7 @@ class Attachment(
         require(fileName.isNotBlank()) { "fileName must not be blank" }
         require(contentType.isNotBlank()) { "contentType must not be blank" }
         require(size >= 0) { "size must be greater than or equal to zero" }
-        require(storageUrl.isNotBlank()) { "storageUrl must not be blank" }
+        require(objectKey.isNotBlank()) { "objectKey must not be blank" }
         require(uploadedByUserId > 0) { "uploadedByUserId must be positive" }
     }
 

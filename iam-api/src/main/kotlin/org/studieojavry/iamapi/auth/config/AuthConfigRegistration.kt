@@ -6,11 +6,10 @@ import org.springframework.context.annotation.Configuration
 @Configuration
 @EnableConfigurationProperties(
     JwtProperties::class,
-    AuthCookieProperties::class,
     OAuthProperties::class,
-    AvatarStorageProperties::class,
+    AuthCookieProperties::class,
     AccountDeletionProperties::class,
-    org.studieojavry.iamapi.workspace.config.InvitationEmailProperties::class,
-    org.studieojavry.iamapi.workspace.config.WorkspaceProperties::class,
+    AvatarStorageProperties::class,
+    AvatarS3Properties::class,
 )
 class AuthConfigRegistration

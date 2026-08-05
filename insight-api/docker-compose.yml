@@ -1,6 +1,5 @@
-# insight-api 인프라 — PostgreSQL + Kafka.
-# noti-api 가 dev 에 아직 없으므로 kafka broker 도 *여기서* 함께 띄운다.
-# 향후 noti-api 가 dev 에 도입되면 노티의 docker-compose 와 broker 정의 중복 정리.
+# insight-api 전용 인프라 — PostgreSQL 만.
+# Kafka broker 는 noti-api/docker-compose.yml 의 것을 *공유* (localhost:9094) — 같이 띄울 것.
 services:
   insight-postgres:
     image: postgres:16-alpine

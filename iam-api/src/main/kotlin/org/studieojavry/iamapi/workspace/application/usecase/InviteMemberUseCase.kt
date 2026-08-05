@@ -1,11 +1,12 @@
 package org.studieojavry.iamapi.workspace.application.usecase
 
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.iamapi.shared.notification.application.port.NotificationPublisherPort
 import org.studieojavry.iamapi.shared.util.HashUtils
 import org.studieojavry.iamapi.workspace.application.command.InviteMemberCommand
-import org.studieojavry.iamapi.workspace.application.port.InvitationEmailSenderPort
+import org.studieojavry.iamapi.workspace.application.event.WorkspaceInvitationEmailRequested
 import org.studieojavry.iamapi.workspace.application.port.InvitationTokenGeneratorPort
 import org.studieojavry.iamapi.workspace.application.port.MemberSummaryReaderPort
 import org.studieojavry.iamapi.workspace.application.port.WorkspaceInvitationRepositoryPort
@@ -23,7 +24,7 @@ class InviteMemberUseCase(
     private val memberRepository: WorkspaceMemberRepositoryPort,
     private val invitationRepository: WorkspaceInvitationRepositoryPort,
     private val tokenGenerator: InvitationTokenGeneratorPort,
-    private val emailSender: InvitationEmailSenderPort,
+    private val eventPublisher: ApplicationEventPublisher,
     private val memberSummaryReader: MemberSummaryReaderPort,
     private val properties: WorkspaceProperties,
     private val notificationPublisher: NotificationPublisherPort,
@@ -79,12 +80,17 @@ class InviteMemberUseCase(
 
         if (command.type == InvitationType.EMAIL) {
             val inviter = memberSummaryReader.findSummaries(listOf(command.actorUserId)).firstOrNull()
-            emailSender.send(
-                toEmail = command.email!!,
-                workspaceName = workspace.name.value,
-                invitedByDisplayName = inviter?.displayName ?: "iam",
-                role = command.role,
-                acceptUrl = acceptUrl
+            // 커밋 후(AFTER_COMMIT) 비동기 발송. 트랜잭션/DB 커넥션을 SMTP I/O 동안 붙잡지 않고,
+            // 발송 실패가 초대 저장을 롤백하지 않는다. → WorkspaceInvitationEmailListener
+            eventPublisher.publishEvent(
+                WorkspaceInvitationEmailRequested(
+                    toEmail = command.email!!,
+                    workspaceName = workspace.name.value,
+                    invitedByDisplayName = inviter?.displayName ?: "iam",
+                    role = command.role,
+                    acceptUrl = acceptUrl,
+                    expiresAt = expiresAt,
+                )
             )
         }
 

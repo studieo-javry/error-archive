@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.errorcase.comment.infrastructure.jpa.adapter
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import java.time.LocalDateTime
 import org.studieojavry.coreapi.errorcase.comment.domain.model.Comment
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentHelpful
 import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentMention
@@ -49,15 +50,32 @@ class CommentRepositoryAdapter(
         commentJpa.deleteAllByErrorCaseId(errorCaseId)
     }
 
-    override fun findRecentByAuthor(authorUserId: Long, since: java.time.LocalDateTime, limit: Int) =
-        commentJpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
+    // ── Recent Activity ───────────────────────────────────────
+    override fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int) =
+        commentJpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit))
+            .map { it.toDomain() }
 
-    override fun countByAuthorSince(authorUserId: Long, since: java.time.LocalDateTime): Long =
-        commentJpa.countByAuthorSince(authorUserId, since)
+    override fun findMaxCreatedAtByCaseIds(caseIds: Collection<Long>): Map<Long, LocalDateTime> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return commentJpa.findMaxCreatedAtGrouped(caseIds).associate { it.errorCaseId to it.value }
+    }
+
+    override fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return commentJpa.countGrouped(caseIds).associate { it.errorCaseId to it.count }
+    }
+
+    override fun countSinceExcludingAuthor(errorCaseId: Long, since: LocalDateTime, excludeUserId: Long): Long =
+        commentJpa.countSinceExcludingAuthor(errorCaseId, since, excludeUserId)
+
+    override fun countByCaseIdsSince(caseIds: Collection<Long>, since: LocalDateTime): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return commentJpa.countByCaseIdsSinceGrouped(caseIds, since).associate { it.errorCaseId to it.count }
+    }
 
     override fun findActivitiesByCaseIdsSince(
         caseIds: Collection<Long>,
-        globalSince: java.time.LocalDateTime,
+        globalSince: LocalDateTime,
     ): List<org.studieojavry.coreapi.errorcase.case.application.port.CaseActivityRow> {
         if (caseIds.isEmpty()) return emptyList()
         return commentJpa.findActivitiesByCaseIdsSince(caseIds, globalSince).map {
@@ -70,6 +88,9 @@ class CommentRepositoryAdapter(
             )
         }
     }
+
+    override fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long =
+        commentJpa.countByAuthorSince(authorUserId, since)
 
     // ── Reactions ──────────────────────────────────────────────
     override fun findReactionsByCommentIds(commentIds: List<Long>): List<CommentReaction> =

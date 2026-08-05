@@ -30,14 +30,22 @@ class SecurityConfig {
         http: HttpSecurity,
         internalTokenFilter: InternalTokenAuthenticationFilter,
         devHeaderAuthFilter: ObjectProvider<DevHeaderAuthFilter>,
+        devCorsSource: ObjectProvider<org.springframework.web.cors.UrlBasedCorsConfigurationSource>,
         authEntryPoint: ProblemDetailAuthenticationEntryPoint,
         accessDeniedHandler: ProblemDetailAccessDeniedHandler,
     ): SecurityFilterChain {
         http
             .csrf { it.disable() }
+            .cors { c ->
+                // local profile 한정으로 DevCorsConfig 가 source 주입. 그 외 환경에선 비활성.
+                devCorsSource.ifAvailable { c.configurationSource(it) }
+            }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/actuator/health").permitAll()
+                auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    // prod 는 base-path=/internal/actuator → health/liveness/readiness 프로브가 이 경로.
+                    // k8s kubelet 프로브(토큰 없음)가 200 을 받으려면 인증 없이 열려야 한다.
+                    .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
                     .requestMatchers("/error").permitAll()
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람. (실제 API 호출은 X-Internal-Auth 필요)
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

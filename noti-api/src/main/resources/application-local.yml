@@ -1,0 +1,94 @@
+# ===================================================================
+# local — 개발자 로컬 머신.
+# - DB: docker-compose 의 PostgreSQL (localhost:5434, noti_db)
+# - JWT: gateway 가 보낸 internal JWT 검증 (aud=noti-api)
+# - 8082 포트로 바인드 (gateway=8000, iam=8080, core=8081 다음)
+# ===================================================================
+
+server:
+  port: 8082
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  kafka:
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}"
+    consumer:
+      group-id: noti-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+  # SMTP — 로컬 mailhog. ENV 로 실제 SES/SendGrid 로 즉시 전환.
+  mail:
+    host: "${NOTI_MAIL_HOST:localhost}"
+    port: "${NOTI_MAIL_PORT:1026}"
+    username: "${NOTI_MAIL_USERNAME:}"
+    password: "${NOTI_MAIL_PASSWORD:}"
+    properties:
+      mail.smtp.auth: "${NOTI_MAIL_SMTP_AUTH:false}"
+      mail.smtp.starttls.enable: "${NOTI_MAIL_STARTTLS:false}"
+
+  flyway:
+    enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
+  datasource:
+    url: jdbc:postgresql://localhost:5434/noti_db
+    username: noti
+    password: noti_local_pw
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+logging:
+  level:
+    org.studieojavry: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# 내부 서비스 인증
+#   verifier  — gateway / core-api 가 보낸 토큰(aud=noti-api) 검증
+#   issuer    — noti-api 가 iam-api 로 user contact 조회 시 발급 (aud=iam-api)
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: noti-api
+    key-id: noti-api-local-1
+    private-key-pem: ${NOTI_API_INTERNAL_AUTH_PRIVATE_KEY_PEM}
+  verifier:
+    audience: noti-api
+    known-issuers:
+      gateway: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhxsFs6rmfdy+m9r0YJPy
+        HVH05WHM5gcMA/Y+mbnBrbSr1WcKuQOURCSodNMCQ6ixtrxFD2W7tsFKntAbEXMD
+        ujs7TOg7B7hHJ9S9lNptkPZDYmgC1UxAu3x122BzTEigbb4ODm/nn1q0CloUDjAj
+        4aeB6xojBIrUfQpsNr6Mu2tv/2Rqg1f5U0TzKhF7+73j841rfMEK8lX6GuBIi14i
+        wYOlKwiiGF7NSjBg1e1CCojgYw8ng2SPqAvz1cTy1oUU8q5TULxJFeJyz3mxEcEe
+        RdrVOiT/uX5kSjMbCkgHOtZzt8CxcMv+pqtf6buHbaHUIqupfLqn7OtoOlap1mRr
+        +QIDAQAB
+        -----END PUBLIC KEY-----
+      core-api: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjll4n4g+5jzJVPtqV0x6
+        CgA2IOlzbVt+e98OaJJkuIlOOgiFYLOLWz7BJNgov2EBsQ6GRqznndLwEwCc0ubx
+        bEXQ9UifgxQgA7UiilD8YzxgfLcSLEUdfZjMSI6WUqs7ml0BRdBDLRUDgwgTjRA8
+        /5LvbZ/qQvX9/gUvyRWyVOAA7t4lAQ71/2NFdZl6+6NjugcrYTDuO+tfwWiLXvEs
+        6NBHrDY9CrD4vuqmHJ3vVf/ovrOw+QiwhjU888QCectd0XBo1MuDmWOGcbGB8yx7
+        4I0qEDR9xsf12+iDK7lNTrNDJ0m6XLoXJI2W3/96ns6D57rTqbAZUsHqkEAbSdpI
+        twIDAQAB
+        -----END PUBLIC KEY-----
+
+# base yml 에서 iam-api base-url 기본값을 뺐으므로 local 은 여기서 concrete 값 제공(iam-api 포트 8080).
+noti:
+  iam-api:
+    base-url: "http://localhost:8080"

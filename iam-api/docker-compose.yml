@@ -1,0 +1,41 @@
+services:
+  iam-postgres:
+    image: postgres:16-alpine
+    container_name: iam-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: iam_db
+      POSTGRES_USER: iam
+      POSTGRES_PASSWORD: iam_local_pw   # dev only — 운영에선 secret manager에서 주입
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - iam-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iam -d iam_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      - "postgres"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_min_duration_statement=200"
+
+  # 로컬 메일 캡처 서버 — 실제 외부로는 전송되지 않고 web UI 에서 수신 메일 확인.
+  # SMTP    : localhost:1025
+  # web UI  : http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: iam-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  iam-postgres-data:
+    name: iam-postgres-data

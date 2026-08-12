@@ -1,0 +1,79 @@
+# ===================================================================
+# stg — staging. 운영과 동일 정책, 로깅/풀만 완화.
+# 비밀·키는 prod 와 동일하게 ENV/Secret 주입.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+  datasource:
+    url: ${CORE_DB_URL}
+    username: ${CORE_DB_USERNAME}
+    password: ${CORE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 운영과 동일 — Flyway 로만 스키마 변경
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: core-api
+    key-id: ${CORE_INTERNAL_ISSUER_KEY_ID:core-api}
+    private-key-pem: ${CORE_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: core-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      publish-api: ${INTERNAL_AUTH_PUBLISH_API_PUBLIC_KEY}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+# C4: core → iam-api 호출 대상. stg 도 필수 env(기본값 없이 강제).
+core:
+  iam-api:
+    base-url: ${CORE_IAM_API_BASE_URL}
+
+# C2: k8s liveness/readiness 프로브 그룹 활성.
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+# C5: 운영 계열이므로 stg 도 API 문서/Swagger UI 비공개.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

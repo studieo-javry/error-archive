@@ -1,0 +1,65 @@
+# ===================================================================
+# stg — staging. 운영과 동일 정책, 로깅/풀만 완화. 비밀·키는 ENV/Secret 주입.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+  datasource:
+    url: ${INSIGHT_DB_URL}
+    username: ${INSIGHT_DB_USERNAME}
+    password: ${INSIGHT_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 운영과 동일 — Flyway 로만 스키마 변경
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: insight-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: insight-api
+    key-id: ${INSIGHT_INTERNAL_ISSUER_KEY_ID:insight-api}
+    private-key-pem: ${INSIGHT_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: insight-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      core-api: ${INTERNAL_AUTH_CORE_API_PUBLIC_KEY}
+
+# I2: insight → iam-api(timezone) 대상. stg 도 필수 env(기본값 없이 강제).
+insight:
+  iam-api:
+    base-url: ${INSIGHT_IAM_API_BASE_URL}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+# I1: k8s liveness/readiness 프로브 그룹 활성.
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true

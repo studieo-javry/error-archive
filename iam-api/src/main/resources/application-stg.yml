@@ -1,0 +1,117 @@
+# ===================================================================
+# stg — staging. 운영 직전 검증 환경.
+# - DB: stg RDS. 접속 정보는 모두 env 주입.
+# - Secret: env / Secrets Manager.
+# - HTTPS: cookie secure=true.
+# - ★ ddl-auto: validate. 스키마 변경은 Flyway 마이그레이션으로만.
+# - 운영급 풀 크기 + monitoring endpoint 노출.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false   # 신규 DB 전제. 이미 스키마가 있는 DB 에 처음 도입할 땐 true + baseline-version 지정
+
+  # C2: outbox relayer 가 알림/활동 이벤트를 Kafka 로 발행 (iam 은 producer)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
+  datasource:
+    url: ${IAM_DB_URL}
+    username: ${IAM_DB_USERNAME}
+    password: ${IAM_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 4
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                       # ★ 운영과 동일한 정책으로 검증
+    show-sql: false
+
+  mail:
+    host: ${IAM_MAIL_HOST}
+    port: ${IAM_MAIL_PORT:587}
+    username: ${IAM_MAIL_USERNAME}
+    password: ${IAM_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+iam:
+  # H1: 아바타 = S3 호환(MinIO/OCI). local 만 디스크, 그 외는 이 설정 사용.
+  avatar:
+    public-base-url: ${IAM_AVATAR_PUBLIC_BASE_URL}
+    s3:
+      bucket: ${IAM_AVATAR_BUCKET}
+      region: ${IAM_AVATAR_REGION}
+      endpoint: ${IAM_AVATAR_S3_ENDPOINT}
+      path-style: ${IAM_AVATAR_S3_PATH_STYLE:true}
+      access-key: ${IAM_AVATAR_S3_ACCESS_KEY}
+      secret-key: ${IAM_AVATAR_S3_SECRET_KEY}
+  jwt:
+    secret: ${IAM_JWT_SECRET}
+    issuer: "https://iam.stg.studieo-javry.com"
+    audience: "stg-clients"
+  oauth:
+    github:
+      client-id: ${GITHUB_OAUTH_CLIENT_ID}
+      client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+  cookie:
+    secure: true
+    same-site: Lax
+    domain: ".stg.studieo-javry.com"
+  workspace:
+    invite-base-url: "https://app.stg.studieo-javry.com/invitations"
+  email:
+    provider: smtp
+    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@stg.studieo-javry.com}
+    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (stg)}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true                          # /health/liveness, /health/readiness (k8s probe)
+# C2: outbox → kafka 로 알림/활동 이벤트 발행 (local 에만 있던 설정을 운영에도).
+#     미설정 시 NoOp fallback 이라 팔로우·초대 알림 + 잔디(activity) 가 발행되지 않음.
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+# C1: 내부 서비스 인증 verifier — gateway/core/noti/insight/publish 가 보낸 내부 JWT(X-Internal-Auth) 검증.
+#     이 블록이 없으면 다른 서비스의 iam 내부 엔드포인트 호출이 전부 인증 실패한다.
+#     값은 공개키(비밀 아님)지만 회전 편의를 위해 env 주입.
+internal-auth:
+  verifier:
+    audience: iam-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      core-api: ${INTERNAL_AUTH_CORE_API_PUBLIC_KEY}
+      noti-api: ${INTERNAL_AUTH_NOTI_API_PUBLIC_KEY}
+      insight-api: ${INTERNAL_AUTH_INSIGHT_API_PUBLIC_KEY}
+      publish-api: ${INTERNAL_AUTH_PUBLISH_API_PUBLIC_KEY}

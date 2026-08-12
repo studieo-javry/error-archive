@@ -1,0 +1,79 @@
+# ===================================================================
+# core-api 공통 베이스 — 모든 환경에서 동일한 값만.
+# 환경별 차이는 application-{local|dev|stg|prod}.yml 에 분리.
+# ===================================================================
+
+spring:
+  application:
+    name: core-api
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+server:
+  forward-headers-strategy: framework
+  # service-to-service internal endpoint (`/internal/error-cases/{id}/full-data`) 와
+  # 공개 검색 API 의 JSON 응답이 수십 KB 까지 커질 수 있어 gzip 활성화.
+  # 1 KB 미만은 압축 비용 > 절약 byte 라 skip.
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/html,text/css,text/javascript,application/javascript
+    min-response-size: 1024
+
+iam:
+  jwt:
+    # 모든 환경 공통 (iam-api 가 발급한 토큰 검증용)
+    audience: ${IAM_JWT_AUDIENCE:local-clients}
+
+core:
+  attachment:
+    # 미연결(orphan) 첨부 GC — 폼 이탈/크래시로 케이스에 안 묶인 첨부 정리.
+    orphan-ttl: ${CORE_ATTACHMENT_ORPHAN_TTL:24h}
+    orphan-gc-batch-size: ${CORE_ATTACHMENT_ORPHAN_GC_BATCH:500}
+    # S3 호환 스토리지. prod=OCI Object Storage(S3 호환 API), stg·local=MinIO. endpoint-internal(앱→스토리지) 과
+    # endpoint-public(브라우저→스토리지, presigned URL 호스트) 을 분리한다.
+    s3:
+      bucket: ${CORE_ATTACHMENT_BUCKET:error-archive-attachments}
+      region: ${CORE_ATTACHMENT_REGION:us-east-1}
+      endpoint-internal: ${CORE_ATTACHMENT_S3_ENDPOINT_INTERNAL:http://localhost:9000}
+      endpoint-public: ${CORE_ATTACHMENT_S3_ENDPOINT_PUBLIC:http://localhost:9000}
+      path-style: ${CORE_ATTACHMENT_S3_PATH_STYLE:true}
+      access-key: ${CORE_ATTACHMENT_S3_ACCESS_KEY:minioadmin}
+      secret-key: ${CORE_ATTACHMENT_S3_SECRET_KEY:minioadmin}
+    presign:
+      # 가시성별 presigned URL 만료. PUBLIC 은 길게, WORKSPACE/PRIVATE 은 짧게.
+      public-ttl: ${CORE_ATTACHMENT_PRESIGN_PUBLIC_TTL:15m}
+      restricted-ttl: ${CORE_ATTACHMENT_PRESIGN_RESTRICTED_TTL:5m}
+  iam-api:
+    # 기본값(localhost) 없음 — prod 에서 env 미설정 시 fail-fast(IamApiProperties @Pattern).
+    # local=application-local.yml, test=application-test.yml 이 concrete 값 제공.
+    base-url: ${CORE_IAM_API_BASE_URL}
+  # noti-api base-url — @ConfigurationPropertiesScan 이 NotiApiProperties(@NotBlank baseUrl) 를
+  # 무조건 바인딩·검증하므로 *모든 프로파일*에 값이 있어야 부팅 가능(local 에만 두면 stg/prod 부팅 실패).
+  # prod 는 kafka 발행이라 이 RestClient 는 미사용이지만, 프로퍼티 자체는 존재해야 함.
+  noti-api:
+    base-url: ${CORE_NOTI_API_BASE_URL:http://localhost:8082}
+
+# 알림 publisher 기본값 — 명시 안 하면 `http` (직접 RestClient). local 은 yml override 로 kafka.
+# default 가 없으면 어느 adapter 도 활성화되지 않아 createCommentUseCase 가 깨진다.
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:http}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+# 로깅 레벨은 프로파일별 yml 에서 지정.
+#  - org.springframework.security: DEBUG 는 인증 세부(토큰/필터 체인)를 찍으므로 local 전용.
+#    베이스에 두면 prod(root=WARN) 에서도 Security 만 DEBUG 로 새어나간다.

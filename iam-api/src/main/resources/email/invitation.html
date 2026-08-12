@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>워크스페이스 초대</title>
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f6f7f9;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;padding:40px 48px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+          <tr>
+            <td>
+              <h1 style="margin:0 0 24px 0;font-size:20px;color:#111827;font-weight:600;">
+                {{workspaceName}} 워크스페이스에 초대되었어요
+              </h1>
+              <p style="margin:0 0 16px 0;font-size:14px;color:#374151;line-height:1.6;">
+                <strong>{{invitedByDisplayName}}</strong> 님이 당신을 <strong>{{workspaceName}}</strong> 워크스페이스에
+                <strong>{{roleLabel}}</strong> 권한으로 초대했습니다.
+              </p>
+              <p style="margin:0 0 32px 0;font-size:13px;color:#6b7280;line-height:1.6;">
+                아래 버튼을 클릭해 초대를 수락하면 워크스페이스에 참여할 수 있어요.
+                초대 링크는 <strong>{{expiresAt}}</strong> 까지 유효합니다.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" bgcolor="#111827" style="border-radius:6px;">
+                    <a href="{{acceptUrl}}"
+                       style="display:inline-block;padding:12px 28px;font-size:14px;color:#ffffff;text-decoration:none;font-weight:600;">
+                      초대 수락하기
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:32px 0 0 0;font-size:12px;color:#9ca3af;line-height:1.6;">
+                버튼이 동작하지 않으면 다음 링크를 브라우저에 직접 붙여넣어 주세요:<br/>
+                <a href="{{acceptUrl}}" style="color:#6b7280;word-break:break-all;">{{acceptUrl}}</a>
+              </p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 16px 0;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.5;">
+                본인이 신청하지 않은 초대라면 이 메일을 무시해도 됩니다. 링크는 만료되거나 워크스페이스 관리자가 취소할 수 있습니다.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

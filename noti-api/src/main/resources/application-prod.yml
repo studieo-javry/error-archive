@@ -1,0 +1,94 @@
+# ===================================================================
+# prod — production.
+# - DB/키/메일 자격은 모두 ENV/Secret 주입(평문 금지).
+# - ddl-auto: validate. 스키마 변경은 Flyway(db/migration)로만.
+# - push(fcm) 는 base application.yml 의 ${NOTI_PUSH_*} 로 제어(기본 off).
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false   # 신규 DB 전제. 기존 스키마 위 도입 시 true + baseline-version
+
+  datasource:
+    url: ${NOTI_DB_URL}
+    username: ${NOTI_DB_USERNAME}
+    password: ${NOTI_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # ★ 무료티어 PG 1인스턴스(max_connections=100) 5개 서비스 공유 → 풀 합계 100 미만 필수(core18/iam15/publish·noti·insight10 = 63).
+      maximum-pool-size: 10       # noti = 컨슈머 + 인박스 조회
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 절대 update/create 금지
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: noti-api
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+  # SMTP — 실제 발송처(SES/SendGrid 등)를 ENV 로 주입
+  mail:
+    host: ${NOTI_MAIL_HOST}
+    port: ${NOTI_MAIL_PORT:587}
+    username: ${NOTI_MAIL_USERNAME}
+    password: ${NOTI_MAIL_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+# 내부 서비스 인증 — 키는 ENV 주입(평문 금지).
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: noti-api
+    key-id: ${NOTI_INTERNAL_ISSUER_KEY_ID:noti-api}
+    private-key-pem: ${NOTI_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: noti-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+      core-api: ${INTERNAL_AUTH_CORE_API_PUBLIC_KEY}
+
+# N1: noti → iam-api 호출 대상(수신자 이메일/연락처 조회 → 이메일 알림). prod 필수 env(기본값 없이 강제).
+#     미설정 시 부팅 실패로 조기 발견(localhost 로 조용히 실패해 이메일 알림이 안 나가는 것 방지).
+noti:
+  iam-api:
+    base-url: ${NOTI_IAM_API_BASE_URL}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /internal/actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true                    # N2: /health/liveness, /health/readiness (k8s 프로브)
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never

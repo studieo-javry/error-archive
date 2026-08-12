@@ -1,0 +1,52 @@
+# ===================================================================
+# core-api 의 로컬 의존성 (PostgreSQL).
+# 비밀값(POSTGRES_USER / POSTGRES_PASSWORD)은 env 주입.
+#   $ docker compose --env-file .env.local up -d
+# ===================================================================
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: core-api-postgres
+    environment:
+      POSTGRES_USER: ${CORE_DB_USERNAME:-core}
+      POSTGRES_PASSWORD: ${CORE_DB_PASSWORD:-core_local_pw}
+      POSTGRES_DB: core_db
+    ports:
+      - "5433:5432"   # iam-api 가 5432 점유 → core-api 는 5433 으로 노출
+    volumes:
+      - core_pg_data:/var/lib/postgresql/data
+
+  # S3 호환 오브젝트 스토리지 (첨부 파일). presigned URL 로 브라우저가 <img> 직접 렌더.
+  minio:
+    image: minio/minio:latest
+    container_name: core-api-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API — 앱(호스트 bootRun) + 브라우저(presigned URL) 공통 접근
+      - "9001:9001"   # 웹 콘솔
+    volumes:
+      - core_minio_data:/data
+
+  # 버킷 부트스트랩 (1회). minio 뜨면 버킷 생성 후 종료.
+  minio-init:
+    image: minio/mc:latest
+    container_name: core-api-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin}; do echo 'waiting for minio...'; sleep 1; done &&
+      mc mb -p local/${CORE_ATTACHMENT_BUCKET:-error-archive-attachments} &&
+      mc anonymous set none local/${CORE_ATTACHMENT_BUCKET:-error-archive-attachments} &&
+      echo 'minio bucket ready';
+      "
+
+volumes:
+  core_pg_data:
+  core_minio_data:

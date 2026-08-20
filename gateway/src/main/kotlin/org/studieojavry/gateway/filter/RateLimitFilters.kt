@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.function.HandlerFilterFunction
+import org.springframework.web.servlet.function.ServerRequest
 import org.springframework.web.servlet.function.ServerResponse
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -57,8 +58,23 @@ class IpRateLimiter {
 object RateLimitFilters {
 
     /**
+     * 실 클라이언트 IP 추출.
+     *
+     * 프로덕션은 Cloudflare(프록시) → NLB(L4, source IP SNAT) → gateway 경로라, TCP `remoteAddr` 는
+     * NLB 사설 IP 로 뭉친다. Cloudflare 가 넣는 **CF-Connecting-IP** 가 진짜 클라 IP 다.
+     * XFF(맨앞 항목)는 클라가 위조 가능하지만, CF-Connecting-IP 는 Cloudflare 가 항상 덮어써서 신뢰 가능 —
+     * **단 origin(NLB/노드 443)이 Cloudflare IP 대역으로 잠긴 전제**(Security List)에서만 유효.
+     * 헤더 없으면(local/dev 직접호출) remoteAddr(forward-headers-strategy 반영) 로 폴백.
+     */
+    private fun clientIp(request: ServerRequest): String {
+        val cf = request.servletRequest().getHeader("CF-Connecting-IP")
+        if (!cf.isNullOrBlank()) return cf.trim()
+        return request.servletRequest().remoteAddr ?: "unknown"
+    }
+
+    /**
      * per-IP 토큰버킷 필터. 고갈 시 downstream 프록시 전에 429(problem+json)로 즉시 차단.
-     * IP 는 `remoteAddr`(server.forward-headers-strategy=framework 로 X-Forwarded-For 반영됨).
+     * IP 는 [clientIp] 로 추출(CF-Connecting-IP 우선 → remoteAddr 폴백).
      */
     fun perIp(
         limiter: IpRateLimiter,
@@ -67,7 +83,7 @@ object RateLimitFilters {
         refillPerSec: Double,
     ): HandlerFilterFunction<ServerResponse, ServerResponse> =
         HandlerFilterFunction { request, next ->
-            val ip = request.servletRequest().remoteAddr ?: "unknown"
+            val ip = clientIp(request)
             if (limiter.tryConsume("$name|$ip", capacity, refillPerSec)) {
                 next.handle(request)
             } else {

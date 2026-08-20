@@ -20,7 +20,7 @@ server:
 iam:
   jwt:
     secret: ${IAM_JWT_SECRET}
-    issuer: "https://iam.stg.studieo-javry.com"
+    issuer: "https://iam.stg.error-archive.com"
     audience: "stg-clients"
 
 # G4: 내부 토큰 발급자 — 개인키 ENV 주입.
@@ -42,7 +42,7 @@ gateway:
   # G5: CORS — stg FE origin.
   cors:
     allowed-origins:
-      - https://app.stg.studieo-javry.com
+      - https://app.stg.error-archive.com
     allow-credentials: true
 
 # swagger aggregator 는 stg 에서도 노출 안 함(각 서비스 직접 확인).

@@ -9,6 +9,10 @@ spring:
   config:
     activate:
       on-profile: prod
+    # 활동 가중치 실 튜닝값 — 공개 저장소에 두지 않음(gitignore). 배포 시 ConfigMap 을 이 경로로 마운트.
+    #   non-optional: 파일이 없으면 부팅 실패(fail-loud). 마운트 누락을 조용히 "전부 1(균등가중)"으로 흘리지 않기 위함.
+    #   경로 override: INSIGHT_WEIGHTS_FILE (기본 ./config/weights-prod.yml, 실행 작업디렉토리 기준).
+    import: "file:${INSIGHT_WEIGHTS_FILE:./config/weights-prod.yml}"
 
   flyway:
     enabled: true

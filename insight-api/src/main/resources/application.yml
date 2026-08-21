@@ -35,14 +35,17 @@ insight:
     event-ttl-days: 395
     delete-batch-size: 5000
   activity:
-    # 가중치 정책 — 정책 변경 시 publish 시점의 score 컬럼은 그대로 두고 daily 만 재계산
+    # 가중치 정책 — 여기 값은 "중립 기본값(전부 1 = 균등 가중)"이다. 실제 튜닝값은 공개 저장소에 두지 않는다.
+    #   · prod: gitignore 된 config/weights-prod.yml 을 spring.config.import 로 덮어씀(application-prod.yml).
+    #   · local/dev/test: 이 균등 가중으로 동작(정확한 상대 점수가 필요 없는 환경).
+    # 모든 ActivityType 키가 present 여야 부팅(ActivityWeightProperties fail-loud) — 새 타입 추가 시 여기도 갱신.
     weights:
-      CASE_CREATED:     5
-      CASE_RESOLVED:    4
-      CASE_PUBLISHED:   3
-      STEP_ADDED:       2
-      SOLUTION_ADDED:   5
-      COMMENT_POSTED:   2
+      CASE_CREATED:     1
+      CASE_RESOLVED:    1
+      CASE_PUBLISHED:   1
+      STEP_ADDED:       1
+      SOLUTION_ADDED:   1
+      COMMENT_POSTED:   1
       COMMENT_REACTION: 1
       COMMENT_HELPFUL:  1
       FOLLOWED_USER:    1

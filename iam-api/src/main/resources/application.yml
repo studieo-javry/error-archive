@@ -12,7 +12,7 @@ spring:
   application:
     name: iam-api
   profiles:
-    default: local                             # 명시 없으면 local 로 부팅
+    default: prod
   jpa:
     open-in-view: false
     properties:
@@ -45,11 +45,11 @@ iam:
     max-members-per-workspace: 200
   email:
     # provider: smtp | logging.
-    #   smtp    → SmtpInvitationEmailSenderAdapter 활성 (실제 SMTP 발송).
-    #   logging → LoggingInvitationEmailSenderAdapter 활성 (콘솔 로그만, 미설정 시 default).
-    provider: ${IAM_EMAIL_PROVIDER:logging}
-    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@error-archive.local}
-    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive}
+    #   smtp    → SmtpInvitationEmailSenderAdapter 활성
+    #   logging → LoggingInvitationEmailSenderAdapter 활성
+    provider: ${IAM_EMAIL_PROVIDER}
+    from-address: ${IAM_EMAIL_FROM_ADDRESS}
+    from-name: ${IAM_EMAIL_FROM_NAME}
     subject-prefix: "[Error Archive]"
 
 management:

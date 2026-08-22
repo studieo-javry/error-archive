@@ -7,7 +7,7 @@ spring:
   application:
     name: noti-api
   profiles:
-    default: local
+    default: prod
   jpa:
     open-in-view: false
     properties:
@@ -20,7 +20,7 @@ server:
 iam:
   jwt:
     # 게이트웨이가 발급한 internal JWT 검증용 audience
-    audience: ${NOTI_JWT_AUDIENCE:noti-api}
+    audience: ${NOTI_JWT_AUDIENCE}
 
 noti:
   # noti → iam-api(수신자 contact 조회) base-url. 기본값(localhost) 없음 — prod 에서 env 미설정 시
@@ -29,15 +29,15 @@ noti:
     base-url: ${NOTI_IAM_API_BASE_URL}
   # 발송 모드 — 환경별로 logging(default 안전) / smtp / fcm 활성화
   email:
-    provider: ${NOTI_EMAIL_PROVIDER:smtp}   # smtp | logging
-    from-address: ${NOTI_EMAIL_FROM:notifications@error-archive.local}
-    from-name: ${NOTI_EMAIL_FROM_NAME:Error Archive}
+    provider: ${NOTI_EMAIL_PROVIDER}   # smtp | logging
+    from-address: ${NOTI_EMAIL_FROM}
+    from-name: ${NOTI_EMAIL_FROM_NAME}
     subject-prefix: "[Error Archive]"
   push:
     # MVP1 deferred — false 면 device-token 등록 endpoint + 관련 UseCase/Adapter 가 bean 등록 자체 안 됨.
     # true 로 바꾸면 파이프라인 부활 + ReceiveMentionEventUseCase 에 sendPushSafe wiring 만 복원하면 발송 재개.
-    enabled: ${NOTI_PUSH_ENABLED:false}
-    provider: ${NOTI_PUSH_PROVIDER:logging}  # fcm | logging — enabled=true 일 때만 의미.
+    enabled: ${NOTI_PUSH_ENABLED}
+    provider: ${NOTI_PUSH_PROVIDER}  # fcm | logging — enabled=true 일 때만 의미.
     fcm:
       project-id: ${NOTI_FCM_PROJECT_ID:}
       service-account-path: ${NOTI_FCM_SERVICE_ACCOUNT_PATH:}

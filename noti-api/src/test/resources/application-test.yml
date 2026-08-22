@@ -34,13 +34,21 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
 
+# base yml 이 fail-fast(기본값 제거)로 바뀌어, 아래 값들을 test 프로파일이 concrete 로 제공해야 함.
+iam:
+  jwt:
+    audience: noti-api
+
 noti:
   iam-api:
     base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
   email:
     provider: logging
+    from-address: "noreply@error-archive.test"
+    from-name: "Error Archive"
   push:
     enabled: false
+    provider: logging
 
 internal-auth:
   ttl-seconds: 60

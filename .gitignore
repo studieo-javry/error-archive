@@ -16,6 +16,9 @@ build/
 *.env.local
 *.pem
 *-credentials.json
+
+### Non-public policy config (실 튜닝값 — 공개 저장소 미포함, 배포 시 ConfigMap 마운트) ###
+insight-api/config/weights-prod.yml
 *-key.json
 *-service-account*.json
 

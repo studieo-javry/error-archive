@@ -38,6 +38,11 @@ iam:
     same-site: Lax
   workspace:
     invite-base-url: "https://app.test.local/invitations"
+  # base application.yml 이 fail-fast(기본값 제거)로 바뀌어 test 프로파일이 concrete 로 제공.
+  email:
+    provider: logging
+    from-address: "noreply@app.test.local"
+    from-name: "Error Archive (test)"
 
 # 내부 서비스 인증 — context 로드 + 디코더 구성 검증용. 키는 로컬 dev 키 재사용.
 internal-auth:

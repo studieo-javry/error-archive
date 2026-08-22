@@ -14,7 +14,7 @@ spring:
   flyway:
     enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
   datasource:
-    url: jdbc:postgresql://localhost:5432/iam_db
+    url: ${IAM_DB_URL}
     username: ${IAM_DB_USERNAME}
     password: ${IAM_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -25,13 +25,13 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update                         # 로컬은 자유롭게 스키마 변경
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate.format_sql: true
 
   kafka:
-    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}"
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS}"
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -40,20 +40,14 @@ spring:
         delivery.timeout.ms: 8000
         request.timeout.ms: 5000
 
-  # 기본값 = MailHog(docker-compose, SMTP 1025 / web UI http://localhost:8025).
-  # ENV 만 주면 로컬에서도 실제 외부 SMTP(Gmail/SES/SendGrid)로 발송 — 코드/프로파일 변경 불필요.
-  #   예) Gmail:  IAM_MAIL_HOST=smtp.gmail.com IAM_MAIL_PORT=587 \
-  #              IAM_MAIL_USERNAME=you@gmail.com IAM_MAIL_PASSWORD=<앱 비밀번호> \
-  #              IAM_MAIL_SMTP_AUTH=true IAM_MAIL_STARTTLS=true \
-  #              IAM_EMAIL_FROM_ADDRESS=you@gmail.com
   mail:
-    host: ${IAM_MAIL_HOST:localhost}
-    port: ${IAM_MAIL_PORT:1025}
+    host: ${IAM_MAIL_HOST}
+    port: ${IAM_MAIL_PORT}
     username: ${IAM_MAIL_USERNAME:}
     password: ${IAM_MAIL_PASSWORD:}
     properties:
-      mail.smtp.auth: ${IAM_MAIL_SMTP_AUTH:false}
-      mail.smtp.starttls.enable: ${IAM_MAIL_STARTTLS:false}
+      mail.smtp.auth: ${IAM_MAIL_SMTP_AUTH}
+      mail.smtp.starttls.enable: ${IAM_MAIL_STARTTLS}
 
 logging:
   level:
@@ -62,8 +56,6 @@ logging:
     org.hibernate.orm.jdbc.bind: TRACE
     root: info         # 바인딩 파라미터 확인용
 
-# local 한정 actuator 노출. SecurityConfig 가 local profile 에서 /actuator/** permitAll.
-# prod/stg 는 application.yml 기본 (health 만) 유지.
 management:
   endpoints:
     web:
@@ -74,7 +66,7 @@ management:
 # `http` (또는 그 외) 면 Noop fallback — 잔디 미발행 (사용자 follow 동작은 정상).
 noti:
   publisher:
-    mode: "${NOTI_PUBLISHER_MODE:kafka}"
+    mode: "${NOTI_PUBLISHER_MODE}"
 
 iam:
   # Outbox + Relayer (adaptive polling).
@@ -101,15 +93,12 @@ iam:
     same-site: Lax
     # domain 미지정 — localhost 만 사용
   workspace:
-    invite-base-url: "http://localhost:5173/invitations"
+    invite-base-url: ${IAM_INVITATION_BASE_URL}
   email:
-    provider: ${IAM_EMAIL_PROVIDER:smtp}        # 기본 smtp(→MailHog). logging 으로 콘솔만도 가능
-    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@error-archive.local}
-    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive (local)}
+    provider: ${IAM_EMAIL_PROVIDER}        # 기본 smtp(→MailHog). logging(→콘솔)
+    from-address: ${IAM_EMAIL_FROM_ADDRESS}
+    from-name: ${IAM_EMAIL_FROM_NAME}
 
-# 내부 서비스 인증 — iam-api 는 검증자(verifier)다. token relay 를 제거했으므로
-# 사용자 JWT 대신 게이트웨이/core-api 가 발급한 internal JWT(X-Internal-Auth)를 검증한다.
-# gateway 와 core-api 양쪽이 iam-api 를 호출하므로 두 발급자의 공개키를 모두 신뢰한다.
 internal-auth:
   verifier:
     audience: iam-api

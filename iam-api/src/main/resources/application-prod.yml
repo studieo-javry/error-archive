@@ -66,7 +66,7 @@ iam:
   # H1: 아바타 = S3 호환(OCI Object Storage). local 만 디스크, 그 외는 이 설정 사용.
   #     아바타 URL 은 DB 에 영구 저장 → 안정 공개 URL. 버킷은 public-read(또는 CDN 전면) 필요.
   avatar:
-    public-base-url: ${IAM_AVATAR_PUBLIC_BASE_URL}   # 예: https://cdn.example.com/avatars 또는 OCI 버킷 공개 URL
+    public-base-url: ${IAM_AVATAR_PUBLIC_BASE_URL}
     s3:
       bucket: ${IAM_AVATAR_BUCKET}
       region: ${IAM_AVATAR_REGION}
@@ -76,7 +76,7 @@ iam:
       secret-key: ${IAM_AVATAR_S3_SECRET_KEY}
   jwt:
     secret: ${IAM_JWT_SECRET}
-    issuer: "https://iam.studieo-javry.com"
+    issuer: "https://iam.error-archive.com"
     audience: "prod-clients"
   oauth:
     github:
@@ -85,13 +85,13 @@ iam:
   cookie:
     secure: true                               # ★ 반드시 true
     same-site: Lax
-    domain: ".studieo-javry.com"
+    domain: ".error-archive.com"
   workspace:
-    invite-base-url: "https://app.studieo-javry.com/invitations"
+    invite-base-url: ${IAM_INVITATION_BASE_URL}
   email:
     provider: smtp
-    from-address: ${IAM_EMAIL_FROM_ADDRESS:noreply@studieo-javry.com}
-    from-name: ${IAM_EMAIL_FROM_NAME:Error Archive}
+    from-address: ${IAM_EMAIL_FROM_ADDRESS}
+    from-name: ${IAM_EMAIL_FROM_NAME}
 
 management:
   endpoints:
@@ -114,7 +114,7 @@ server:
 #     미설정 시 NoOp fallback 이라 팔로우·초대 알림 + 잔디(activity) 가 발행되지 않음.
 noti:
   publisher:
-    mode: ${NOTI_PUBLISHER_MODE:kafka}
+    mode: ${NOTI_PUBLISHER_MODE}
 
 # C1: 내부 서비스 인증 verifier — gateway/core/noti/insight/publish 가 보낸 내부 JWT(X-Internal-Auth) 검증.
 #     이 블록이 없으면 다른 서비스의 iam 내부 엔드포인트 호출이 전부 인증 실패한다.

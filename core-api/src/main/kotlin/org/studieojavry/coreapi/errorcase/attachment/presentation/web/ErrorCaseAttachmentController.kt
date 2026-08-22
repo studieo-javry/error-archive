@@ -75,8 +75,8 @@ class ErrorCaseAttachmentController(
     fun upload(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "업로드할 파일") @RequestPart("file") file: MultipartFile,
-        @Parameter(description = "표시용 제목(선택)") @RequestPart("title", required = false) title: String?,
-        @Parameter(description = "부가 설명(선택)") @RequestPart("caption", required = false) caption: String?
+        @Parameter(description = "표시용 제목(선택)") @RequestParam("title", required = false) title: String?,
+        @Parameter(description = "부가 설명(선택)") @RequestParam("caption", required = false) caption: String?
     ): AttachmentUploadResponse {
 
         require(!file.isEmpty) { "file can not be empty" }

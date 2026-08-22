@@ -62,7 +62,7 @@ import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.MeT
 )
 @RestController
 @RequestMapping("/api/v1/error-cases")
-class ƒErrorCaseController(
+class ErrorCaseController(
     private val createErrorCaseUseCase: CreateErrorCaseUseCase,
     private val getErrorCaseUseCase: GetErrorCaseUseCase,
     private val updateErrorCaseUseCase: UpdateErrorCaseUseCase,

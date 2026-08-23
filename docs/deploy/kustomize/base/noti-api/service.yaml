@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: noti-api
+spec:
+  selector: { app: noti-api }
+  ports:
+    - port: 8082
+      targetPort: 8082

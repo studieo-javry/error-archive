@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# stg 환경(=alpha 브랜치). 네임스페이스 apps.
+# 주의: 현재 배포는 prod 스프링 프로파일 + .env.prod 로 동작 → 여기 SPRING_PROFILES_ACTIVE=prod 유지.
+namespace: apps
+
+resources:
+  - ../../base/iam-api
+  - ../../base/core-api
+  - ../../base/noti-api
+  - ../../base/insight-api
+
+configMapGenerator:
+  - name: iam-api-env
+    literals: [ SPRING_PROFILES_ACTIVE=prod ]
+  - name: core-api-env
+    literals: [ SPRING_PROFILES_ACTIVE=prod ]
+  - name: noti-api-env
+    literals: [ SPRING_PROFILES_ACTIVE=prod ]
+  - name: insight-api-env
+    literals: [ SPRING_PROFILES_ACTIVE=prod ]
+generatorOptions:
+  disableNameSuffixHash: true          # 이름 고정(iam-api-env 등) — Deployment 참조와 일치
+
+# GitHub Actions(bump-manifest)가 newTag 를 커밋 SHA 로 갱신. 초기값 stg.
+images:
+  - { name: iam-api,     newName: ghcr.io/studieo-javry/iam-api,     newTag: stg }
+  - { name: core-api,    newName: ghcr.io/studieo-javry/core-api,    newTag: stg }
+  - { name: noti-api,    newName: ghcr.io/studieo-javry/noti-api,    newTag: stg }
+  - { name: insight-api, newName: ghcr.io/studieo-javry/insight-api, newTag: stg }

@@ -40,14 +40,20 @@ core:
     orphan-gc-batch-size: ${CORE_ATTACHMENT_ORPHAN_GC_BATCH:500}
     # S3 호환 스토리지. prod=OCI Object Storage(S3 호환 API), stg·local=MinIO. endpoint-internal(앱→스토리지) 과
     # endpoint-public(브라우저→스토리지, presigned URL 호스트) 을 분리한다.
+    #
+    # ★ fail-fast: 환경별로 반드시 달라야 하는 값은 기본값 없이 강제. 예전엔 minioadmin/localhost:9000
+    #   기본값을 뒀는데, stg/prod 에서 env 누락 시 그 값으로 조용히 부팅 → 런타임에 첨부만 깨지는 지뢰였다.
+    #   기본값을 없애면 env 미설정 시 "Could not resolve placeholder" 로 부팅 자체가 실패해 조기 발견된다.
+    #   (local=application-local.yml, test=application-test.yml, prod=application-prod.yml 이 concrete 값 제공)
+    #   path-style 만 스토리지 종류 무관하게 항상 true(MinIO·OCI 공통)라 안전 기본값 유지.
     s3:
-      bucket: ${CORE_ATTACHMENT_BUCKET:error-archive-attachments}
-      region: ${CORE_ATTACHMENT_REGION:us-east-1}
-      endpoint-internal: ${CORE_ATTACHMENT_S3_ENDPOINT_INTERNAL:http://localhost:9000}
-      endpoint-public: ${CORE_ATTACHMENT_S3_ENDPOINT_PUBLIC:http://localhost:9000}
+      bucket: ${CORE_ATTACHMENT_BUCKET}
+      region: ${CORE_ATTACHMENT_REGION}
+      endpoint-internal: ${CORE_ATTACHMENT_S3_ENDPOINT_INTERNAL}
+      endpoint-public: ${CORE_ATTACHMENT_S3_ENDPOINT_PUBLIC:${CORE_ATTACHMENT_S3_ENDPOINT_INTERNAL}}
       path-style: ${CORE_ATTACHMENT_S3_PATH_STYLE:true}
-      access-key: ${CORE_ATTACHMENT_S3_ACCESS_KEY:minioadmin}
-      secret-key: ${CORE_ATTACHMENT_S3_SECRET_KEY:minioadmin}
+      access-key: ${CORE_ATTACHMENT_S3_ACCESS_KEY}
+      secret-key: ${CORE_ATTACHMENT_S3_SECRET_KEY}
     presign:
       # 가시성별 presigned URL 만료. PUBLIC 은 길게, WORKSPACE/PRIVATE 은 짧게.
       public-ttl: ${CORE_ATTACHMENT_PRESIGN_PUBLIC_TTL:15m}

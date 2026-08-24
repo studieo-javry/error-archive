@@ -21,25 +21,12 @@
         </encoder>
     </appender>
 
-    <!-- stg / prod 는 파일로도 적재 (rolling, gzip, 30 일 / 3GB cap) -->
+    <!-- 컨테이너(stg/prod): 파일 appender 미사용 — stdout(CONSOLE)만.
+         컨테이너에서 파일 로깅은 안티패턴(ephemeral, 비수집 + non-root 쓰기 이슈).
+         로그 수집은 k8s(kubectl logs) / 로그 수집기(Loki 등)가 stdout 에서 담당. -->
     <springProfile name="stg | prod">
-        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>logs/${appName}.log</file>
-            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>logs/${appName}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
-                <maxFileSize>100MB</maxFileSize>
-                <maxHistory>30</maxHistory>
-                <totalSizeCap>3GB</totalSizeCap>
-            </rollingPolicy>
-            <encoder>
-                <pattern>${FILE_LOG_PATTERN:-${DEFAULT_PATTERN}}</pattern>
-                <charset>UTF-8</charset>
-            </encoder>
-        </appender>
-
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
-            <appender-ref ref="FILE"/>
         </root>
     </springProfile>
 

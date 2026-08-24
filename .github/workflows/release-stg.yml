@@ -51,7 +51,8 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             IN="${{ github.event.inputs.services }}"
             [ -z "$IN" ] && IN="iam-api,core-api,noti-api,insight-api"     # 비우면 전체
-            SVCS=$(echo "$IN" | tr ',' '\n' | tr -d '[:space:]' | grep -v '^$' | jq -R . | jq -sc .)
+            # 쉼표 split + 공백 trim + 빈값 제거를 jq 안에서 처리(예전 tr -d '[:space:]' 는 개행까지 지워 4개가 1개로 합쳐졌음).
+            SVCS=$(jq -cn --arg s "$IN" '$s | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length>0))')
           else
             SVCS='${{ steps.filter.outputs.changes }}'                     # 변경된 서비스만
           fi

@@ -1,0 +1,127 @@
+name: release-stg
+
+# alpha(=stg) 에 백엔드 코드가 바뀌면 → 바뀐 서비스만 arm64 이미지 빌드 → ghcr push
+# → overlays/stg 의 image 태그 갱신 커밋 → ArgoCD 가 감지해 apps ns 에 자동 sync.
+# 서비스별 독립 배포: 자동은 paths-filter, 수동은 입력(services)으로 대상 결정.
+on:
+  push:                                # 자동: alpha 에 서비스 코드 push/머지
+    branches: [ alpha ]
+    paths:
+      - 'iam-api/**'
+      - 'core-api/**'
+      - 'noti-api/**'
+      - 'insight-api/**'
+      - 'shared-**/**'
+      - '*.gradle.kts'
+  workflow_dispatch:                   # 수동: Actions 탭 "Run workflow" 버튼
+    inputs:
+      services:
+        description: '강제 빌드할 서비스(쉼표구분). 비우면 전체 4개.'
+        required: false
+        default: 'iam-api,core-api,noti-api,insight-api'
+
+concurrency:
+  group: release-stg-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: studieo-javry
+
+jobs:
+  # 1) 대상 서비스 결정: push=변경분(paths-filter), 수동=입력값
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.decide.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            iam-api:     [ 'iam-api/**',     'shared-**/**', '*.gradle.kts' ]
+            core-api:    [ 'core-api/**',    'shared-**/**', '*.gradle.kts' ]
+            noti-api:    [ 'noti-api/**',    'shared-**/**', '*.gradle.kts' ]
+            insight-api: [ 'insight-api/**', 'shared-**/**', '*.gradle.kts' ]
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IN="${{ github.event.inputs.services }}"
+            [ -z "$IN" ] && IN="iam-api,core-api,noti-api,insight-api"     # 비우면 전체
+            SVCS=$(echo "$IN" | tr ',' '\n' | tr -d '[:space:]' | grep -v '^$' | jq -R . | jq -sc .)
+          else
+            SVCS='${{ steps.filter.outputs.changes }}'                     # 변경된 서비스만
+          fi
+          echo "services=$SVCS" >> "$GITHUB_OUTPUT"
+          echo "대상 서비스: $SVCS"
+
+  # 2) 대상 서비스만 빌드 + ghcr push
+  build-push:
+    needs: detect
+    if: ${{ needs.detect.outputs.services != '[]' && needs.detect.outputs.services != '' }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        svc: ${{ fromJSON(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: bootJar -> app.jar
+        run: |
+          ./gradlew :${{ matrix.svc }}:bootJar --no-daemon
+          JAR=$(ls ${{ matrix.svc }}/build/libs/*.jar | grep -v -- '-plain' | head -1)
+          cp "$JAR" ${{ matrix.svc }}/app.jar
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.svc }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.svc }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.svc }}:stg
+          cache-from: type=gha,scope=${{ matrix.svc }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.svc }}
+
+  # 3) 대상 서비스만 overlay 이미지 태그 갱신 커밋 -> ArgoCD sync 트리거
+  bump-manifest:
+    needs: [ detect, build-push ]
+    if: ${{ needs.detect.outputs.services != '[]' && needs.detect.outputs.services != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: alpha }
+      - name: install kustomize
+        run: |
+          curl -sSfL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+      - name: bump changed images
+        run: |
+          cd docs/deploy/kustomize/overlays/stg
+          for svc in $(echo '${{ needs.detect.outputs.services }}' | jq -r '.[]'); do
+            kustomize edit set image "$svc=${REGISTRY}/${OWNER}/$svc:${{ github.sha }}"
+          done
+      - name: commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/deploy/kustomize/overlays/stg/kustomization.yaml
+          git commit -m "ci(stg): bump ${{ join(fromJSON(needs.detect.outputs.services), ', ') }} to ${{ github.sha }} [skip ci]" || { echo "no change"; exit 0; }
+          git push origin alpha

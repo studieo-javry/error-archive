@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: insight-api
+spec:
+  selector: { app: insight-api }
+  ports:
+    - port: 8083
+      targetPort: 8083

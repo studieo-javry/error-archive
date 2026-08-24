@@ -83,6 +83,9 @@ jobs:
           ./gradlew :${{ matrix.svc }}:bootJar --no-daemon
           JAR=$(ls ${{ matrix.svc }}/build/libs/*.jar | grep -v -- '-plain' | head -1)
           cp "$JAR" ${{ matrix.svc }}/app.jar
+      # gha 캐시(cache-to type=gha)는 기본 docker 드라이버가 지원 안 함 → docker-container 드라이버 빌더 준비.
+      # (러너가 arm64 네이티브라 QEMU 불필요)
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}

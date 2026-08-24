@@ -30,6 +30,17 @@ noti:
     mode: http
 
 core:
+  # base yml 이 core.attachment.s3.* 의 기본값을 없애(fail-fast) → test 는 여기서 concrete 값 제공.
+  # 실제 스토리지 접속 없이 contextLoads(빈 바인딩)만 통과시키면 되므로 더미 값이면 충분.
+  attachment:
+    s3:
+      bucket: "error-archive-attachments-test"
+      region: "us-east-1"
+      endpoint-internal: "http://localhost:9000"
+      endpoint-public: "http://localhost:9000"
+      path-style: true
+      access-key: "test-access"
+      secret-key: "test-secret"
   iam-api:
     base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
   noti-api:

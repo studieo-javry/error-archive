@@ -5,26 +5,38 @@ kind: Kustomization
 namespace: apps
 
 resources:
-  - ../../base/iam-api
-  - ../../base/core-api
-  - ../../base/noti-api
-  - ../../base/insight-api
+- ../../base/iam-api
+- ../../base/core-api
+- ../../base/noti-api
+- ../../base/insight-api
 
 configMapGenerator:
-  - name: iam-api-env
-    literals: [ SPRING_PROFILES_ACTIVE=prod ]
-  - name: core-api-env
-    literals: [ SPRING_PROFILES_ACTIVE=prod ]
-  - name: noti-api-env
-    literals: [ SPRING_PROFILES_ACTIVE=prod ]
-  - name: insight-api-env
-    literals: [ SPRING_PROFILES_ACTIVE=prod ]
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  name: iam-api-env
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  name: core-api-env
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  name: noti-api-env
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  name: insight-api-env
 generatorOptions:
-  disableNameSuffixHash: true          # 이름 고정(iam-api-env 등) — Deployment 참조와 일치
+  disableNameSuffixHash: true
 
 # GitHub Actions(bump-manifest)가 newTag 를 커밋 SHA 로 갱신. 초기값 stg.
 images:
-  - { name: iam-api,     newName: ghcr.io/studieo-javry/iam-api,     newTag: stg }
-  - { name: core-api,    newName: ghcr.io/studieo-javry/core-api,    newTag: stg }
-  - { name: noti-api,    newName: ghcr.io/studieo-javry/noti-api,    newTag: stg }
-  - { name: insight-api, newName: ghcr.io/studieo-javry/insight-api, newTag: stg }
+- name: core-api
+  newName: ghcr.io/studieo-javry/core-api
+  newTag: 0d9acd2aece5aedb5210c6641ac2d3229e9c879a
+- name: iam-api
+  newName: ghcr.io/studieo-javry/iam-api
+  newTag: 0d9acd2aece5aedb5210c6641ac2d3229e9c879a
+- name: insight-api
+  newName: ghcr.io/studieo-javry/insight-api
+  newTag: 0d9acd2aece5aedb5210c6641ac2d3229e9c879a
+- name: noti-api
+  newName: ghcr.io/studieo-javry/noti-api
+  newTag: 0d9acd2aece5aedb5210c6641ac2d3229e9c879a

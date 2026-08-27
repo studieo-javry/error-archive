@@ -19,6 +19,7 @@ spring:
       max-request-size: 25MB
 
 server:
+  port: 8081                              # prod/stg 포트 (local yml 에도 동일). 컨테이너/probe/Service 와 일치 필수
   forward-headers-strategy: framework
   # service-to-service internal endpoint (`/internal/error-cases/{id}/full-data`) 와
   # 공개 검색 API 의 JSON 응답이 수십 KB 까지 커질 수 있어 gzip 활성화.

@@ -15,6 +15,7 @@ spring:
       hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
 
 server:
+  port: 8082                              # prod/stg 포트 (local yml 에도 동일). 컨테이너/probe/Service 와 일치 필수
   forward-headers-strategy: framework
 
 iam:

@@ -7,7 +7,9 @@ import org.springframework.core.annotation.Order
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -94,6 +96,44 @@ open class GlobalExceptionHandler(
             status = HttpStatus.BAD_REQUEST,
             detail = ex.message ?: "Bad request",
             code = "BAD_REQUEST",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 잘못된 HTTP 메서드 — 405 (500 아님). 클라이언트 실수이지 서버 장애가 아니므로
+     * gateway 서킷브레이커가 실패로 세지 않도록 4xx 로 매핑한다.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
+    open fun handleMethodNotAllowed(ex: HttpRequestMethodNotSupportedException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=METHOD_NOT_ALLOWED] ${ex.message}" }
+        res.setHeader("X-Trace-Id", traceId)
+        ex.supportedHttpMethods?.let { res.setHeader(HttpHeaders.ALLOW, it.joinToString(", ")) }
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.METHOD_NOT_ALLOWED,
+            detail = ex.message ?: "Method not allowed",
+            code = "METHOD_NOT_ALLOWED",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 파싱 불가한 본문(깨진/누락 JSON) — 400 (500 아님). 위와 동일 이유로 4xx.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    open fun handleUnreadable(ex: HttpMessageNotReadableException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=MALFORMED_REQUEST] unreadable body" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Malformed or missing request body",
+            code = "MALFORMED_REQUEST",
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

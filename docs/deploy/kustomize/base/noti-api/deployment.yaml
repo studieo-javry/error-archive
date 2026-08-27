@@ -34,7 +34,7 @@ spec:
           startupProbe:                          # ARM 콜드스타트+다중 JVM 경합 대비: 기동 완료 전 liveness 가 죽이는 것 방지
             httpGet: { path: /internal/actuator/health/liveness, port: 8082 }
             periodSeconds: 5
-            failureThreshold: 120                 # 최대 ~600s (다중 JVM 콜드스타트 경합 흡수)
+            failureThreshold: 60                  # 최대 ~300s (정상 콜드스타트 25~150s 커버, 여유 2x)
             timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /internal/actuator/health/liveness, port: 8082 }

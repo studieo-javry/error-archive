@@ -31,11 +31,16 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 10
             failureThreshold: 30
+          startupProbe:                          # ARM 콜드스타트+다중 JVM 경합 대비: 기동 완료 전 liveness 가 죽이는 것 방지
+            httpGet: { path: /internal/actuator/health/liveness, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 60                  # 최대 ~300s 기동 허용
           livenessProbe:
             httpGet: { path: /internal/actuator/health/liveness, port: 8080 }
             initialDelaySeconds: 40
             periodSeconds: 15
             failureThreshold: 6
+            timeoutSeconds: 5
           resources:
             requests: { cpu: "150m", memory: "384Mi" }
             limits:   { memory: "640Mi" }

@@ -83,7 +83,13 @@ class SecurityConfig {
             }
         }
         return UrlBasedCorsConfigurationSource().apply {
-            registerCorsConfiguration("/**", config)
+            // local 에서만 실 경로에 CORS 등록 — playground(activity-grass.html)가 insight 를 직접 호출하므로.
+            // prod/stg 는 게이트웨이가 CORS 를 소유한다. 비-local 에서 config 는 비어 있는데,
+            // 그 빈 CorsConfiguration 을 `/**` 에 등록하면 Origin 헤더가 실린 *게이트웨이 전달 요청*을
+            // 전부 403 "Invalid CORS request" 로 거부한다(다운스트림 이중 CORS). 그래서 등록하지 않는다.
+            if (isLocal) {
+                registerCorsConfiguration("/**", config)
+            }
         }
     }
 }

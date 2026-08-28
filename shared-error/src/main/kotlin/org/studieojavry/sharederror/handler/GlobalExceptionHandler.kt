@@ -8,11 +8,13 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.sharederror.exception.BaseAppException
 import org.studieojavry.sharederror.masking.ErrorMaskingPolicy
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
@@ -134,6 +136,47 @@ open class GlobalExceptionHandler(
             status = HttpStatus.BAD_REQUEST,
             detail = "Malformed or missing request body",
             code = "MALFORMED_REQUEST",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * `ResponseStatusException` — 예외가 스스로 담은 상태코드(예: 401 missing principal)를 그대로 보존.
+     * 이전엔 Throwable fallback 으로 떨어져 401/403 이 500 으로 둔갑 → gateway 서킷 오염 → 503 유발했다.
+     * 4xx 는 client 오류이므로 서킷 실패로 세면 안 된다.
+     */
+    @ExceptionHandler(ResponseStatusException::class)
+    open fun handleResponseStatus(ex: ResponseStatusException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        val status = HttpStatus.valueOf(ex.statusCode.value())
+        val msg = "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=${status.name}] ${ex.reason}"
+        if (status.is5xxServerError) log.error(ex) { msg } else log.warn { msg }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = status,
+            detail = ex.reason ?: status.reasonPhrase,
+            code = status.name,
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 인가 실패(권한 부족) — 403. Security 필터가 못 잡고 advice 까지 온 경우를 4xx 로 보존.
+     */
+    @ExceptionHandler(AccessDeniedException::class)
+    open fun handleAccessDenied(ex: AccessDeniedException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        val userId = SecurityContextHolder.getContext().authentication?.name
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [userId=$userId] [code=FORBIDDEN] ${ex.message}" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.FORBIDDEN,
+            detail = "Access denied",
+            code = "FORBIDDEN",
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

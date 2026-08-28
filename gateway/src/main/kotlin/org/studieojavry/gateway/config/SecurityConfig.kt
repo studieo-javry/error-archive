@@ -39,7 +39,15 @@ class SecurityConfig {
             .cors(Customizer.withDefaults())
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers(
+                auth
+                    // `/users/me/activity-grass` 는 본인 식별이 필요 → 인증 필수.
+                    //  아래 공개 와일드카드(`/users/*/activity-grass`)보다 **먼저** 매칭해야 한다.
+                    //  이유: permitAll 이면 gateway 가 이 경로를 "인증 불필요"로 보아, 토큰이 없어도 그대로
+                    //  통과시켜 downstream 으로 보낸다 → insight 는 principal 이 없어 401 → (서킷 오염).
+                    //  authenticated 로 두면 미인증은 gateway 가 즉시 401(insight 도달 X, 서킷 무관),
+                    //  인증 요청은 JWT 검증 후 aud=insight-api 내부토큰이 주입되어 insight 가 me 를 해석한다.
+                    .requestMatchers("/api/v1/users/me/activity-grass").authenticated()
+                    .requestMatchers(
                     "/api/v1/auth/oauth/**",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
@@ -52,8 +60,7 @@ class SecurityConfig {
                     // 공개 publish 페이지 + 공개 export (인증 X — 누구나 열람/다운로드)
                     "/p/**", "/api/v1/publishments/by-slug/**",
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 로그아웃 상태에서도 열람 가능해야 함.
-                    //  `*` 는 /me 도 매칭하나, insight 의 myGrass 가 principal null 이면 스스로 401 → 무해.
-                    //  로그인 사용자는 토큰이 있어 gateway 가 aud=insight-api 내부토큰을 주입(resolveAudience).
+                    //  숫자 userId 변형만 공개(타인 잔디 열람). `me` 는 위에서 authenticated 로 카브아웃했다.
                     "/api/v1/users/*/activity-grass",
                     // Swagger UI(aggregator) + 게이트웨이 자체 docs + 다운스트림 docs 프록시 경로
                     "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/api-docs/**"

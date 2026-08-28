@@ -28,7 +28,13 @@ class AttachmentS3Config {
         val builder = S3Client.builder()
             .region(Region.of(props.region))
             .credentialsProvider(credentials(props))
-            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(props.pathStyle).build())
+            // OCI Object Storage(S3 호환)는 aws-chunked payload 서명을 미지원 → putObject 403 방지.
+            .serviceConfiguration(
+                S3Configuration.builder()
+                    .pathStyleAccessEnabled(props.pathStyle)
+                    .chunkedEncodingEnabled(false)
+                    .build(),
+            )
         props.endpointInternal?.let { builder.endpointOverride(URI.create(it)) }
         return builder.build()
     }
@@ -38,7 +44,13 @@ class AttachmentS3Config {
         val builder = S3Presigner.builder()
             .region(Region.of(props.region))
             .credentialsProvider(credentials(props))
-            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(props.pathStyle).build())
+            // presigned PUT 도 브라우저가 OCI 로 직접 올리므로 aws-chunked 미사용으로 서명.
+            .serviceConfiguration(
+                S3Configuration.builder()
+                    .pathStyleAccessEnabled(props.pathStyle)
+                    .chunkedEncodingEnabled(false)
+                    .build(),
+            )
         // 서명 URL 호스트 = 브라우저 도달 주소. null(AWS) 이면 기본 리전 엔드포인트.
         (props.endpointPublic ?: props.endpointInternal)?.let { builder.endpointOverride(URI.create(it)) }
         return builder.build()

@@ -26,7 +26,15 @@ class AvatarS3Config {
         val builder = S3Client.builder()
             .region(Region.of(props.region))
             .credentialsProvider(credentials(props))
-            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(props.pathStyle).build())
+            // OCI Object Storage(S3 호환)는 aws-chunked payload 서명을 미지원 → putObject 가
+            // 403 "The required information to complete authentication was not provided" 로 실패.
+            // chunkedEncodingEnabled(false) 로 단일 서명 payload 전송(MinIO 등도 호환).
+            .serviceConfiguration(
+                S3Configuration.builder()
+                    .pathStyleAccessEnabled(props.pathStyle)
+                    .chunkedEncodingEnabled(false)
+                    .build(),
+            )
         props.endpoint?.let { builder.endpointOverride(URI.create(it)) }
         return builder.build()
     }

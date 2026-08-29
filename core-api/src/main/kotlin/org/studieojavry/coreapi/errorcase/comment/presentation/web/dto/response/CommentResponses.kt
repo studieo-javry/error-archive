@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response
 
 import io.swagger.v3.oas.annotations.media.Schema
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.comment.application.usecase.ListCommentsUseCase
 import org.studieojavry.coreapi.errorcase.comment.application.usecase.ReactionAggregate
 import org.studieojavry.coreapi.errorcase.comment.domain.model.Comment
@@ -14,7 +15,10 @@ import java.time.LocalDateTime
 data class CommentResponse(
     val id: Long,
     val errorCaseId: Long,
+    @field:Schema(description = "작성자 userId. 표시용 이름은 `author` 사용 — 이 값은 식별/딥링크용.")
     val authorUserId: Long,
+    @field:Schema(description = "작성자 프로필(표시 이름 + handle + 아바타). iam 조회 실패/탈퇴 시 displayName='알 수 없는 사용자'.")
+    val author: CommentAuthorDto,
     @field:Schema(description = "케이스 owner 와 일치하면 true — 프런트가 [작성자] 배지 렌더 결정")
     val isAuthorOfCase: Boolean,
     val parentCommentId: Long?,
@@ -81,12 +85,41 @@ data class CommentResponse(
     )
 }
 
+@Schema(description = "댓글 작성자/참여자 표시 정보. userId → 표시 이름/handle/아바타 해석용.")
+data class CommentAuthorDto(
+    val userId: Long,
+    @field:Schema(description = "GitHub login 매핑 unique handle. 탈퇴/조회 실패 시 null.")
+    val handle: String?,
+    @field:Schema(description = "표시 이름. 조회 실패/탈퇴 시 '알 수 없는 사용자'.")
+    val displayName: String,
+    val avatarUrl: String?,
+) {
+    companion object {
+        fun from(a: AuthorSummary) = CommentAuthorDto(
+            userId = a.userId,
+            handle = a.handle,
+            displayName = a.displayName,
+            avatarUrl = a.avatarUrl,
+        )
+
+        /** iam 에서 해석 못 한 userId(탈퇴/비활성) 폴백 — userId 노출 대신 익명 표기. */
+        fun unknown(userId: Long) = CommentAuthorDto(
+            userId = userId,
+            handle = null,
+            displayName = "알 수 없는 사용자",
+            avatarUrl = null,
+        )
+    }
+}
+
 @Schema(description = "댓글 목록 + cursor 페이징 + 인용 위치 집계.")
 data class CommentListResponse(
     val items: List<CommentResponse>,
     val nextCursor: String?,
     val hasNext: Boolean,
     val quoteSummary: QuoteSummaryDto,
+    @field:Schema(description = "이 목록에 등장하는 모든 userId(댓글 작성자 + 도움됨/리액션 누른 사람)의 표시 정보 디렉토리. 프런트가 helpful/reaction 팝오버 이름 해석에 사용.")
+    val authors: List<CommentAuthorDto> = emptyList(),
 ) {
     @Schema(description = "인용 위치별 집계 (사이드 패널 렌더링용).")
     data class QuoteSummaryDto(
@@ -159,11 +192,15 @@ internal fun CommentSuggestion.toDto(): CommentResponse.SuggestionDto {
     )
 }
 
-internal fun ListCommentsUseCase.CommentNode.toResponse(caseOwnerUserId: Long): CommentResponse =
+internal fun ListCommentsUseCase.CommentNode.toResponse(
+    caseOwnerUserId: Long,
+    authors: Map<Long, CommentAuthorDto>,
+): CommentResponse =
     CommentResponse(
         id = comment.id!!,
         errorCaseId = comment.errorCaseId,
         authorUserId = comment.authorUserId,
+        author = authors[comment.authorUserId] ?: CommentAuthorDto.unknown(comment.authorUserId),
         isAuthorOfCase = comment.authorUserId == caseOwnerUserId,
         parentCommentId = comment.parentCommentId,
         body = comment.body,
@@ -176,5 +213,5 @@ internal fun ListCommentsUseCase.CommentNode.toResponse(caseOwnerUserId: Long): 
         deletedAt = comment.deletedAt,
         createdAt = comment.createdAt,
         updatedAt = comment.updatedAt,
-        replies = replies.map { it.toResponse(caseOwnerUserId) },
+        replies = replies.map { it.toResponse(caseOwnerUserId, authors) },
     )

@@ -41,6 +41,8 @@ import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.A
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.CreateCommentRequest
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.UpdateCommentRequest
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.UpdateSuggestionStatusRequest
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
+import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentAuthorDto
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentListResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.HelpfulToggleResponse
@@ -73,7 +75,14 @@ class CommentController(
     private val updateSuggestionStatusUseCase: UpdateSuggestionStatusUseCase,
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val commentRepository: org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort,
+    private val authorSummaryReader: AuthorSummaryReaderPort,
 ) {
+
+    /** userId 집합 → 표시 정보 디렉토리. iam 해석 실패한 userId 는 map 에서 빠지고, 매핑 측에서 unknown 폴백. */
+    private fun resolveAuthors(userIds: Set<Long>, viewerUserId: Long?): Map<Long, CommentAuthorDto> =
+        if (userIds.isEmpty()) emptyMap()
+        else authorSummaryReader.read(userIds, viewerUserId)
+            .mapValues { CommentAuthorDto.from(it.value) }
 
     @Operation(
         summary = "댓글 작성",
@@ -140,10 +149,13 @@ class CommentController(
         val caseOwnerUserId = errorCaseRepository.findById(caseId)?.ownerUserId ?: -1L
         val suggestion = commentRepository.findSuggestionByCommentId(created.id!!)
         // 단건 응답에선 reaction/helpful/mention 비어있는 상태(방금 만들었으니)
+        val author = resolveAuthors(setOf(created.authorUserId), userId)[created.authorUserId]
+            ?: CommentAuthorDto.unknown(created.authorUserId)
         return CommentResponse(
             id = created.id!!,
             errorCaseId = created.errorCaseId,
             authorUserId = created.authorUserId,
+            author = author,
             isAuthorOfCase = created.authorUserId == caseOwnerUserId,
             parentCommentId = created.parentCommentId,
             body = created.body,
@@ -208,8 +220,20 @@ class CommentController(
         }
 
         val caseOwnerUserId = errorCaseRepository.findById(caseId)?.ownerUserId ?: -1L
+
+        // 이 목록에 등장하는 모든 userId(댓글 작성자 + 도움됨/리액션 누른 사람)를 한 번에 iam 조회.
+        val referencedUserIds = mutableSetOf<Long>()
+        fun collect(node: ListCommentsUseCase.CommentNode) {
+            referencedUserIds += node.comment.authorUserId
+            referencedUserIds += node.helpedByUserIds
+            node.reactions.forEach { referencedUserIds += it.userIds }
+            node.replies.forEach { collect(it) }
+        }
+        r.items.forEach { collect(it) }
+        val authors = resolveAuthors(referencedUserIds, userId)
+
         return CommentListResponse(
-            items = r.items.map { it.toResponse(caseOwnerUserId) },
+            items = r.items.map { it.toResponse(caseOwnerUserId, authors) },
             nextCursor = r.nextCursor,
             hasNext = r.hasNext,
             quoteSummary = CommentListResponse.QuoteSummaryDto(
@@ -217,6 +241,7 @@ class CommentController(
                 caseBody = r.quoteSummary.caseBody,
                 steps = r.quoteSummary.steps.map { CommentListResponse.KeyCountDto(it.sourceId, it.count) },
             ),
+            authors = authors.values.toList(),
         )
     }
 
@@ -246,10 +271,13 @@ class CommentController(
         }
         val caseOwnerUserId = errorCaseRepository.findById(caseId)?.ownerUserId ?: -1L
         val suggestion = commentRepository.findSuggestionByCommentId(c.id!!)
+        val author = resolveAuthors(setOf(c.authorUserId), userId)[c.authorUserId]
+            ?: CommentAuthorDto.unknown(c.authorUserId)
         return CommentResponse(
             id = c.id!!,
             errorCaseId = c.errorCaseId,
             authorUserId = c.authorUserId,
+            author = author,
             isAuthorOfCase = c.authorUserId == caseOwnerUserId,
             parentCommentId = c.parentCommentId,
             body = c.body,

@@ -32,5 +32,7 @@ data class InvitationPreviewResponse(
 data class AcceptInvitationResponse(
     val workspaceId: Long,
     val workspaceName: String,
+    /** 수락 직후 FE 가 `/w/{slug}/home` 으로 이동하는 데 사용. */
+    val slug: String,
     val role: String
 )

@@ -9,6 +9,7 @@ import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.studieojavry.iamapi.workspace.application.usecase.AcceptInvitationUseCase
+import org.studieojavry.iamapi.workspace.application.usecase.ChangeMemberRoleUseCase
 import org.studieojavry.iamapi.workspace.application.usecase.CreateWorkspaceUseCase
 import org.studieojavry.iamapi.workspace.application.usecase.WorkspaceAccess
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
@@ -61,6 +62,27 @@ class WorkspaceExceptionHandler(
             status = HttpStatus.CONFLICT,
             detail = "Workspace slug '${ex.slug}' is already in use.",
             code = "WORKSPACE_SLUG_TAKEN",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    @ExceptionHandler(ChangeMemberRoleUseCase.LastAdminException::class)
+    fun handleLastAdmin(
+        ex: ChangeMemberRoleUseCase.LastAdminException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn {
+            "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=WORKSPACE_LAST_ADMIN] ${ex.message}"
+        }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.CONFLICT,
+            detail = ex.message ?: "워크스페이스에는 최소 1명의 관리자(Admin)가 필요합니다.",
+            code = "WORKSPACE_LAST_ADMIN",
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

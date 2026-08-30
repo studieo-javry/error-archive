@@ -30,7 +30,12 @@ class ChangeMemberRoleUseCase(
     private fun ensureNotLastAdmin(workspaceId: Long) {
         val adminCount = memberRepository.countByWorkspaceIdAndRole(workspaceId, WorkspaceRole.ADMIN)
         if (adminCount <= 1) {
-            throw IllegalStateException("workspace must keep at least one ADMIN")
+            throw LastAdminException(
+                "워크스페이스에는 최소 1명의 관리자(Admin)가 필요합니다. 다른 멤버를 Admin 으로 지정한 뒤 역할을 변경하세요."
+            )
         }
     }
+
+    /** 마지막 남은 ADMIN 을 강등하려 할 때 — 도메인 규칙 위반. WorkspaceExceptionHandler 가 409 로 매핑. */
+    class LastAdminException(message: String) : RuntimeException(message)
 }

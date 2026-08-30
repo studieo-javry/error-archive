@@ -110,18 +110,23 @@ class FollowController(
         )
     }
 
-    @Operation(summary = "팔로워 목록 (public, offset 페이징)", description = "그 사용자를 팔로우하는 사람들.")
+    @Operation(
+        summary = "팔로워 목록 (public, viewer-aware)",
+        description = "그 사용자를 팔로우하는 사람들. 인증된 viewer 가 있으면 각 항목에 isFollowing/isSelf 표시. 비인증도 호출 가능."
+    )
     @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
     @SecurityRequirements
     @GetMapping("/{userId}/followers")
     fun followers(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt?,
         @Parameter(description = "대상 사용자 ID") @PathVariable userId: Long,
         @Parameter(description = "0-base 페이지", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "페이지 크기", example = "20") @RequestParam(defaultValue = "20") size: Int
     ): FollowListResponse {
-        val r = getFollowersUseCase.invoke(userId, page, size)
+        val viewerId = jwt?.subject?.toLongOrNull()
+        val r = getFollowersUseCase.invoke(userId, page, size, viewerId)
         return FollowListResponse(
-            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl) },
+            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl, it.isFollowing, it.isSelf) },
             page = r.page,
             size = r.size,
             totalElements = r.totalElements,
@@ -129,18 +134,23 @@ class FollowController(
         )
     }
 
-    @Operation(summary = "팔로잉 목록 (public, offset 페이징)", description = "그 사용자가 팔로우하는 사람들.")
+    @Operation(
+        summary = "팔로잉 목록 (public, viewer-aware)",
+        description = "그 사용자가 팔로우하는 사람들. 인증된 viewer 가 있으면 각 항목에 isFollowing/isSelf 표시. 비인증도 호출 가능."
+    )
     @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
     @SecurityRequirements
     @GetMapping("/{userId}/following")
     fun following(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt?,
         @Parameter(description = "대상 사용자 ID") @PathVariable userId: Long,
         @Parameter(description = "0-base 페이지", example = "0") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "페이지 크기", example = "20") @RequestParam(defaultValue = "20") size: Int
     ): FollowListResponse {
-        val r = getFollowingUseCase.invoke(userId, page, size)
+        val viewerId = jwt?.subject?.toLongOrNull()
+        val r = getFollowingUseCase.invoke(userId, page, size, viewerId)
         return FollowListResponse(
-            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl) },
+            items = r.items.map { UserSummaryResponse(it.userId, it.handle, it.displayName, it.avatarUrl, it.isFollowing, it.isSelf) },
             page = r.page,
             size = r.size,
             totalElements = r.totalElements,

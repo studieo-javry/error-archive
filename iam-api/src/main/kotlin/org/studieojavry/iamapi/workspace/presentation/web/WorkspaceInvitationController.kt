@@ -176,6 +176,7 @@ class WorkspaceInvitationController(
         return AcceptInvitationResponse(
             workspaceId = r.workspaceId,
             workspaceName = r.workspaceName,
+            slug = r.slug,
             role = r.role.name
         )
     }

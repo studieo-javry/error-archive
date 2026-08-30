@@ -85,6 +85,7 @@ class AcceptInvitationUseCase(
         return Result(
             workspaceId = workspace.id,
             workspaceName = workspace.name.value,
+            slug = workspace.slug.value,
             role = invitation.role
         )
     }
@@ -92,6 +93,8 @@ class AcceptInvitationUseCase(
     data class Result(
         val workspaceId: Long,
         val workspaceName: String,
+        /** FE 가 수락 직후 `/w/{slug}/home` 으로 바로 이동하기 위한 워크스페이스 slug. */
+        val slug: String,
         val role: WorkspaceRole
     )
 

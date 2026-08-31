@@ -23,6 +23,8 @@ data class ErrorCaseDetailResponse(
     val snippets: List<SnippetDto>,
     val attachments: List<AttachmentDto>,
     val meToo: MeTooDto,
+    /** viewer 본인이 이 케이스를 watchlist 에 담고 있는지. FE 별(Watch) 상태 초기화용. */
+    val watchedByMe: Boolean,
 ) {
     /** "나도 겪었어요" — count + viewer 본인의 표시 여부 + 누른 사용자 ID 목록(최신 30명). */
     data class MeTooDto(
@@ -82,6 +84,7 @@ data class ErrorCaseDetailResponse(
             c: ErrorCase,
             meToo: MeTooDto = MeTooDto(0, false, emptyList()),
             attachmentUrls: AttachmentUrlResolver,
+            watchedByMe: Boolean = false,
         ): ErrorCaseDetailResponse = ErrorCaseDetailResponse(
             id = requireNotNull(c.id),
             ownerUserId = c.ownerUserId,
@@ -134,6 +137,7 @@ data class ErrorCaseDetailResponse(
                 )
             },
             meToo = meToo,
+            watchedByMe = watchedByMe,
         )
     }
 }

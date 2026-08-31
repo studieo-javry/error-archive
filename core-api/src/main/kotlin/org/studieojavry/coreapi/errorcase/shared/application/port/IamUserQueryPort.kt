@@ -24,5 +24,7 @@ interface IamUserQueryPort {
         val userId: Long,
         val displayName: String,
         val avatarUrl: String?,
+        /** @핸들. 멘션 후보 표시용. iam 응답에 없으면 null. */
+        val handle: String? = null,
     )
 }

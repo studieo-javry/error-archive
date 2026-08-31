@@ -36,7 +36,7 @@ class IamUserQueryAdapter(
                     .retrieve()
                     .body(Array<IamUserItem>::class.java)
                     ?: emptyArray()
-                items.map { IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl) }
+                items.map { IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl, it.handle) }
             } catch (ex: RestClientResponseException) {
                 log.warn(ex) { "iam-api user search failed: status=${ex.statusCode}" }
                 emptyList()
@@ -62,7 +62,7 @@ class IamUserQueryAdapter(
                         .uri("/api/v1/users/{id}", id)
                         .retrieve()
                         .body(IamPublicProfile::class.java)
-                    view?.let { IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl) }
+                    view?.let { IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl, it.handle) }
                 } catch (ex: RestClientResponseException) {
                     if (ex.statusCode.value() == 404) null else { log.warn(ex) { "iam-api user fetch failed" }; null }
                 }
@@ -71,6 +71,6 @@ class IamUserQueryAdapter(
         { t -> log.warn(t) { "iam-api unavailable on findByIds → empty" }; emptyList() }
     )
 
-    private data class IamUserItem(val userId: Long, val displayName: String, val avatarUrl: String?)
-    private data class IamPublicProfile(val userId: Long, val displayName: String, val avatarUrl: String?)
+    private data class IamUserItem(val userId: Long, val displayName: String, val avatarUrl: String?, val handle: String? = null)
+    private data class IamPublicProfile(val userId: Long, val displayName: String, val avatarUrl: String?, val handle: String? = null)
 }

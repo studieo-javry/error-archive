@@ -61,7 +61,7 @@ class MentionCandidatesController(
         } catch (e: ErrorCaseAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         }
-        return items.map { MentionCandidateResponse(it.userId, it.displayName, it.avatarUrl, it.badge) }
+        return items.map { MentionCandidateResponse(it.userId, it.displayName, it.handle, it.avatarUrl, it.badge) }
     }
 }
 
@@ -69,6 +69,8 @@ class MentionCandidatesController(
 data class MentionCandidateResponse(
     val userId: Long,
     val displayName: String,
+    @field:Schema(description = "@핸들. 동명이인 구분·표시용. 조회 실패 시 null.", example = "jihoo")
+    val handle: String?,
     val avatarUrl: String?,
     @field:Schema(description = "후보 source — in-discussion · owner · workspace-member · search", example = "in-discussion")
     val badge: String?,

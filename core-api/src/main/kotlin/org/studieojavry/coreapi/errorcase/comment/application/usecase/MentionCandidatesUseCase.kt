@@ -74,9 +74,10 @@ class MentionCandidatesUseCase(
         needIds -= viewerUserId
         scored.remove(viewerUserId)
 
-        // 표시 정보 fetch (워크스페이스 멤버는 이미 가지고 있음 — searchHits 도)
+        // 표시 정보 fetch. searchHits 는 handle 포함 응답이라 그대로 쓰고,
+        // 나머지(댓글 참여자·owner·워크스페이스 멤버)는 findByIds(공개 프로필)로 채운다.
+        // — 워크스페이스 멤버도 여기서 조회해야 handle 을 얻는다(MemberSummary 엔 handle 없음).
         val infoById = HashMap<Long, IamUserQueryPort.UserSummary>()
-        workspaceMembers.forEach { infoById[it.userId] = IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl) }
         searchHits.forEach { infoById[it.userId] = it }
         val missing = needIds - infoById.keys
         if (missing.isNotEmpty()) {
@@ -106,7 +107,7 @@ class MentionCandidatesUseCase(
             )
             .take(cap)
             .map { (u, badge, _) ->
-                Item(userId = u.userId, displayName = u.displayName, avatarUrl = u.avatarUrl, badge = badge?.code)
+                Item(userId = u.userId, displayName = u.displayName, handle = u.handle, avatarUrl = u.avatarUrl, badge = badge?.code)
             }
 
         return results
@@ -120,7 +121,7 @@ class MentionCandidatesUseCase(
     private fun betterBadge(a: BadgeKind, b: BadgeKind): BadgeKind =
         if (a.priority <= b.priority) a else b
 
-    data class Item(val userId: Long, val displayName: String, val avatarUrl: String?, val badge: String?)
+    data class Item(val userId: Long, val displayName: String, val handle: String?, val avatarUrl: String?, val badge: String?)
     private data class Score(val score: Int, val topBadge: BadgeKind)
 
     private enum class BadgeKind(val priority: Int, val code: String) {

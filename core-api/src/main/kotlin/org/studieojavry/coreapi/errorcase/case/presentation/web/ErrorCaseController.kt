@@ -36,6 +36,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDele
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ListErrorCasesUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.MarkCaseMeTooUseCase
@@ -78,6 +79,7 @@ class ErrorCaseController(
     private val addCaseToWatchlistUseCase: AddCaseToWatchlistUseCase,
     private val removeCaseFromWatchlistUseCase: RemoveCaseFromWatchlistUseCase,
     private val countMyCasesByStatusUseCase: CountMyCasesByStatusUseCase,
+    private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
     private val attachmentPresigner: AttachmentPresigner,
     private val presignTtl: PresignTtlProperties,
 ) {
@@ -360,10 +362,12 @@ class ErrorCaseController(
             runCatching { registerCaseViewUseCase.invoke(userId = userId, errorCaseId = id) }
         }
         val mt = getCaseMeTooUseCase.invoke(id, userId)
+        val watchedByMe = runCatching { caseWatchlistRepository.exists(id, userId) }.getOrDefault(false)
         return ErrorCaseDetailResponse.from(
             errorCase,
             ErrorCaseDetailResponse.MeTooDto(mt.count, mt.taggedByMe, mt.userIds),
             attachmentUrlResolver(errorCase.visibility),
+            watchedByMe = watchedByMe,
         )
     }
 

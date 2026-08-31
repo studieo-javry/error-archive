@@ -68,7 +68,10 @@ class CreateCommentUseCase(
             .take(MENTIONS_MAX)
             .toList()
         val mentions = identifiers.map { ident ->
-            val uid = runCatching { iamUserQuery.resolveByDisplayName(ident) }.getOrNull()
+            // handle 우선 해석(FE 멘션 자동완성이 @handle 삽입). 못 찾으면 displayName 폴백(기존 호환).
+            val uid = runCatching {
+                iamUserQuery.resolveByHandle(ident) ?: iamUserQuery.resolveByDisplayName(ident)
+            }.getOrNull()
             CommentMention.create(saved.id!!, ident, uid)
         }
         commentRepository.saveMentions(mentions)

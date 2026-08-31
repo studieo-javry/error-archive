@@ -54,6 +54,15 @@ class IamUserQueryAdapter(
         return if (exact.size == 1) exact.single().userId else null
     }
 
+    override fun resolveByHandle(handle: String): Long? {
+        val trimmed = handle.trim().removePrefix("@")
+        if (trimmed.isEmpty()) return null
+        // iam 검색은 handle prefix 도 매칭한다. handle 정확 일치(대소문자 무시) 1건만 채택.
+        val hits = searchByDisplayNamePrefix(trimmed, 5)
+        val exact = hits.filter { it.handle?.equals(trimmed, ignoreCase = true) == true }
+        return if (exact.size == 1) exact.single().userId else null
+    }
+
     override fun findByIds(ids: Collection<Long>): List<IamUserQueryPort.UserSummary> = cb.run(
         {
             ids.distinct().mapNotNull { id ->

@@ -18,6 +18,9 @@ interface IamUserQueryPort {
     /** displayName 정확 일치(대소문자 무시) 사용자가 *정확히 1명* 이면 그 userId, 아니면 null. */
     fun resolveByDisplayName(displayName: String): Long?
 
+    /** handle 정확 일치(대소문자 무시) 사용자의 userId. handle 은 유니크하므로 0/1 건. 없으면 null. */
+    fun resolveByHandle(handle: String): Long?
+
     fun findByIds(ids: Collection<Long>): List<UserSummary>
 
     data class UserSummary(

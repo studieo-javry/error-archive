@@ -49,6 +49,8 @@ class SecurityConfig {
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     // prod 는 base-path=/internal/actuator → 프로브가 이 경로. 인증 없이 열려야 kubelet 200.
                     .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
+                    // Prometheus 메트릭 스크레이프 — /internal/** 은 gateway 가 외부 라우팅 안 함 → 클러스터 내부만 도달.
+                    .requestMatchers("/actuator/prometheus", "/internal/actuator/prometheus").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 모든 프로파일에서 익명 열람 허용.
@@ -83,7 +85,13 @@ class SecurityConfig {
             }
         }
         return UrlBasedCorsConfigurationSource().apply {
-            registerCorsConfiguration("/**", config)
+            // local 에서만 실 경로에 CORS 등록 — playground(activity-grass.html)가 insight 를 직접 호출하므로.
+            // prod/stg 는 게이트웨이가 CORS 를 소유한다. 비-local 에서 config 는 비어 있는데,
+            // 그 빈 CorsConfiguration 을 `/**` 에 등록하면 Origin 헤더가 실린 *게이트웨이 전달 요청*을
+            // 전부 403 "Invalid CORS request" 로 거부한다(다운스트림 이중 CORS). 그래서 등록하지 않는다.
+            if (isLocal) {
+                registerCorsConfiguration("/**", config)
+            }
         }
     }
 }

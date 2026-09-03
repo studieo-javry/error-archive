@@ -46,6 +46,8 @@ class SecurityConfig {
                     // prod 는 base-path=/internal/actuator → health/liveness/readiness 프로브가 이 경로.
                     // k8s kubelet 프로브(토큰 없음)가 200 을 받으려면 인증 없이 열려야 한다.
                     .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
+                    // Prometheus 메트릭 스크레이프 — /internal/** 은 gateway 가 외부 라우팅 안 함 → 클러스터 내부만 도달.
+                    .requestMatchers("/actuator/prometheus", "/internal/actuator/prometheus").permitAll()
                     .requestMatchers("/error").permitAll()
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람. (실제 API 호출은 X-Internal-Auth 필요)
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

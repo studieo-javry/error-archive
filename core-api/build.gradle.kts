@@ -45,6 +45,8 @@ dependencies {
   implementation("org.studieo-javry:shared-internal-auth:0.0.1-SNAPSHOT")
   implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
   implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  // Prometheus 메트릭 registry — /internal/actuator/prometheus 노출 (관측 스택 스크레이프).
+  runtimeOnly("io.micrometer:micrometer-registry-prometheus")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
   // CircuitBreaker (외부 호출 격리: iam-api)
   implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")

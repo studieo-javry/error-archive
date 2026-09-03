@@ -37,6 +37,8 @@ dependencies {
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
   implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  // Prometheus 메트릭 registry — /internal/actuator/prometheus 노출 (관측 스택 스크레이프).
+  runtimeOnly("io.micrometer:micrometer-registry-prometheus")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
 
   // gateway / core-api / iam-api 발급 internal JWT 검증 + iam-api 호출용 발급

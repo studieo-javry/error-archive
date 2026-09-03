@@ -85,6 +85,9 @@ class SecurityConfig {
                     // readiness/liveness 그룹(/health/**) 까지 permit (k8s probe 401 방지).
                     "/actuator/health", "/actuator/health/**",
                     "/internal/actuator/health", "/internal/actuator/health/**",
+                    // Prometheus 메트릭 스크레이프 — /internal/** 은 gateway 가 외부로 라우팅하지 않아
+                    // 클러스터 내부(관측 alloy)에서만 도달. 메트릭엔 비밀값 없음.
+                    "/actuator/prometheus", "/internal/actuator/prometheus",
                     // 정적 아바타 이미지 — 공개 read. 업로드/삭제는 별도 endpoint 라 인증 필요.
                     "/avatars/**",
                     // OpenAPI 문서 / Swagger UI — 인증 없이 열람 (실 API 호출은 Authorization 필요)

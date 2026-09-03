@@ -49,6 +49,8 @@ class SecurityConfig {
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     // prod 는 base-path=/internal/actuator → 프로브가 이 경로. 인증 없이 열려야 kubelet 200.
                     .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
+                    // Prometheus 메트릭 스크레이프 — /internal/** 은 gateway 가 외부 라우팅 안 함 → 클러스터 내부만 도달.
+                    .requestMatchers("/actuator/prometheus", "/internal/actuator/prometheus").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 모든 프로파일에서 익명 열람 허용.

@@ -37,6 +37,10 @@ dependencies {
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
   implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  // 관측 — Prometheus 메트릭 registry (/internal/actuator/prometheus 노출).
+  runtimeOnly("io.micrometer:micrometer-registry-prometheus")
+  // 공통 에러 처리 — GlobalExceptionHandler(4xx 매핑·traceId) + ProblemDetail security 핸들러 (auto-config).
+  implementation("org.studieo-javry:shared-error:0.0.1-SNAPSHOT")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
 
   // Kafka producer (outbox → relayer 가 KafkaTemplate 사용).

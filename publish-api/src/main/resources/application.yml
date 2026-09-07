@@ -15,6 +15,11 @@ spring:
 server:
   forward-headers-strategy: framework
   port: 8084
+  # 공개 페이지 HTML / JSON 응답 gzip (PDF 는 이미 압축이라 제외 대상). core-api 와 동일.
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/html,text/css,text/javascript,application/javascript
+    min-response-size: 1024
 
 management:
   endpoints:

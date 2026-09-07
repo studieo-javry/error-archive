@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  publish-api 로그 설정 (다른 서비스와 동일 패턴).
+  - 컨테이너(stg/prod)는 stdout(CONSOLE)만 — 파일 appender 미사용(ephemeral·non-root 이슈). 수집은 k8s/Loki 가 stdout 에서.
+  - traceId/spanId 는 micrometer-tracing-bridge-brave 가 MDC 에 자동 주입.
+  - 레벨/패턴은 yml 의 logging.* 가 우선 override.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="publish-api"/>
+
+    <property name="DEFAULT_PATTERN"
+              value="%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN:-${DEFAULT_PATTERN}}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <springProfile name="stg | prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="local | dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="test">
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>

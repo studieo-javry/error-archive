@@ -1,0 +1,95 @@
+# ===================================================================
+# stg — staging. 운영과 동일 정책, 로깅/풀만 완화. 비밀·키는 ENV/Secret 주입.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: stg
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+  datasource:
+    url: ${PUBLISH_DB_URL}
+    username: ${PUBLISH_DB_USERNAME}
+    password: ${PUBLISH_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 운영과 동일 — Flyway 로만 스키마 변경
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+# 첨부 presign(공개 페이지 이미지) — stg 도 env 주입. base yml 의 localhost/minioadmin 기본값이 새지 않도록 override.
+publish:
+  attachment:
+    s3:
+      bucket: ${PUBLISH_ATTACHMENT_BUCKET}
+      region: ${PUBLISH_ATTACHMENT_REGION}
+      endpoint-public: ${PUBLISH_ATTACHMENT_S3_ENDPOINT_PUBLIC}
+      path-style: ${PUBLISH_ATTACHMENT_S3_PATH_STYLE:true}
+      access-key: ${PUBLISH_ATTACHMENT_S3_ACCESS_KEY}
+      secret-key: ${PUBLISH_ATTACHMENT_S3_SECRET_KEY}
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: publish-api
+    key-id: ${PUBLISH_INTERNAL_ISSUER_KEY_ID:publish-api}
+    private-key-pem: ${PUBLISH_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: publish-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+
+# swagger/api-docs 는 stg 도 노출 안 함(각 서비스 직접 확인).
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# actuator 하드닝 — prod 와 동일 정책(/internal/actuator, health/info/prometheus, 프로브).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /internal/actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never

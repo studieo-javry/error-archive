@@ -1,0 +1,87 @@
+# ===================================================================
+# local — publish-api 로컬
+# - DB: docker-compose 의 PostgreSQL (localhost:5436, publish_db)
+# - port 8084
+# ===================================================================
+
+server:
+  port: 8084
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  flyway:
+    enabled: false   # local: Hibernate(ddl-auto=update)로 스키마 관리 → Flyway off
+  datasource:
+    url: ${PUBLISH_DB_URL:jdbc:postgresql://localhost:5436/publish_db}
+    username: ${PUBLISH_DB_USERNAME:publish}
+    password: ${PUBLISH_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+  kafka:
+    bootstrap-servers: "${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: "1"
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
+# Activity event publisher mode. `kafka` 면 outbox + relayer 가 user-activity.v1 발행.
+# 그 외 (http/noop) 면 Noop fallback — CASE_PUBLISHED 잔디 미발행 (도메인은 정상).
+noti:
+  publisher:
+    mode: "${NOTI_PUBLISHER_MODE:kafka}"
+
+publish:
+  # base yml 이 fail-fast 로 기본값을 뺐으므로 local 은 여기서 concrete 지정.
+  core-api:
+    base-url: http://localhost:8081
+  page:
+    public-base-url: http://localhost:8000
+  # Outbox + Relayer (adaptive polling).
+  outbox:
+    busy-delay-ms: 200
+    idle-initial-delay-ms: 1000
+    idle-max-delay-ms: 5000
+    idle-multiplier: 2.0
+    batch-size: 50
+    max-attempts: 10
+    base-backoff-ms: 5000
+    max-backoff-ms: 3600000
+    sent-ttl-days: 30
+
+logging:
+  level:
+    org.studieojavry: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# 내부 인증
+#   verifier — gateway 가 보낸 토큰(aud=publish-api) 검증
+#   issuer   — publish-api 가 core-api 의 /internal/error-cases/{id}/full-data 호출 시 발급
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: publish-api
+    key-id: ${PUBLISH_INTERNAL_ISSUER_KEY_ID:publish-api-local-1}
+    # 개인키는 절대 커밋 금지 — .env.local(gitignore)에서 주입. (stg/prod 와 동일 패턴)
+    private-key-pem: ${PUBLISH_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: publish-api
+    known-issuers:
+      # gateway 공개키 — 공개값이지만 환경 일관성 위해 env 화. .env.local 에서 주입.
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}

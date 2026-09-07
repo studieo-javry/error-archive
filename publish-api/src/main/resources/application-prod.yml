@@ -1,0 +1,104 @@
+# ===================================================================
+# prod — production.
+# - DB/키는 ENV/Secret 주입(평문 금지).
+# - ddl-auto: validate. 스키마 변경은 Flyway(db/migration)로만.
+# - core-api base-url / page url / S3(첨부 presign) 는 base application.yml 의 ENV.
+# ===================================================================
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false   # 신규 DB 전제. 기존 스키마 위 도입 시 true + baseline-version
+
+  datasource:
+    url: ${PUBLISH_DB_URL}
+    username: ${PUBLISH_DB_USERNAME}
+    password: ${PUBLISH_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # ★ 무료티어 PG 1인스턴스(max_connections=100) 5개 서비스 공유 → 풀 합계 100 미만 필수(core18/iam15/publish·noti·insight10 = 63).
+      maximum-pool-size: 10       # publish = 발행(중간 트래픽)
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate           # ★ 절대 update/create 금지
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        delivery.timeout.ms: 8000
+        request.timeout.ms: 5000
+
+# CASE_PUBLISHED 잔디 event 를 outbox → kafka 로 발행
+noti:
+  publisher:
+    mode: ${NOTI_PUBLISHER_MODE:kafka}
+
+# 첨부 presign = OCI Object Storage (S3 호환). publish 는 서명(presign)만 하므로 endpoint-public 만 필요.
+#  - endpoint: https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
+#  - access/secret: OCI Customer Secret Key
+publish:
+  attachment:
+    s3:
+      bucket: ${PUBLISH_ATTACHMENT_BUCKET}
+      region: ${PUBLISH_ATTACHMENT_REGION}
+      endpoint-public: ${PUBLISH_ATTACHMENT_S3_ENDPOINT_PUBLIC}
+      path-style: ${PUBLISH_ATTACHMENT_S3_PATH_STYLE:true}
+      access-key: ${PUBLISH_ATTACHMENT_S3_ACCESS_KEY}
+      secret-key: ${PUBLISH_ATTACHMENT_S3_SECRET_KEY}
+
+# 내부 서비스 인증 — 키는 ENV 주입(평문 금지).
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: publish-api
+    key-id: ${PUBLISH_INTERNAL_ISSUER_KEY_ID:publish-api}
+    private-key-pem: ${PUBLISH_INTERNAL_ISSUER_PRIVATE_KEY}
+  verifier:
+    audience: publish-api
+    known-issuers:
+      gateway: ${INTERNAL_AUTH_GATEWAY_PUBLIC_KEY}
+
+logging:
+  level:
+    root: WARN
+    org.studieojavry: INFO
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{traceId:-},%X{spanId:-}] [%thread] %logger{36} - %msg%n"
+
+# swagger/api-docs 는 운영 노출 안 함.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /internal/actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true                    # /health/liveness, /health/readiness (k8s probe)
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never

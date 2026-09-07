@@ -1,0 +1,24 @@
+services:
+  publish-postgres:
+    image: postgres:16-alpine
+    container_name: publish-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: publish_db
+      POSTGRES_USER: publish
+      POSTGRES_PASSWORD: publish_local_pw   # dev only
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5436:5432"
+    volumes:
+      - publish-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U publish -d publish_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  publish-postgres-data:
+    name: publish-postgres-data

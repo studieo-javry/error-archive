@@ -11,14 +11,15 @@ on:
       - 'core-api/**'
       - 'noti-api/**'
       - 'insight-api/**'
+      - 'publish-api/**'
       - 'shared-**/**'
       - '*.gradle.kts'
   workflow_dispatch:                   # 수동: Actions 탭 "Run workflow" 버튼
     inputs:
       services:
-        description: '강제 빌드할 서비스(쉼표구분). 비우면 전체 4개.'
+        description: '강제 빌드할 서비스(쉼표구분). 비우면 전체 5개.'
         required: false
-        default: 'iam-api,core-api,noti-api,insight-api'
+        default: 'iam-api,core-api,noti-api,insight-api,publish-api'
 
 concurrency:
   group: release-stg-${{ github.ref }}
@@ -46,11 +47,12 @@ jobs:
             core-api:    [ 'core-api/**',    'shared-**/**', '*.gradle.kts' ]
             noti-api:    [ 'noti-api/**',    'shared-**/**', '*.gradle.kts' ]
             insight-api: [ 'insight-api/**', 'shared-**/**', '*.gradle.kts' ]
+            publish-api: [ 'publish-api/**', 'shared-**/**', '*.gradle.kts' ]
       - id: decide
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             IN="${{ github.event.inputs.services }}"
-            [ -z "$IN" ] && IN="iam-api,core-api,noti-api,insight-api"     # 비우면 전체
+            [ -z "$IN" ] && IN="iam-api,core-api,noti-api,insight-api,publish-api"     # 비우면 전체
             # 쉼표 split + 공백 trim + 빈값 제거를 jq 안에서 처리(예전 tr -d '[:space:]' 는 개행까지 지워 4개가 1개로 합쳐졌음).
             SVCS=$(jq -cn --arg s "$IN" '$s | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length>0))')
           else

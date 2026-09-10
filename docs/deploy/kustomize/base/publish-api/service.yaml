@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: publish-api
+spec:
+  selector: { app: publish-api }
+  ports:
+    - port: 8084
+      targetPort: 8084

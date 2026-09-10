@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: publish-api
+  labels: { app: publish-api }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: publish-api }
+  template:
+    metadata:
+      labels: { app: publish-api }
+    spec:
+      nodeSelector: { role: apps }
+      # ghcr public 이미지라 imagePullSecrets 불필요. private 전환 시 여기에 추가.
+      containers:
+        - name: publish-api
+          image: publish-api                    # overlay 의 images: 가 ghcr 경로+태그로 치환
+          ports:
+            - containerPort: 8084
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef: { name: publish-api-env, key: SPRING_PROFILES_ACTIVE }
+          envFrom:
+            - secretRef:    { name: publish-api-secrets }   # git 밖(kubectl 로 생성). ArgoCD 관리 X
+            - configMapRef: { name: publish-api-env }
+          readinessProbe:
+            httpGet: { path: /internal/actuator/health/readiness, port: 8084 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          startupProbe:                          # ARM 콜드스타트+다중 JVM 경합 대비: 기동 완료 전 liveness 가 죽이는 것 방지
+            httpGet: { path: /internal/actuator/health/liveness, port: 8084 }
+            periodSeconds: 5
+            failureThreshold: 60                  # 최대 ~300s
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /internal/actuator/health/liveness, port: 8084 }
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            failureThreshold: 6
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "384Mi" }   # PDF 렌더(OpenHTMLToPdf) 여유 위해 memory 넉넉히
+            limits:   { memory: "640Mi" }

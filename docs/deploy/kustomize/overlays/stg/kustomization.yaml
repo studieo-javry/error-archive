@@ -9,6 +9,7 @@ resources:
 - ../../base/core-api
 - ../../base/noti-api
 - ../../base/insight-api
+- ../../base/publish-api
 
 configMapGenerator:
 - literals:
@@ -23,6 +24,9 @@ configMapGenerator:
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
   name: insight-api-env
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  name: publish-api-env
 generatorOptions:
   disableNameSuffixHash: true
 
@@ -40,3 +44,6 @@ images:
 - name: noti-api
   newName: ghcr.io/studieo-javry/noti-api
   newTag: 3dfca134c76898c763baa60e8f06d6cc7ef1f1f8
+- name: publish-api
+  newName: ghcr.io/studieo-javry/publish-api
+  newTag: stg                                   # 첫 빌드(수동 dispatch) 전엔 pull 불가 — build-push 가 :stg 태그 push 후 bump-manifest 가 SHA 로 갱신

@@ -46,4 +46,4 @@ images:
   newTag: 3dfca134c76898c763baa60e8f06d6cc7ef1f1f8
 - name: publish-api
   newName: ghcr.io/studieo-javry/publish-api
-  newTag: stg                                   # 첫 빌드(수동 dispatch) 전엔 pull 불가 — build-push 가 :stg 태그 push 후 bump-manifest 가 SHA 로 갱신
+  newTag: 345431aeab387f3fdb791953e0c60b3386f5388e

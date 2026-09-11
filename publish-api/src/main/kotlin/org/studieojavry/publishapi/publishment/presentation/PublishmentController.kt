@@ -259,6 +259,36 @@ class PublishmentController(
         return PublishmentResponse.from(runOwned { restoreUseCase.invoke(slug, uid) }, pageProps.publicBaseUrl)
     }
 
+    @Operation(
+        summary = "발행물 영구 삭제 (hard delete — 되돌릴 수 없음)",
+        description = """
+            발행물을 완전히 제거한다. 내리기(unpublish)와 달리 slug·스냅샷·counters 를 보존하지 않는다:
+            공개 페이지는 404 가 되고 slug 는 반납되어 같은 주소로 다시 발행할 수 없다. 멱등 기록도 함께 정리.
+            원본 에러 케이스와 재발행 권한은 그대로다. 소유자 전용.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "삭제됨", content = [Content()]),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "내 발행물 아님", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "해당 slug 발행물 없음", content = [Content()]),
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/by-slug/{slug}")
+    fun delete(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long?,
+        @PathVariable slug: String,
+    ) {
+        val uid = userId ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing principal")
+        try {
+            deletePublishmentUseCase.invoke(slug, uid)
+        } catch (e: PublishmentNotFoundException) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+        } catch (e: PublishmentForbiddenException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        }
+    }
+
     /** owner-guarded lifecycle 액션 공통 예외 매핑 (404/403). */
     private inline fun runOwned(block: () -> CasePublishment): CasePublishment = try {
         block()

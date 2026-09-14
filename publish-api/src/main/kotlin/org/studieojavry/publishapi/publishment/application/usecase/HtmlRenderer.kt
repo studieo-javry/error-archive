@@ -9,19 +9,22 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 /**
- * `CasePublishment` → 단일 HTML 문서.
+ * `CasePublishment` → 단일 HTML 문서 (테크 블로그 아티클).
  *
  *  - 공개 페이지 (`/p/{slug}`) 의 응답 본문
- *  - PDF 변환의 입력 (PDF 모드 = `for-pdf=true` 시 인쇄 친화 CSS 추가)
+ *  - PDF 변환의 입력 (PDF 모드 = `forPdf=true` 시 인쇄 친화 CSS + 웹폰트 미로드)
  *
- *  Thymeleaf 같은 템플릿 엔진 X — 한 파일 안에서 끝나는 단순 string builder.
- *  XSS 방지: 사용자 텍스트는 모두 `esc()` 처리.
+ *  디자인(단일 라이트 톤): 배경 #f7f7f5 · 본문 Manrope · 제목 Fraunces · 코드/에러 다크 ·
+ *  요약 TL;DR(밑줄 헤딩) · 에러 터미널 창 · 인용 GitHub md 회색 · 해결 넘버드+하이라이터.
+ *  웹폰트는 Google Fonts + Pretendard(CDN)로 로드, PDF 는 클래스패스 Noto Sans KR 로 폴백.
+ *
+ *  Thymeleaf 같은 템플릿 엔진 X — 한 파일 string builder. XSS 방지: 사용자 텍스트는 모두 `esc()`.
  */
 object HtmlRenderer {
 
     private val DATE_FMT = DateTimeFormatter.ISO_DATE
     private val TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
-    private val EXACT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")   // 발행물은 영구 자산 → 연도 포함(월/일만이면 몇 년도인지 모호)
+    private val EXACT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     private val SNIPPET_MARKER = Regex("@snippet\\([A-Za-z0-9_-]+\\)")
     private val ATTACH_MARKER = Regex("@attach\\([A-Za-z0-9_-]+\\)")
 
@@ -36,8 +39,8 @@ object HtmlRenderer {
         imageEmbedUrl: (String) -> String? = { null },
     ): String {
         val opts = p.options
-        val isDark = false   // theme 옵션 제거 — 발행물은 단일 라이트 톤
-        val lang = "ko"      // language 옵션 제거 — 고정
+        val lang = "ko"
+        val snap = p.contentSnapshot
 
         val sb = StringBuilder()
         sb.appendLine("<!doctype html>")
@@ -47,15 +50,17 @@ object HtmlRenderer {
         sb.appendLine("<title>${esc(p.title)}</title>")
         if (!forPdf) {
             sb.appendLine("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>")
-            // 검색엔진 색인 제어 — PUBLIC 만 색인 허용. UNLISTED(및 잔존 PRIVATE)는 noindex
-            // → "링크 아는 사람만" 을 기술적으로 실현(크롤러가 검색 결과에서 제외). canonical 도 PUBLIC 만.
+            // 웹폰트 (PDF 는 미로드 → 폰트 스택의 Noto Sans KR 로 폴백)
+            sb.appendLine("<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/>")
+            sb.appendLine("<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin/>")
+            sb.appendLine("<link href=\"https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500;600&family=Nanum+Myeongjo:wght@400;700&display=swap\" rel=\"stylesheet\"/>")
+            sb.appendLine("<link href=\"https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css\" rel=\"stylesheet\"/>")
+            // 검색엔진 색인 제어 — PUBLIC 만 색인 허용.
             val indexable = p.visibility == Visibility.PUBLIC
             sb.appendLine("<meta name=\"robots\" content=\"${if (indexable) "index,follow" else "noindex,nofollow"}\"/>")
             if (indexable && publicBaseUrl.isNotBlank()) {
                 sb.appendLine("<link rel=\"canonical\" href=\"$publicBaseUrl/p/${p.slug}\"/>")
             }
-            // 공유 링크 프리뷰(Open Graph / Twitter 카드). 서버 렌더 HTML 이라 크롤러가 JS 없이 즉시 읽는다.
-            // robots/canonical 과 독립 — UNLISTED 도 링크 공유용이라 카드는 뜨게 두고(OG 유지), 검색 색인만 noindex 로 막는다.
             val desc = metaDescription(p)
             val ogImage = firstImageAbsUrl(p, publicBaseUrl)
             sb.appendLine("<meta name=\"description\" content=\"${esc(desc)}\"/>")
@@ -72,78 +77,111 @@ object HtmlRenderer {
             sb.appendLine("<meta name=\"twitter:description\" content=\"${esc(desc)}\"/>")
             ogImage?.let { sb.appendLine("<meta name=\"twitter:image\" content=\"$it\"/>") }
         }
-        sb.appendLine("<style>${styles(isDark, forPdf)}</style>")
+        sb.appendLine("<style>${styles(forPdf)}</style>")
         sb.appendLine("</head>")
-        sb.appendLine("<body class=\"${if (isDark) "dark" else "light"}\">")
+        sb.appendLine("<body>")
         sb.appendLine("<article class=\"doc\">")
 
-        // Header
+        // ── 헤더 ──
         sb.appendLine("<header class=\"head\">")
-        sb.appendLine("<h1>${esc(p.title)}</h1>")
-        p.summary?.takeIf { it.isNotBlank() }?.let {
-            sb.appendLine("<p class=\"summary\">${esc(it)}</p>")
+        snap.tags.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
+            sb.appendLine("<div class=\"kicker\"><span class=\"dot\"></span>${esc(it)}</div>")
         }
-        sb.appendLine("<div class=\"meta\">")
-        opts.authorDisplayName?.let { sb.appendLine("<span class=\"by\">by <b>${esc(it)}</b></span>") }
-        sb.appendLine("<span class=\"date\">${p.publishedAt.toLocalDate().format(DATE_FMT)}</span>")
+        sb.appendLine("<h1>${esc(p.title)}</h1>")
+        // 요약 = TL;DR (밑줄 헤딩)
+        p.summary?.takeIf { it.isNotBlank() }?.let {
+            sb.appendLine("<div class=\"tldr\"><div class=\"lb\">TL;DR</div><p class=\"t\">${esc(it)}</p></div>")
+        }
+        // 저자 바
+        val author = opts.authorDisplayName?.takeIf { it.isNotBlank() }
+        val initial = author?.trim()?.firstOrNull()?.toString() ?: "·"
+        sb.appendLine("<div class=\"byline\">")
+        sb.appendLine("<span class=\"avatar\">${esc(initial)}</span>")
+        sb.appendLine("<div class=\"who\">")
+        sb.appendLine("<div class=\"n\">${esc(author ?: "익명")}</div>")
+        sb.appendLine("<div class=\"meta\">${p.publishedAt.toLocalDate().format(DATE_FMT)}</div>")
         sb.appendLine("</div>")
-        if (p.contentSnapshot.tags.isNotEmpty()) {
+        sb.appendLine("</div>")
+        if (snap.tags.isNotEmpty()) {
             sb.appendLine("<div class=\"tags\">")
-            p.contentSnapshot.tags.forEach { sb.appendLine("<span class=\"tag\">${esc(it)}</span>") }
+            snap.tags.forEach { sb.appendLine("<span class=\"tag\">${esc(it)}</span>") }
             sb.appendLine("</div>")
         }
         sb.appendLine("</header>")
 
-        // Error
-        p.contentSnapshot.snapshot?.let { es ->
+        // ── Error (터미널 창) ──
+        snap.snapshot?.let { es ->
+            val excLine = when {
+                es.exceptionClass != null && es.exceptionMessage != null ->
+                    "<span class=\"exc\">${esc(es.exceptionClass)}</span>: ${esc(es.exceptionMessage)}"
+                es.exceptionClass != null -> "<span class=\"exc\">${esc(es.exceptionClass)}</span>"
+                es.exceptionMessage != null -> esc(es.exceptionMessage)
+                else -> null
+            }
+            val stack = es.rawStackTrace?.takeIf { it.isNotBlank() }
+                ?.lineSequence()?.take(20)?.joinToString("\n")
+            if (excLine != null || stack != null) {
+                sb.appendLine("<section class=\"section\">")
+                sb.appendLine("<div class=\"sec-eyebrow\">The Error</div>")
+                sb.appendLine("<h2 class=\"sec\">무엇이 터졌나</h2>")
+                sb.appendLine("<div class=\"crash\">")
+                sb.appendLine("<div class=\"tbar\"><span class=\"dots\"><i></i><i></i><i></i></span><span class=\"fname\">stacktrace.log</span></div>")
+                val tb = StringBuilder()
+                excLine?.let { tb.append(it) }
+                if (stack != null) {
+                    if (tb.isNotEmpty()) tb.append("\n")
+                    tb.append("<span class=\"dim\">${esc(stack)}</span>")
+                }
+                sb.appendLine("<pre class=\"tbody\">$tb</pre>")
+                sb.appendLine("</div>")
+                sb.appendLine("</section>")
+            }
+        }
+
+        // ── Context ──
+        val descText = snap.description?.let { stripMarkers(it) }?.takeIf { it.isNotBlank() }
+        if (descText != null || snap.descriptionSnippets.isNotEmpty() || snap.descriptionAttachments.isNotEmpty()) {
             sb.appendLine("<section class=\"section\">")
-            sb.appendLine("<h2>Error</h2>")
-            es.exceptionClass?.let { sb.appendLine("<code class=\"exc\">${esc(it)}</code>") }
-            es.exceptionMessage?.let { sb.appendLine("<blockquote>${esc(it)}</blockquote>") }
-            if (!es.rawStackTrace.isNullOrBlank()) {
-                val trimmed = es.rawStackTrace.lineSequence().take(20).joinToString("\n")
-                sb.appendLine("<pre class=\"stack\"><code>${esc(trimmed)}</code></pre>")
+            sb.appendLine("<h2 class=\"sec\">Context</h2>")
+            if (descText != null) renderProse(sb, descText)
+            snap.descriptionSnippets.forEach { renderSnippet(sb, it, opts, forPdf) }
+            snap.descriptionAttachments.forEach { att -> renderAttachment(sb, att, p.slug, forPdf, publicBaseUrl, imageEmbedUrl) }
+            sb.appendLine("</section>")
+        }
+
+        // ── The Journey ──
+        if (snap.steps.isNotEmpty()) {
+            sb.appendLine("<section class=\"section\">")
+            sb.appendLine("<div class=\"sec-eyebrow\">The Journey</div>")
+            sb.appendLine("<h2 class=\"sec\">추적 과정</h2>")
+            snap.steps.forEachIndexed { i, st ->
+                renderStep(sb, i + 1, st, opts, p.slug, snap.originalCaseCreatedAt, forPdf, publicBaseUrl, imageEmbedUrl)
             }
             sb.appendLine("</section>")
         }
 
-        // Description (Context) — 마커는 텍스트에서 제거, 참조 자산은 아래 블록으로(스텝과 동일 패턴, C1).
-        val descText = p.contentSnapshot.description?.let { stripMarkers(it) }?.takeIf { it.isNotBlank() }
-        val descSnippets = p.contentSnapshot.descriptionSnippets
-        val descAttachments = p.contentSnapshot.descriptionAttachments
-        if (descText != null || descSnippets.isNotEmpty() || descAttachments.isNotEmpty()) {
+        // ── Solution (넘버드 + 하이라이터 합본) ──
+        if (snap.solutions.isNotEmpty()) {
             sb.appendLine("<section class=\"section\">")
-            sb.appendLine("<h2>Context</h2>")
-            if (descText != null) sb.appendLine("<p>${escMultiline(descText)}</p>")
-            descSnippets.forEach { renderSnippet(sb, it, opts, forPdf) }
-            descAttachments.forEach { att -> renderAttachment(sb, att, p.slug, forPdf, publicBaseUrl, imageEmbedUrl) }
-            sb.appendLine("</section>")
-        }
-
-        // Journey
-        if (p.contentSnapshot.steps.isNotEmpty()) {
-            sb.appendLine("<section class=\"section\">")
-            sb.appendLine("<h2>The Journey</h2>")
-            p.contentSnapshot.steps.forEachIndexed { i, st ->
-                renderStep(sb, i + 1, st, opts, p.slug, p.contentSnapshot.originalCaseCreatedAt, forPdf, publicBaseUrl, imageEmbedUrl)
+            sb.appendLine("<div class=\"sec-eyebrow\">The Fix</div>")
+            sb.appendLine("<h2 class=\"sec\">해결</h2>")
+            snap.solutions.forEachIndexed { i, sol ->
+                val name = sol.title?.takeIf { it.isNotBlank() } ?: "해결 ${i + 1}"
+                sb.appendLine("<div class=\"solx\">")
+                sb.appendLine("<div class=\"num\">${(i + 1).toString().padStart(2, '0')}</div>")
+                sb.appendLine("<div class=\"rt\">")
+                sb.appendLine("<div class=\"sol-name\"><span class=\"hl\">${esc(name)}</span></div>")
+                if (sol.body.isNotBlank()) sb.appendLine("<div class=\"sol-body\">${inlineMd(sol.body)}</div>")
+                sb.appendLine("</div>")
+                sb.appendLine("</div>")
             }
             sb.appendLine("</section>")
         }
 
-        // Solutions
-        if (p.contentSnapshot.solutions.isNotEmpty()) {
-            sb.appendLine("<section class=\"section solution\">")
-            sb.appendLine("<h2>Solution</h2>")
-            p.contentSnapshot.solutions.forEach { sol ->
-                sol.title?.let { sb.appendLine("<h3>${esc(it)}</h3>") }
-                if (sol.body.isNotBlank()) sb.appendLine("<p>${escMultiline(sol.body)}</p>")
-            }
-            sb.appendLine("</section>")
-        }
-
+        // ── 푸터 ──
         sb.appendLine("<footer class=\"foot\">")
         sb.appendLine("<span>Published with <b>Error Archive</b></span>")
-        sb.appendLine("<span class=\"slug\">${esc(p.slug)}</span>")
+        sb.appendLine("<span class=\"slug\">/p/${esc(p.slug)}</span>")
         sb.appendLine("</footer>")
 
         sb.appendLine("</article>")
@@ -164,37 +202,45 @@ object HtmlRenderer {
     ) {
         val outcomeClass = when (st.outcome) {
             "RESOLVED" -> "ok"
-            "FAILED"   -> "fail"
+            "FAILED" -> "fail"
             "IN_PROGRESS" -> "wip"
             else -> "neutral"
         }
+        val chipLabel = when (st.outcome) {
+            "RESOLVED" -> "RESOLVED"
+            "FAILED" -> "FAILED"
+            "IN_PROGRESS" -> "IN PROGRESS"
+            else -> null
+        }
+        val chip = chipLabel?.let { " <span class=\"chip\">$it</span>" } ?: ""
         val durTxt = if (opts.showStepDuration && st.durationMinutes != null && st.durationMinutes > 0)
-            " <span class=\"dur\">· ${DurationFormat.humanize(st.durationMinutes)}</span>" else ""
+            " <span class=\"time\">· ${DurationFormat.humanize(st.durationMinutes)}</span>" else ""
         val timeTxt = stepTimeLabel(opts.timeStyle, st.occurredAt, caseCreatedAt)
-            ?.let { " <span class=\"step-time\">$it</span>" } ?: ""
+            ?.let { " <span class=\"time\">$it</span>" } ?: ""
         val title = st.title?.takeIf { it.isNotBlank() } ?: "Step $num"
         sb.appendLine("<div class=\"step $outcomeClass\">")
-        sb.appendLine("<h3>Step $num — ${esc(title)}$timeTxt$durTxt</h3>")
+        sb.appendLine("<h3>Step $num — ${esc(title)}$chip$timeTxt$durTxt</h3>")
         if (st.body.isNotBlank()) {
-            sb.appendLine("<p>${escMultiline(stripMarkers(st.body))}</p>")
+            renderProse(sb, stripMarkers(st.body))
         }
         st.snippets.forEach { renderSnippet(sb, it, opts, forPdf) }
         st.attachments.forEach { att -> renderAttachment(sb, att, slug, forPdf, publicBaseUrl, imageEmbedUrl) }
         sb.appendLine("</div>")
     }
 
-    /** 스니펫 코드블록 — 스텝/description 공용. 줄 번호(codeLineNumbers·웹 전용)는 [renderCodeLines] + `.numbered`. */
+    /** 스니펫 코드블록(다크) — 상단 랭귀지 탭 + 신호등 점. 줄 번호(codeLineNumbers·웹 전용)는 `.numbered`. */
     private fun renderSnippet(sb: StringBuilder, sn: ContentSnapshot.SnippetDoc, opts: PublishOptions, forPdf: Boolean) {
         sn.title?.takeIf { it.isNotBlank() }?.let { sb.appendLine("<div class=\"snip-title\">${esc(it)}</div>") }
         val numCls = if (opts.codeLineNumbers && !forPdf) " numbered" else ""
-        sb.appendLine("<pre class=\"code$numCls\" data-lang=\"${esc(sn.language.lowercase())}\"><code>${renderCodeLines(sn.code)}</code></pre>")
+        sb.appendLine("<div class=\"codewrap\">")
+        sb.appendLine("<div class=\"code-bar\"><span class=\"lang\">${esc(sn.language.lowercase())}</span><span class=\"dots\"><i></i><i></i><i></i></span></div>")
+        sb.appendLine("<pre class=\"code$numCls\"><code>${renderCodeLines(sn.code)}</code></pre>")
+        sb.appendLine("</div>")
         sn.caption?.takeIf { it.isNotBlank() }?.let { sb.appendLine("<div class=\"cap\">${esc(it)}</div>") }
     }
 
     /**
      * 방향 A 2-way 렌더 — IMAGE 는 인라인, 그 외는 파일명 링크(안정 라우트).
-     *  - 웹: 이미지 src = 안정 라우트(inline), 비이미지 = 상대 링크(브라우저가 inline/다운로드).
-     *  - PDF: 이미지 = presigned bytes 임베드, 비이미지 = 절대 안정 링크(무만료).
      */
     private fun renderAttachment(
         sb: StringBuilder,
@@ -204,13 +250,12 @@ object HtmlRenderer {
         publicBaseUrl: String,
         imageEmbedUrl: (String) -> String?,
     ) {
-        // slug 가 있으면 발행됨 → 안정 라우트. 없으면 preview(transient) → presigned 직접(임시).
         val hasSlug = slug.isNotBlank()
         if (att.kind == "IMAGE") {
             val src = when {
-                forPdf  -> att.storageUrl?.let(imageEmbedUrl)                          // PDF: presigned bytes 임베드
-                hasSlug -> AttachmentRender.fileHref("", slug, att.markerId, "inline") // 발행 웹: 안정 라우트
-                else    -> att.storageUrl?.let(imageEmbedUrl)                          // preview: presigned
+                forPdf -> att.storageUrl?.let(imageEmbedUrl)
+                hasSlug -> AttachmentRender.fileHref("", slug, att.markerId, "inline")
+                else -> att.storageUrl?.let(imageEmbedUrl)
             }
             if (src != null) sb.appendLine("<img class=\"att img\" src=\"${esc(src)}\" alt=\"${esc(att.fileName)}\"/>")
             else sb.appendLine("<div class=\"att file\">📎 ${esc(att.fileName)}</div>")
@@ -218,7 +263,7 @@ object HtmlRenderer {
         }
         val disp = AttachmentRender.effectiveDisposition("inline", att.contentType)
         val href = if (hasSlug) AttachmentRender.fileHref(if (forPdf) publicBaseUrl else "", slug, att.markerId, disp)
-                   else att.storageUrl?.let(imageEmbedUrl)   // preview: presigned inline
+        else att.storageUrl?.let(imageEmbedUrl)
         if (href != null) {
             val label = if (disp == "inline") "새 탭에서 보기" else "다운로드"
             val target = if (forPdf) "" else " target=\"_blank\" rel=\"noopener\""
@@ -244,11 +289,7 @@ object HtmlRenderer {
         text.replace(SNIPPET_MARKER, "").replace(ATTACH_MARKER, "")
             .replace(Regex("[ \t]+"), " ").trim()
 
-    /**
-     * 코드를 줄 단위 블록 span(`.cl`)으로. 줄 번호 CSS(`.numbered .cl::before`)의 counter-increment 대상.
-     *  - span 사이에 개행을 넣지 않는다(블록 사이 개행 텍스트노드가 pre 에서 빈 줄로 렌더되는 것 방지).
-     *  - 마지막 개행 1개만 제거(끝의 유령 빈 줄 방지). 중간 빈 줄은 빈 span 으로 보존(번호도 매겨짐).
-     */
+    /** 코드를 줄 단위 span(`.cl`)으로. 줄 번호 CSS(`.numbered .cl::before`)의 counter-increment 대상. */
     private fun renderCodeLines(code: String): String =
         code.removeSuffix("\n").split("\n")
             .joinToString("") { "<span class=\"cl\">${esc(it)}</span>" }
@@ -262,10 +303,7 @@ object HtmlRenderer {
         return if (oneLine.length > 200) oneLine.take(197).trimEnd() + "…" else oneLine
     }
 
-    /**
-     * og:image 용 첫 IMAGE 첨부의 **절대** 안정 URL. 이미지 없거나 baseUrl 없으면 null.
-     * `/p/{slug}/files/{markerId}` 는 매 요청마다 presigned 로 302 → 만료 없이 크롤러가 원본 이미지에 도달.
-     */
+    /** og:image 용 첫 IMAGE 첨부의 **절대** 안정 URL. 이미지 없거나 baseUrl 없으면 null. */
     private fun firstImageAbsUrl(p: CasePublishment, publicBaseUrl: String): String? {
         if (publicBaseUrl.isBlank()) return null
         val marker = p.contentSnapshot.steps.asSequence()
@@ -278,69 +316,155 @@ object HtmlRenderer {
     private fun esc(s: String?): String = (s ?: "").replace("&", "&amp;").replace("<", "&lt;")
         .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
 
-    private fun escMultiline(s: String): String =
-        esc(s).replace("\n", "<br/>")
+    /** 인라인: esc → `code` 를 <code> 로 → 개행 <br/>. 블록 요소 없음(<p>/<div> 내부 전용). */
+    private fun inlineMd(s: String): String =
+        esc(s)
+            .replace(Regex("`([^`\\n]+)`")) { "<code>${it.groupValues[1]}</code>" }
+            .replace("\n", "<br/>")
 
-    /* ── styles ───────────────────────────────────────────────────────────── */
-    private fun styles(dark: Boolean, forPdf: Boolean): String = """
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; font-family: 'Noto Sans KR', 'Helvetica Neue', Arial, sans-serif; line-height: 1.6;
-               background: ${if (dark) "#0f1115" else "#ffffff"}; color: ${if (dark) "#e6e8ee" else "#1a1f24"}; }
-        .doc { max-width: 740px; margin: 0 auto; padding: ${if (forPdf) "20px 24px" else "48px 24px 96px"}; }
-        h1, h2, h3 { font-family: 'Merriweather', Georgia, serif; }
-        h1 { font-size: 28px; line-height: 1.25; margin: 0 0 12px; letter-spacing: -.4px; }
-        h2 { font-size: 20px; margin: 32px 0 12px; }
-        h3 { font-size: 16px; margin: 18px 0 8px; }
-        p { margin: 8px 0 12px; }
-        .summary { color: ${if (dark) "#aab0bc" else "#52525b"}; font-size: 15px; margin: 0 0 16px; }
-        .meta { font-size: 12px; color: ${if (dark) "#8b929c" else "#71717a"}; margin-bottom: 8px; }
-        .meta .date { margin-left: 8px; }
-        .tags { margin: 12px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
-        .tag { font-size: 11px; padding: 2px 8px; border-radius: 4px;
-               background: ${if (dark) "#1f2229" else "#f4f4f5"};
-               color: ${if (dark) "#9aa0ab" else "#71717a"};
-               font-family: ui-monospace, monospace; }
-        .tag::before { content: "#"; opacity: .5; margin-right: 2px; }
-        .head { border-bottom: 1px solid ${if (dark) "#262a32" else "#e4e4e7"}; padding-bottom: 20px; margin-bottom: 24px; }
-        .section { margin: 28px 0; }
-        .exc { display: inline-block; background: ${if (dark) "#2a1e1e" else "#fef2f2"};
-               color: ${if (dark) "#fda4af" else "#b91c1c"}; padding: 4px 10px; border-radius: 4px;
-               font-family: ui-monospace, monospace; font-size: 13px; }
-        blockquote { border-left: 3px solid ${if (dark) "#3b3f47" else "#d4d4d8"}; margin: 8px 0; padding: 6px 12px;
-                     color: ${if (dark) "#aab0bc" else "#52525b"}; }
-        pre.stack, pre.code { background: ${if (dark) "#0a0c10" else "#f6f8fa"}; border: 1px solid ${if (dark) "#1f2229" else "#e4e4e7"};
-               padding: 12px 14px; border-radius: 8px; overflow-x: auto;
-               font: 12px/1.5 'JetBrains Mono', ui-monospace, monospace;
-               color: ${if (dark) "#e6e8ee" else "#1a1f24"}; }
-        pre.stack { color: ${if (dark) "#fbbf24" else "#92400e"}; }
-        pre.code .cl { display: block; white-space: pre; }
-        pre.code.numbered code { counter-reset: ln; }
-        pre.code.numbered .cl { counter-increment: ln; position: relative; padding-left: 3.4em; }
-        pre.code.numbered .cl::before { content: counter(ln); position: absolute; left: 0; top: 0;
-               width: 2.6em; text-align: right; padding-right: .7em;
-               color: ${if (dark) "#5a616b" else "#b0b4bb"};
-               border-right: 1px solid ${if (dark) "#1f2229" else "#e4e4e7"};
-               -webkit-user-select: none; user-select: none; }
-        .step { border-left: 3px solid ${if (dark) "#3b3f47" else "#e4e4e7"}; padding-left: 16px; margin: 18px 0; }
-        .step.ok   { border-color: ${if (dark) "#34d399" else "#10b981"}; }
-        .step.fail { border-color: ${if (dark) "#fb7185" else "#ef4444"}; }
-        .step.wip  { border-color: ${if (dark) "#fbbf24" else "#f59e0b"}; }
-        .step .dur { font-size: 11px; color: ${if (dark) "#8b929c" else "#71717a"};
-                     font-family: ui-monospace, monospace; }
-        .step .step-time { font-size: 11px; color: ${if (dark) "#8b929c" else "#71717a"};
-                     font-family: ui-monospace, monospace; }
-        .att .att-act { font-size: 10px; color: ${if (dark) "#8b929c" else "#a1a1aa"};
-                     font-family: ui-monospace, monospace; margin-left: 4px; }
-        .snip-title { font-weight: 600; font-size: 12px; margin: 6px 0 2px; color: ${if (dark) "#aab0bc" else "#52525b"}; }
-        .cap { font-size: 11px; color: ${if (dark) "#8b929c" else "#71717a"}; margin: -8px 0 12px; font-style: italic; }
-        .att { font-size: 12px; color: ${if (dark) "#aab0bc" else "#52525b"}; margin: 6px 0; }
-        .att a { color: ${if (dark) "#a5b4fc" else "#4f46e5"}; }
-        .att.img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
-        .section.solution { background: ${if (dark) "#0a1410" else "#f0fdf4"}; padding: 18px 20px;
-                            border-radius: 10px; border: 1px solid ${if (dark) "#10402d" else "#bbf7d0"}; }
-        .foot { border-top: 1px solid ${if (dark) "#262a32" else "#e4e4e7"}; margin-top: 48px; padding-top: 14px;
-                display: flex; justify-content: space-between; font-size: 11px;
-                color: ${if (dark) "#8b929c" else "#71717a"}; font-family: ui-monospace, monospace; }
-        ${if (forPdf) "@page { size: A4; margin: 16mm; }" else ""}
+    /**
+     * 블록 프로즈 렌더. 빈 줄로 문단 분리, `>` 로 시작하는 줄(들)은 blockquote 로 묶는다.
+     * 각 조각 텍스트는 [inlineMd] 로(인라인 코드 + 줄바꿈) 처리. XSS 는 esc 로 차단.
+     */
+    private fun renderProse(sb: StringBuilder, raw: String) {
+        val lines = raw.split("\n")
+        val para = StringBuilder()
+        fun flushPara() {
+            if (para.isNotBlank()) sb.appendLine("<p>${inlineMd(para.toString().trim('\n'))}</p>")
+            para.setLength(0)
+        }
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            when {
+                line.trimStart().startsWith(">") -> {
+                    flushPara()
+                    val q = StringBuilder()
+                    while (i < lines.size && lines[i].trimStart().startsWith(">")) {
+                        val content = lines[i].trimStart().removePrefix(">").removePrefix(" ")
+                        if (q.isNotEmpty()) q.append("\n")
+                        q.append(content)
+                        i++
+                    }
+                    sb.appendLine("<blockquote>${inlineMd(q.toString())}</blockquote>")
+                }
+                line.isBlank() -> { flushPara(); i++ }
+                else -> { if (para.isNotEmpty()) para.append("\n"); para.append(line); i++ }
+            }
+        }
+        flushPara()
+    }
+
+    /* ── styles (단일 라이트 · FE 라이트 배경 #f7f7f5) ─────────────────────────── */
+    private fun styles(forPdf: Boolean): String = """
+        :root{
+          --paper:#f7f7f5; --ink:#1a1815; --sub:#5c5852; --faint:#a8a29a; --hair:#e6e4e0; --hair-2:#efedea;
+          --accent:#047857; --accent-ink:#065f46; --accent-soft:#ecfdf5; --accent-line:#b6e6cf;
+          --rose:#be123c; --code-bg:#0e1116; --code-ink:#e7edf3; --code-line:#20262e;
+          --sans:'Manrope','Pretendard Variable',Pretendard,'Noto Sans KR',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+          --serif:'Fraunces','Nanum Myeongjo','Noto Sans KR',Georgia,serif;
+          --mono:'JetBrains Mono','Pretendard Variable','Noto Sans KR',ui-monospace,Menlo,monospace;
+        }
+        *{box-sizing:border-box;margin:0}
+        body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6;
+             -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+        .doc{max-width:720px;margin:0 auto;padding:${if (forPdf) "8px 0 20px" else "56px 24px 96px"}}
+
+        /* 헤더 */
+        .head{padding-bottom:26px;margin-bottom:34px;border-bottom:1px solid var(--hair)}
+        .kicker{display:inline-flex;align-items:center;gap:7px;font:600 11px var(--mono);letter-spacing:.08em;
+               text-transform:uppercase;color:var(--accent-ink);margin-bottom:16px}
+        .kicker .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+        h1{font-family:var(--serif);font-weight:600;font-size:36px;line-height:1.15;letter-spacing:-.02em;margin:0 0 20px}
+        .tldr{margin-top:4px}
+        .tldr .lb{font-family:var(--sans);font-weight:800;font-size:13px;letter-spacing:-.01em;color:var(--ink);
+                 position:relative;display:inline-block;margin-bottom:10px;padding-bottom:3px}
+        .tldr .lb::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--accent)}
+        .tldr .t{font-size:16px;line-height:1.62;color:var(--sub);margin:0}
+        .byline{display:flex;align-items:center;gap:12px;margin-top:26px}
+        .avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#0ea5e9);
+               color:#fff;display:grid;place-items:center;font:600 16px var(--sans);flex-shrink:0}
+        .who .n{font:600 14px var(--sans);color:var(--ink)}
+        .who .meta{font:400 13px var(--mono);color:var(--faint);margin-top:2px}
+        .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+        .tag{font:500 12px var(--sans);color:var(--sub);background:#fff;border:1px solid var(--hair);padding:5px 12px;border-radius:999px}
+        .tag::before{content:"#";color:var(--faint);margin-right:1px}
+
+        /* 섹션 공통 */
+        .section{margin:44px 0}
+        .sec-eyebrow{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+        .sec-eyebrow + h2.sec{margin-top:6px}
+        h2.sec{font-family:var(--serif);font-weight:600;font-size:22px;line-height:1.3;letter-spacing:-.01em;color:var(--ink);margin:0 0 14px}
+        p{margin:0 0 20px;font-size:16px;line-height:1.75;color:#292524}
+        strong,b{font-weight:600;color:var(--ink)}
+        a{color:var(--accent-ink)}
+        code{font-family:var(--mono);font-size:.84em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 5px;border-radius:5px;color:#9a3412}
+
+        /* Error 터미널 창 */
+        .crash{margin:8px 0 24px;border:1px solid var(--code-line);border-radius:12px;overflow:hidden;background:var(--code-bg)}
+        .crash .tbar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--code-line);background:rgba(255,255,255,.03)}
+        .crash .dots{display:flex;gap:6px}
+        .crash .dots i{width:11px;height:11px;border-radius:50%;display:block}
+        .crash .dots i:nth-child(1){background:#ff5f56}
+        .crash .dots i:nth-child(2){background:#ffbd2e}
+        .crash .dots i:nth-child(3){background:#27c93f}
+        .crash .fname{font:500 12px var(--mono);color:#8b949e}
+        .crash .tbody{margin:0;padding:15px 16px;font:13px/1.7 var(--mono);color:#e7edf3;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+        .crash .tbody .exc{color:#ff7b72;font-weight:600}
+        .crash .tbody .dim{color:#6b7280}
+
+        /* 코드 블록(다크) */
+        .snip-title{font-weight:600;font-size:13px;margin:6px 0 4px;color:var(--sub)}
+        .codewrap{margin:16px 0 24px;border:1px solid var(--code-line);border-radius:12px;overflow:hidden;background:var(--code-bg)}
+        .code-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--code-line)}
+        .code-bar .lang{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:#8b949e}
+        .code-bar .dots{display:flex;gap:6px}
+        .code-bar .dots i{width:10px;height:10px;border-radius:50%;background:#30363d;display:block}
+        pre.code{margin:0;padding:15px 16px;overflow-x:auto;color:var(--code-ink);font:13px/1.75 var(--mono)}
+        pre.code .cl{display:block;white-space:pre}
+        pre.code.numbered code{counter-reset:ln}
+        pre.code.numbered .cl{counter-increment:ln;position:relative;padding-left:3.2em}
+        pre.code.numbered .cl::before{content:counter(ln);position:absolute;left:0;top:0;width:2.4em;text-align:right;
+               padding-right:.8em;color:#4b5563;border-right:1px solid var(--code-line);-webkit-user-select:none;user-select:none}
+        .cap{font-size:13px;color:var(--faint);margin:8px 2px 0;font-style:italic}
+
+        /* 인용 — GitHub md 스타일(본문 폰트 + 회색 톤) */
+        blockquote{margin:26px 0;padding:2px 0 2px 18px;border-left:3px solid #dcd8d1;
+                  font-family:var(--sans);font-weight:400;font-size:16px;line-height:1.65;color:#6f6a63}
+
+        /* The Journey — 스텝 */
+        .step{border-left:2px solid var(--hair);padding-left:18px;margin:20px 0}
+        .step.ok{border-color:var(--accent)}
+        .step.fail{border-color:var(--rose)}
+        .step.wip{border-color:#b45309}
+        .step h3{font-family:var(--sans);font-weight:600;font-size:16px;color:var(--ink);margin:0 0 5px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+        .step .chip{font:600 10px var(--mono);letter-spacing:.03em;padding:2px 8px;border-radius:5px}
+        .step.ok .chip{background:var(--accent-soft);color:var(--accent-ink)}
+        .step.fail .chip{background:#fff1f2;color:#be123c}
+        .step.wip .chip{background:#fffbeb;color:#b45309}
+        .step .time{font:400 12px var(--mono);color:var(--faint)}
+        .step p{margin:0 0 12px}
+
+        /* 첨부 */
+        .att{font-size:13px;color:var(--sub);margin:10px 0;font-family:var(--mono)}
+        .att a{color:var(--accent-ink)}
+        .att .att-act{font-size:11px;color:var(--faint);margin-left:4px}
+        .att.img{max-width:100%;border-radius:10px;border:1px solid var(--hair);display:block;margin:12px 0}
+
+        /* Solution — 넘버드 + 하이라이터 */
+        .solx{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:start;margin:22px 0 4px}
+        .solx .num{font-family:var(--serif);font-weight:600;font-size:56px;line-height:.8;color:var(--accent);letter-spacing:-.02em}
+        .solx .sol-name{font-family:var(--sans);font-weight:700;font-size:22px;line-height:1.5;color:var(--ink);letter-spacing:-.01em}
+        .solx .sol-name .hl{background:linear-gradient(transparent 58%, rgba(4,120,87,.22) 58%);padding:0 2px;
+               -webkit-box-decoration-break:clone;box-decoration-break:clone}
+        .solx .sol-body{font-size:15px;line-height:1.65;color:var(--sub);margin-top:9px}
+
+        /* 푸터 */
+        .foot{margin-top:56px;padding-top:22px;border-top:1px solid var(--hair);
+             display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+             font-size:13px;color:var(--faint)}
+        .foot b{color:var(--sub);font-weight:600}
+        .foot .slug{font-family:var(--mono)}
+        ${if (forPdf) "@page { size: A4; margin: 16mm; } .doc{max-width:none}" else ""}
     """.trimIndent()
 }

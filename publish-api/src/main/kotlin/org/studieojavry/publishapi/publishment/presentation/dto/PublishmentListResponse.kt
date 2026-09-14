@@ -1,5 +1,6 @@
 package org.studieojavry.publishapi.publishment.presentation.dto
 
+import org.studieojavry.publishapi.publishment.application.usecase.ContentPreview
 import org.studieojavry.publishapi.publishment.application.usecase.ListMyPublishmentsUseCase
 import java.time.LocalDateTime
 
@@ -12,6 +13,12 @@ data class PublishmentListItemResponse(
     val slug: String,
     val title: String,
     val summary: String?,
+    /**
+     * 저자 요약(summary)이 없을 때 카드에 보여줄 **본문 미리보기** — 스냅샷 description 에서 파생
+     * (마커 `@snippet`/`@attach` → `[code]`/`[file]` 치환, ~160자). description 도 비면 null.
+     * FE 는 `summary ?? descriptionPreview` 로 렌더.
+     */
+    val descriptionPreview: String?,
     /** 원본 error case id — 카드의 "from #{id}" 링크용. */
     val originalCaseId: Long,
     val visibility: String,
@@ -39,6 +46,7 @@ data class PublishmentListItemResponse(
                 slug = p.slug,
                 title = p.title,
                 summary = p.summary,
+                descriptionPreview = ContentPreview.of(p.contentSnapshot.description),
                 originalCaseId = p.originalCaseId,
                 visibility = p.visibility.name,
                 sourceState = p.sourceState.name,

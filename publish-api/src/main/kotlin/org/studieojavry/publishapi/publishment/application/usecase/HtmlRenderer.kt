@@ -456,6 +456,8 @@ object HtmlRenderer {
         article a,a{color:var(--accent-ink);text-underline-offset:3px}
         strong,b{font-weight:600;color:var(--ink)}
         code{font-family:var(--mono);font-size:.82em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 6px;border-radius:5px;color:#9a3412}
+        /* 코드블록(pre) 안의 code 는 인라인 코드 칩 스타일을 상속하면 안 된다(전체가 빨갛게 보이는 버그) */
+        pre.code code{background:none;border:0;padding:0;border-radius:0;color:inherit;font-size:inherit}
         .section{margin:0}
         h2.sec{font-family:var(--serif-disp);font-weight:600;font-size:22px;line-height:1.3;letter-spacing:-.01em;color:var(--ink);margin:44px 0 6px}
         .sec-eyebrow{display:block;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-top:44px}

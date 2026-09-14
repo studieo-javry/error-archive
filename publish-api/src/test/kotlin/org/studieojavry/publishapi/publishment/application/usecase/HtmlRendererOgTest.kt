@@ -86,7 +86,9 @@ class HtmlRendererOgTest {
     @Test
     fun `escaping - title with quotes and angle brackets is escaped`() {
         val html = HtmlRenderer.render(pub("a\"<script>", "s", withImage = false), publicBaseUrl = base)
-        assertFalse(html.contains("<script>"), "raw script must not appear")
+        // 주입된 사용자 title 원문이 이스케이프 없이 그대로 나오면 안 된다.
+        // (읽기 진행 바 등 우리 정적 <script> 태그와 충돌하지 않도록 '주입 시퀀스'를 정밀 검사)
+        assertFalse(html.contains("a\"<script>"), "raw injected title must not appear")
         assertTrue(html.contains("&quot;") && html.contains("&lt;script&gt;"), "escaped")
     }
 }

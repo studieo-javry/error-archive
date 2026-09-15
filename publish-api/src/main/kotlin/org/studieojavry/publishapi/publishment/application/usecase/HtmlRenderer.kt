@@ -281,7 +281,7 @@ object HtmlRenderer {
         val numCls = if (opts.codeLineNumbers && !forPdf) " numbered" else ""
         sb.appendLine("<div class=\"codewrap\">")
         sb.appendLine("<div class=\"code-bar\"><span class=\"lang\">${esc(sn.language.lowercase())}</span><span class=\"dots\"><i></i><i></i><i></i></span></div>")
-        sb.appendLine("<pre class=\"code$numCls\"><code>${renderCodeLines(sn.code)}</code></pre>")
+        sb.appendLine("<pre class=\"code$numCls\"><code>${highlightCode(sn.code, sn.language)}</code></pre>")
         sb.appendLine("</div>")
         sn.caption?.takeIf { it.isNotBlank() }?.let { sb.appendLine("<div class=\"cap\">${esc(it)}</div>") }
     }
@@ -336,10 +336,96 @@ object HtmlRenderer {
         text.replace(SNIPPET_MARKER, "").replace(ATTACH_MARKER, "")
             .replace(Regex("[ \t]+"), " ").trim()
 
-    /** 코드를 줄 단위 span(`.cl`)으로. 줄 번호 CSS(`.numbered .cl::before`)의 counter-increment 대상. */
-    private fun renderCodeLines(code: String): String =
-        code.removeSuffix("\n").split("\n")
-            .joinToString("") { "<span class=\"cl\">${esc(it)}</span>" }
+    // 구문 하이라이팅 — 경량 토크나이저. 다언어 공통 키워드(과도한 오탐 방지 위해 핵심만).
+    private val HL_KEYWORDS = setOf(
+        "abstract", "actual", "as", "async", "await", "break", "case", "catch", "class", "companion",
+        "const", "constructor", "continue", "data", "def", "default", "do", "elif", "else", "enum",
+        "expect", "export", "extends", "external", "false", "final", "finally", "for", "fun", "func",
+        "function", "if", "impl", "implements", "import", "in", "init", "inline", "interface", "is",
+        "lateinit", "let", "match", "new", "null", "object", "open", "operator", "override", "package",
+        "pass", "private", "protected", "public", "raise", "record", "reified", "return", "sealed",
+        "static", "struct", "super", "suspend", "switch", "this", "throw", "throws", "trait", "true",
+        "try", "typealias", "typeof", "union", "use", "val", "var", "void", "when", "while", "yield",
+    )
+    // `#` 를 라인 주석으로 쓰는 언어(그 외는 `//` + `/* */`).
+    private val HASH_COMMENT_LANGS = setOf(
+        "python", "py", "ruby", "rb", "shell", "bash", "sh", "zsh", "yaml", "yml", "toml",
+        "dockerfile", "docker", "makefile", "make", "r", "perl", "pl", "ini", "conf", "properties",
+    )
+
+    /**
+     * 코드를 줄 단위 span(`.cl`) + 토큰 span(`.tk-*`)으로. 줄 번호 CSS 의 counter-increment 대상은 `.cl`.
+     * 블록 주석(`/* */`)은 줄 사이 상태를 이어가고, 문자열/문자열은 줄 단위로 처리(스니펫 특성상 충분).
+     * 모든 출력 텍스트는 [esc] 로 이스케이프.
+     */
+    private fun highlightCode(code: String, language: String): String {
+        val hashComment = language.lowercase() in HASH_COMMENT_LANGS
+        val sb = StringBuilder()
+        var inBlock = false
+        for (line in code.removeSuffix("\n").split("\n")) {
+            val (html, next) = highlightLine(line, inBlock, hashComment)
+            sb.append("<span class=\"cl\">").append(html).append("</span>")
+            inBlock = next
+        }
+        return sb.toString()
+    }
+
+    /** 한 줄 하이라이트. 반환: (HTML, 다음 줄로 이어질 블록주석 상태). */
+    private fun highlightLine(line: String, startInBlock: Boolean, hashComment: Boolean): Pair<String, Boolean> {
+        val slash = !hashComment
+        val out = StringBuilder()
+        val n = line.length
+        var i = 0
+        var inBlock = startInBlock
+        fun tk(cls: String, text: String) =
+            out.append("<span class=\"").append(cls).append("\">").append(esc(text)).append("</span>")
+
+        if (inBlock) {
+            val end = line.indexOf("*/")
+            if (end < 0) { if (line.isNotEmpty()) tk("tk-c", line); return out.toString() to true }
+            tk("tk-c", line.substring(0, end + 2)); i = end + 2; inBlock = false
+        }
+        while (i < n) {
+            val c = line[i]
+            if (slash && c == '/' && i + 1 < n && line[i + 1] == '*') {
+                val end = line.indexOf("*/", i + 2)
+                if (end < 0) { tk("tk-c", line.substring(i)); return out.toString() to true }
+                tk("tk-c", line.substring(i, end + 2)); i = end + 2; continue
+            }
+            if (slash && c == '/' && i + 1 < n && line[i + 1] == '/') { tk("tk-c", line.substring(i)); break }
+            if (hashComment && c == '#') { tk("tk-c", line.substring(i)); break }
+            if (c == '"' || c == '\'' || c == '`') {
+                val start = i; i++
+                while (i < n) {
+                    if (line[i] == '\\' && i + 1 < n) { i += 2; continue }
+                    if (line[i] == c) { i++; break }
+                    i++
+                }
+                tk("tk-s", line.substring(start, i)); continue
+            }
+            if (c == '@' && i + 1 < n && (line[i + 1].isLetter() || line[i + 1] == '_')) {
+                val start = i; i++
+                while (i < n && (line[i].isLetterOrDigit() || line[i] == '_')) i++
+                tk("tk-f", line.substring(start, i)); continue
+            }
+            if (c.isLetter() || c == '_' || c == '$') {
+                val start = i
+                while (i < n && (line[i].isLetterOrDigit() || line[i] == '_' || line[i] == '$')) i++
+                val word = line.substring(start, i)
+                var j = i
+                while (j < n && line[j] == ' ') j++
+                when {
+                    word in HL_KEYWORDS -> tk("tk-k", word)
+                    j < n && line[j] == '(' -> tk("tk-f", word)
+                    word[0].isUpperCase() -> tk("tk-t", word)
+                    else -> out.append(esc(word))
+                }
+                continue
+            }
+            out.append(esc(c.toString())); i++
+        }
+        return out.toString() to inBlock
+    }
 
     /** 공유 카드 설명 — summary 우선, 없으면 본문(description)에서 마커 제거 + 공백 정리 후 ~200자 절단. */
     private fun metaDescription(p: CasePublishment): String {
@@ -458,6 +544,12 @@ object HtmlRenderer {
         code{font-family:var(--mono);font-size:.82em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 6px;border-radius:5px;color:#9a3412}
         /* 코드블록(pre) 안의 code 는 인라인 코드 칩 스타일을 상속하면 안 된다(전체가 빨갛게 보이는 버그) */
         pre.code code{background:none;border:0;padding:0;border-radius:0;color:inherit;font-size:inherit}
+        /* 구문 하이라이팅 토큰(다크 코드 배경 기준, GitHub 계열 팔레트) */
+        pre.code .tk-k{color:#ff7b72}
+        pre.code .tk-s{color:#a5d6ff}
+        pre.code .tk-c{color:#8b949e;font-style:italic}
+        pre.code .tk-f{color:#d2a8ff}
+        pre.code .tk-t{color:#7ee787}
         .section{margin:0}
         h2.sec{font-family:var(--serif-disp);font-weight:600;font-size:22px;line-height:1.3;letter-spacing:-.01em;color:var(--ink);margin:44px 0 6px}
         .sec-eyebrow{display:block;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-top:44px}

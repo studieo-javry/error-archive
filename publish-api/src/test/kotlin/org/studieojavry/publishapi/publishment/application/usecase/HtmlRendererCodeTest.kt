@@ -72,7 +72,8 @@ class HtmlRendererCodeTest {
     @Test
     fun `code content is escaped`() {
         val html = HtmlRenderer.render(pub(codeLineNumbers = true), forPdf = false)
-        assertTrue(html.contains("val x = 1 &lt; 2"), "angle bracket escaped")
+        // 구문 하이라이팅으로 `val` 등이 토큰 span 으로 감싸지므로, 이스케이프는 연산자 주변으로 검사.
+        assertTrue(html.contains("1 &lt; 2"), "angle bracket escaped")
         assertFalse(html.contains("1 < 2"), "raw < must not appear")
     }
 }

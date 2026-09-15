@@ -6,7 +6,6 @@ import org.studieojavry.publishapi.publishment.domain.PublishOptions
 import org.studieojavry.publishapi.publishment.domain.Visibility
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 /**
  * `CasePublishment` → 단일 HTML 문서 (테크 블로그 아티클).
@@ -22,10 +21,10 @@ import java.time.temporal.ChronoUnit
  */
 object HtmlRenderer {
 
-    private val DATE_FMT = DateTimeFormatter.ISO_DATE
-    private val TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
-    private val EXACT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     private val KDATE_FMT = DateTimeFormatter.ofPattern("yyyy년 M월 d일")
+    // 타임라인 좌측 날짜 — 발행연도와 같은 해면 MM.dd, 다른 해면 연도 포함
+    private val STEP_DATE_FMT = DateTimeFormatter.ofPattern("MM.dd HH:mm")
+    private val STEP_DATE_FMT_Y = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
     private val SNIPPET_MARKER = Regex("@snippet\\([A-Za-z0-9_-]+\\)")
     private val ATTACH_MARKER = Regex("@attach\\([A-Za-z0-9_-]+\\)")
 
@@ -115,17 +114,19 @@ object HtmlRenderer {
 
         // ── 헤더 ──
         sb.appendLine("<header class=\"hd\">")
-        // kicker = (해결됨 pill) + 태그를 카테고리처럼 ` · ` 로 연결
-        run {
-            val resolved = snap.solutions.isNotEmpty()
-            val cats = snap.tags.filter { it.isNotBlank() }.joinToString(" · ") { esc(it) }
-            if (resolved || cats.isNotEmpty()) {
-                val pill = if (resolved) "<span class=\"pill\">✔ Resolved</span>" else ""
-                val sep = if (resolved && cats.isNotEmpty()) " " else ""
-                sb.appendLine("<div class=\"kicker\">$pill$sep$cats</div>")
-            }
+        // Resolved 배지(Solid) — 맨 위 가운데
+        if (snap.solutions.isNotEmpty()) {
+            sb.appendLine("<div class=\"rbadge-wrap\"><span class=\"rbadge\"><span class=\"ck\">✓</span>Resolved</span></div>")
         }
         sb.appendLine("<h1 class=\"title\">${esc(p.title)}</h1>")
+        // 태그 — 제목 아래 좌측, 모노 텍스트를 ` · ` 로 연결
+        run {
+            val cats = snap.tags.filter { it.isNotBlank() }
+            if (cats.isNotEmpty()) {
+                val inner = cats.joinToString("<span class=\"d\">·</span>") { "<span>${esc(it)}</span>" }
+                sb.appendLine("<div class=\"hdtags\">$inner</div>")
+            }
+        }
         // 요약 = TL;DR (밑줄 헤딩)
         p.summary?.takeIf { it.isNotBlank() }?.let {
             sb.appendLine("<div class=\"tldr\"><div class=\"lb\">TL;DR</div><p class=\"t\">${inlineMd(it)}</p></div>")
@@ -169,8 +170,7 @@ object HtmlRenderer {
                 ?.lineSequence()?.take(20)?.joinToString("\n")
             if (excLine != null || stack != null) {
                 sb.appendLine("<section class=\"section\">")
-                sb.appendLine("<div class=\"sec-eyebrow\">The Error</div>")
-                sb.appendLine("<h2 class=\"sec\">무엇이 터졌나</h2>")
+                sb.appendLine("<div class=\"sec-head\"><span class=\"sec-eyebrow\">The Error</span><h2 class=\"sec\">What Broke</h2></div>")
                 sb.appendLine("<div class=\"crash\">")
                 sb.appendLine("<div class=\"tbar\"><span class=\"dots\"><i></i><i></i><i></i></span><span class=\"fname\">stacktrace.log</span></div>")
                 val tb = StringBuilder()
@@ -185,41 +185,35 @@ object HtmlRenderer {
             }
         }
 
-        // ── The Journey ──
+        // ── The Journey (K3 에디토리얼 타임라인) ──
         if (snap.steps.isNotEmpty()) {
             sb.appendLine("<section class=\"section\">")
-            sb.appendLine("<div class=\"sec-eyebrow\">The Journey</div>")
-            sb.appendLine("<h2 class=\"sec\">추적 과정</h2>")
+            sb.appendLine("<div class=\"sec-head\"><span class=\"sec-eyebrow\">The Journey</span><h2 class=\"sec\">Chasing the Cause</h2></div>")
+            sb.appendLine("<div class=\"tl\">")
             snap.steps.forEachIndexed { i, st ->
-                renderStep(sb, i + 1, st, opts, p.slug, snap.originalCaseCreatedAt, forPdf, publicBaseUrl, imageEmbedUrl)
+                renderStep(sb, i + 1, st, opts, p.slug, p.publishedAt.year, snap.originalCaseCreatedAt, forPdf, publicBaseUrl, imageEmbedUrl)
             }
+            sb.appendLine("</div>")
             sb.appendLine("</section>")
         }
 
-        // ── Solution (넘버드 + 하이라이터 합본) ──
+        // ── Solution (체크 노드 마커 + 카피) ──
         if (snap.solutions.isNotEmpty()) {
             sb.appendLine("<section class=\"section\">")
-            sb.appendLine("<div class=\"sec-eyebrow\">The Fix</div>")
-            sb.appendLine("<h2 class=\"sec\">해결</h2>")
+            sb.appendLine("<div class=\"sec-head\"><span class=\"sec-eyebrow\">The Fix</span><h2 class=\"sec\">The Resolution</h2></div>")
             snap.solutions.forEachIndexed { i, sol ->
                 val name = sol.title?.takeIf { it.isNotBlank() } ?: "해결 ${i + 1}"
-                sb.appendLine("<div class=\"solx\">")
-                sb.appendLine("<div class=\"num\">${(i + 1).toString().padStart(2, '0')}</div>")
-                sb.appendLine("<div class=\"rt\">")
-                sb.appendLine("<div class=\"sol-name\"><span class=\"hl\">${esc(name)}</span></div>")
-                if (sol.body.isNotBlank()) sb.appendLine("<div class=\"sol-body\">${inlineMd(sol.body)}</div>")
+                sb.appendLine("<div class=\"solution-block\">")
+                sb.appendLine("<div class=\"solution-mark\" aria-hidden=\"true\"><span class=\"sol-index\">${(i + 1).toString().padStart(2, '0')}</span><span class=\"sol-check\">✓</span></div>")
+                sb.appendLine("<div class=\"solution-copy\">")
+                sb.appendLine("<div class=\"solution-kicker\"><span class=\"solution-label\">Final resolution</span><span class=\"solution-status\">Verified</span></div>")
+                sb.appendLine("<h3 class=\"solution-title\">${esc(name)}</h3>")
+                if (sol.body.isNotBlank()) sb.appendLine("<p class=\"solution-body\">${inlineMd(sol.body)}</p>")
                 sb.appendLine("</div>")
                 sb.appendLine("</div>")
                 sol.snippets.forEach { renderSnippet(sb, it, opts, forPdf) }
             }
             sb.appendLine("</section>")
-        }
-
-        // ── 태그 (본문 하단) ──
-        if (snap.tags.isNotEmpty()) {
-            sb.appendLine("<div class=\"tags\">")
-            snap.tags.forEach { sb.appendLine("<span class=\"tag\">${esc(it)}</span>") }
-            sb.appendLine("</div>")
         }
 
         sb.appendLine("</article>")
@@ -236,37 +230,43 @@ object HtmlRenderer {
         return sb.toString()
     }
 
+    /**
+     * K3 에디토리얼 타임라인 스텝 — 좌측 상태 컬럼(word + 날짜) + 아이콘 dot(·/✕/✓) + 본문.
+     * 상태(class·word·icon)는 BE StepStatus(RESOLVED/IN_PROGRESS/FAILED)에서 매핑. null → neutral.
+     * 날짜는 MM.DD HH:mm(발행연도와 같은 해) 또는 yyyy.MM.dd HH:mm(다른 해).
+     */
     private fun renderStep(
         sb: StringBuilder,
         num: Int,
         st: ContentSnapshot.StepDoc,
         opts: PublishOptions,
         slug: String,
+        pubYear: Int,
         caseCreatedAt: LocalDateTime,
         forPdf: Boolean,
         publicBaseUrl: String,
         imageEmbedUrl: (String) -> String?,
     ) {
-        val outcomeClass = when (st.outcome) {
-            "RESOLVED" -> "ok"
-            "FAILED" -> "fail"
-            "IN_PROGRESS" -> "wip"
-            else -> "neutral"
+        val (statusClass, word, icon) = when (st.outcome) {
+            "RESOLVED" -> Triple("ok", "Resolved", "✓")
+            "FAILED" -> Triple("fail", "Failed", "✕")
+            "IN_PROGRESS" -> Triple("wip", "In&nbsp;Progress", "·")
+            else -> Triple("neutral", "Step", "·")
         }
-        val chipLabel = when (st.outcome) {
-            "RESOLVED" -> "RESOLVED"
-            "FAILED" -> "FAILED"
-            "IN_PROGRESS" -> "IN PROGRESS"
-            else -> null
-        }
-        val chip = chipLabel?.let { " <span class=\"chip\">$it</span>" } ?: ""
+        val dateTxt = stepDateLabel(opts.timeStyle, st.occurredAt, pubYear, caseCreatedAt)
         val durTxt = if (opts.showStepDuration && st.durationMinutes != null && st.durationMinutes > 0)
-            " <span class=\"time\">· ${DurationFormat.humanize(st.durationMinutes)}</span>" else ""
-        val timeTxt = stepTimeLabel(opts.timeStyle, st.occurredAt, caseCreatedAt)
-            ?.let { " <span class=\"time\">$it</span>" } ?: ""
+            DurationFormat.humanize(st.durationMinutes) else null
         val title = st.title?.takeIf { it.isNotBlank() } ?: "Step $num"
-        sb.appendLine("<div class=\"step $outcomeClass\">")
-        sb.appendLine("<h3>Step $num — ${esc(title)}$chip$timeTxt$durTxt</h3>")
+
+        sb.appendLine("<div class=\"st $statusClass\">")
+        sb.append("<div class=\"st-left\"><span class=\"word\">$word</span>")
+        if (dateTxt != null) sb.append("<span class=\"st-date\">${esc(dateTxt)}</span>")
+        sb.appendLine("</div>")
+        sb.appendLine("<div class=\"dot\">$icon</div>")
+        sb.appendLine("<div class=\"st-head\">")
+        sb.appendLine("<div class=\"st-title-group\"><span class=\"st-kicker\">Step ${num.toString().padStart(2, '0')}</span><h3 class=\"st-title\">${esc(title)}</h3></div>")
+        if (durTxt != null) sb.appendLine("<span class=\"st-meta\">${esc(durTxt)}</span>")
+        sb.appendLine("</div>")
         if (st.body.isNotBlank()) {
             renderProse(sb, stripMarkers(st.body))
         }
@@ -320,16 +320,14 @@ object HtmlRenderer {
         }
     }
 
-    private fun stepTimeLabel(style: PublishOptions.TimeStyle, occurredAt: LocalDateTime?, caseCreatedAt: LocalDateTime): String? {
-        if (occurredAt == null) return null
-        return when (style) {
-            PublishOptions.TimeStyle.EXACT -> EXACT_FMT.format(occurredAt)
-            PublishOptions.TimeStyle.RELATIVE -> {
-                val day = ChronoUnit.DAYS.between(caseCreatedAt.toLocalDate(), occurredAt.toLocalDate()) + 1
-                "Day $day · ${TIME_FMT.format(occurredAt)}"
-            }
-            PublishOptions.TimeStyle.NONE -> null
-        }
+    /**
+     * 타임라인 좌측 컬럼 날짜. TimeStyle.NONE 이면 숨김. 그 외에는 발행연도 기준으로
+     * 같은 해면 `MM.dd HH:mm`, 다른 해면 `yyyy.MM.dd HH:mm`. (하루에 스텝 여러 개 가능 → Day N 폐기.)
+     */
+    private fun stepDateLabel(style: PublishOptions.TimeStyle, occurredAt: LocalDateTime?, pubYear: Int, caseCreatedAt: LocalDateTime): String? {
+        if (occurredAt == null || style == PublishOptions.TimeStyle.NONE) return null
+        val fmt = if (occurredAt.year == pubYear) STEP_DATE_FMT else STEP_DATE_FMT_Y
+        return fmt.format(occurredAt)
     }
 
     private fun stripMarkers(text: String): String =
@@ -493,7 +491,7 @@ object HtmlRenderer {
         :root{
           --paper:#f7f7f5; --ink:#1a1815; --sub:#5c5852; --faint:#a8a29a; --hair:#eceae5; --hair-2:#f4f2ee;
           --accent:#047857; --accent-ink:#065f46; --accent-soft:#ecfdf5;
-          --rose:#be123c; --rose-soft:#fff1f2; --rose-line:#fbd0d6;
+          --rail:#e2ded6;
           --code-bg:#0e1116; --code-ink:#e7edf3; --code-line:#20262e; --code-gutter:#4b5563;
           --serif-disp:'Fraunces','Nanum Myeongjo','Noto Sans KR',Georgia,serif;
           --sans:'Inter','Pretendard Variable',Pretendard,'Noto Sans KR',system-ui,sans-serif;
@@ -516,8 +514,16 @@ object HtmlRenderer {
 
         /* 헤더 */
         header.hd{padding:${if (forPdf) "8px 0 0" else "60px 0 0"}}
-        .kicker{display:inline-flex;align-items:center;gap:8px;font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:22px}
-        .kicker .pill{background:var(--accent-soft);border:1px solid #b6e6cf;padding:3px 10px;border-radius:999px}
+        /* Resolved 배지(Solid) — 맨 위 가운데 */
+        .rbadge-wrap{text-align:center;margin-bottom:24px}
+        .rbadge{display:inline-flex;align-items:center;gap:7px;color:#fff;background:var(--accent);
+                font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;
+                padding:5px 13px 5px 10px;border-radius:999px;box-shadow:0 4px 12px rgba(4,120,87,.22)}
+        .rbadge .ck{font-size:11px}
+        /* 태그 — 제목 아래 좌측, 모노 텍스트를 · 로 연결 */
+        .hdtags{display:flex;flex-wrap:wrap;align-items:center;gap:0;margin-top:14px;
+                font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--sub)}
+        .hdtags .d{margin:0 8px;color:var(--faint);opacity:.6}
         h1.title{font-family:var(--serif-disp);font-weight:600;font-size:${if (forPdf) "32px" else "clamp(27px,3.8vw,36px)"};line-height:1.15;letter-spacing:-.02em;text-wrap:balance;color:var(--ink)}
         .tldr{margin-top:20px}
         .tldr .lb{font-family:var(--body);font-weight:800;font-size:13px;letter-spacing:-.01em;color:var(--ink);position:relative;display:inline-block;margin-bottom:10px;padding-bottom:3px}
@@ -551,9 +557,12 @@ object HtmlRenderer {
         pre.code .tk-f{color:#d2a8ff}
         pre.code .tk-t{color:#7ee787}
         .section{margin:0}
-        h2.sec{font-family:var(--serif-disp);font-weight:600;font-size:22px;line-height:1.3;letter-spacing:-.01em;color:var(--ink);margin:44px 0 6px}
-        .sec-eyebrow{display:block;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-top:44px}
-        .sec-eyebrow + h2.sec{margin-top:6px}
+        /* 섹션 헤더: 상단 얇은 룰 + eyebrow(라벨) + 세리프 제목. 헤더 아래 요소는 top-margin 을
+           무시해 간격을 .sec-head 하단 여백(20px)으로 통일. */
+        .sec-head{margin:46px 0 20px;padding-top:18px;border-top:1px solid var(--hair)}
+        .section > .sec-head + *{margin-top:0}
+        .sec-eyebrow{display:block;margin-bottom:6px;color:var(--accent);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+        h2.sec{margin:0;color:var(--ink);font-family:var(--serif-disp);font-size:22px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
 
         /* Error 터미널 창 */
         .crash{margin:8px 0 30px;border:1px solid var(--code-line);border-radius:12px;overflow:hidden;background:var(--code-bg)}
@@ -587,18 +596,27 @@ object HtmlRenderer {
         blockquote{margin:26px 0;padding:2px 0 2px 18px;border-left:3px solid #dcd8d1;
                   font-family:var(--body);font-weight:400;font-size:16px;line-height:1.65;color:#6f6a63}
 
-        /* The Journey — 스텝 */
-        .step{border-left:2px solid var(--hair);padding-left:18px;margin:20px 0}
-        .step.ok{border-color:var(--accent)}
-        .step.fail{border-color:var(--rose)}
-        .step.wip{border-color:#b45309}
-        .step h3{font-family:var(--sans);font-weight:600;font-size:16px;color:var(--ink);margin:0 0 5px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-        .step .chip{font:600 10px var(--mono);letter-spacing:.03em;padding:2px 8px;border-radius:5px}
-        .step.ok .chip{background:var(--accent-soft);color:var(--accent-ink)}
-        .step.fail .chip{background:var(--rose-soft);color:var(--rose)}
-        .step.wip .chip{background:#fffbeb;color:#b45309}
-        .step .time{font:400 12px var(--mono);color:var(--faint)}
-        .step p{margin:0 0 12px}
+        /* The Journey — K3 에디토리얼 타임라인 (좌측 상태 컬럼 + 아이콘 dot + 얇은 rail) */
+        .tl{position:relative;margin-top:6px}
+        .st{position:relative;padding-bottom:44px;padding-left:132px}
+        .st:last-child{padding-bottom:0}
+        .st.ok{--c:var(--accent);--dot:#10b981}
+        .st.wip{--c:#6b7280;--dot:#9ca3af}
+        .st.fail{--c:#e11d48;--dot:#fb3b5c}
+        .st.neutral{--c:#9b968d;--dot:#c2bcb1}
+        .st:not(:last-child)::before{content:"";position:absolute;top:20px;bottom:-24px;left:109px;width:1px;background:var(--rail)}
+        .st .dot{position:absolute;top:4px;left:104px;z-index:1;display:grid;width:11px;height:11px;place-items:center;
+                 border-radius:50%;background:var(--dot);color:#fff;font:700 7px/1 var(--mono)${if (forPdf) "" else ";box-shadow:0 0 0 2.5px color-mix(in srgb,var(--dot) 13%,transparent)"}}
+        ${if (forPdf) "" else """.st.ok .dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--dot) 20%,transparent),0 0 9px 1px color-mix(in srgb,var(--dot) 50%,transparent),0 0 16px 3px color-mix(in srgb,var(--dot) 30%,transparent)}"""}
+        .st .st-left{position:absolute;top:1px;left:0;width:92px;text-align:right}
+        .st .st-left .word{display:block;color:var(--c);font:600 11px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+        .st .st-left .st-date{display:block;margin-top:5px;color:var(--faint);font:400 10px var(--mono)}
+        .st .st-head{display:flex;align-items:flex-start;gap:11px;min-height:18px;margin-bottom:13px}
+        .st-title-group{min-width:0}
+        .st .st-kicker{display:block;margin-bottom:5px;color:var(--accent);font:600 9px var(--mono);letter-spacing:.13em;text-transform:uppercase}
+        .st h3.st-title{margin:0;color:var(--ink);font:600 16.5px/1.4 var(--body);letter-spacing:-.012em}
+        .st .st-meta{margin-left:auto;padding-top:22px;padding-left:12px;color:var(--faint);font:400 11.5px var(--mono);letter-spacing:.01em;white-space:nowrap}
+        .st p{margin:0 0 12px}
 
         /* 첨부 */
         .att{font-size:13px;color:var(--sub);margin:10px 0;font-family:var(--mono)}
@@ -606,19 +624,19 @@ object HtmlRenderer {
         .att .att-act{font-size:11px;color:var(--faint);margin-left:4px}
         .att.img{max-width:100%;border-radius:10px;border:1px solid var(--hair);display:block;margin:12px 0}
 
-        /* Solution — 합본(넘버드 숫자 + 이름 하이라이터) */
-        .solx{margin:22px 0 4px;display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:start}
-        .solx .num{font-family:var(--serif-disp);font-weight:600;font-size:56px;line-height:.8;color:var(--accent);letter-spacing:-.02em;display:block}
-        .solx .sol-name{font-family:var(--body);font-weight:700;font-size:22px;line-height:1.5;color:var(--ink);letter-spacing:-.01em}
-        .solx .sol-name .hl{padding:0 2px;background:linear-gradient(transparent 58%, rgba(4,120,87,.22) 58%);
-               -webkit-box-decoration-break:clone;box-decoration-break:clone}
-        .solx .sol-body{font-size:15px;line-height:1.65;color:var(--sub);margin-top:9px}
-        .solx .sol-body code{font-family:var(--mono);font-size:.84em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 5px;border-radius:5px;color:#9a3412}
-
-        /* 태그 (본문 하단) */
-        .tags{display:flex;flex-wrap:wrap;gap:9px;margin:42px 0 0;padding-top:30px;border-top:1px solid var(--hair)}
-        .tag{font:500 13px var(--sans);color:var(--sub);background:#fff;border:1px solid var(--hair);padding:6px 14px;border-radius:999px}
-        .tag::before{content:"#";color:var(--faint);margin-right:1px}
+        /* Solution — 체크 노드 마커 + 카피 (배경 면 없음) */
+        .solution-block{display:grid;grid-template-columns:32px 1fr;gap:16px;align-items:start;margin:22px 0 24px}
+        .solution-mark .sol-index{display:none}
+        .solution-mark .sol-check{display:grid;width:32px;height:32px;place-items:center;border-radius:50%;
+               background:var(--accent);color:#fff;font:600 15px var(--sans)${if (forPdf) "" else ";box-shadow:0 6px 16px rgba(4,120,87,.18)"}}
+        .solution-kicker{display:flex;align-items:center;gap:9px;margin-bottom:9px;padding-top:6px;font:600 9px var(--mono);letter-spacing:.11em;text-transform:uppercase}
+        .solution-label{color:var(--accent)}
+        .solution-status{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;
+               background:var(--accent-soft);color:var(--accent-ink);font-size:9px;letter-spacing:.06em}
+        .solution-status::before{content:"";width:5px;height:5px;border-radius:50%;background:#10b981${if (forPdf) "" else ";box-shadow:0 0 7px rgba(16,185,129,.45)"}}
+        .solution-title{margin:0;color:var(--ink);font:600 21px/1.4 var(--body);letter-spacing:-.018em;text-wrap:balance}
+        .solution-copy .solution-body{margin:10px 0 0;color:var(--sub);font:400 15px/1.68 var(--body)}
+        .solution-copy .solution-body code{font-family:var(--mono);font-size:.84em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 5px;border-radius:5px;color:#9a3412}
 
         /* 푸터 */
         footer.ft{margin:40px 0 0;padding:${if (forPdf) "26px 0 0" else "26px 0 90px"};border-top:1px solid var(--hair);
@@ -628,6 +646,18 @@ object HtmlRenderer {
         .ft .pub .t{font:600 14px var(--sans);color:var(--ink)}
         .ft .pub .s{font-size:12.5px;color:var(--faint)}
         .ft .stats{display:flex;gap:16px;font:400 13px var(--mono);color:var(--faint)}
+        ${if (forPdf) "" else """
+        /* 좁은 화면 — 타임라인 좌측 컬럼을 위로 접어 올림 */
+        @media(max-width:560px){
+          .wrap{padding:0 19px}
+          header.hd{padding-top:42px}
+          .topbar{padding-inline:19px}
+          .st{padding-left:0}
+          .st:not(:last-child)::before,.st .dot{display:none}
+          .st .st-left{position:static;display:flex;align-items:baseline;gap:10px;width:auto;margin-bottom:6px;text-align:left}
+          .st .st-left .st-date{margin-top:0}
+          .st .st-meta{padding-top:4px}
+        }"""}
         ${if (forPdf) "@page{size:A4;margin:16mm}.wrap{max-width:none;padding:0}" else ""}
     """.trimIndent()
 }

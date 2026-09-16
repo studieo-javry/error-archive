@@ -46,4 +46,4 @@ images:
   newTag: 3dfca134c76898c763baa60e8f06d6cc7ef1f1f8
 - name: publish-api
   newName: ghcr.io/studieo-javry/publish-api
-  newTag: 96415903d2976440ec61b22553c31a480c906fed
+  newTag: dd437ec265b97eb9459752b2420926c89f1b43f8

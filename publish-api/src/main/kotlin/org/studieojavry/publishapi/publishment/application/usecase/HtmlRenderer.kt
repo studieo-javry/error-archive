@@ -153,7 +153,7 @@ object HtmlRenderer {
 
         // ── 인트로 = Context(description), 제목 없이 본문 첫 문단 ──
         val descText = snap.description?.let { stripMarkers(it) }?.takeIf { it.isNotBlank() }
-        if (descText != null) renderProse(sb, descText)
+        if (descText != null) renderProse(sb, descText, opts, forPdf)
         snap.descriptionSnippets.forEach { renderSnippet(sb, it, opts, forPdf) }
         snap.descriptionAttachments.forEach { att -> renderAttachment(sb, att, p.slug, forPdf, publicBaseUrl, imageEmbedUrl) }
 
@@ -268,7 +268,7 @@ object HtmlRenderer {
         if (durTxt != null) sb.appendLine("<span class=\"st-meta\">${esc(durTxt)}</span>")
         sb.appendLine("</div>")
         if (st.body.isNotBlank()) {
-            renderProse(sb, stripMarkers(st.body))
+            renderProse(sb, stripMarkers(st.body), opts, forPdf)
         }
         st.snippets.forEach { renderSnippet(sb, it, opts, forPdf) }
         st.attachments.forEach { att -> renderAttachment(sb, att, slug, forPdf, publicBaseUrl, imageEmbedUrl) }
@@ -278,12 +278,18 @@ object HtmlRenderer {
     /** 스니펫 코드블록(다크) — 상단 랭귀지 탭 + 신호등 점. 줄 번호(codeLineNumbers·웹 전용)는 `.numbered`. */
     private fun renderSnippet(sb: StringBuilder, sn: ContentSnapshot.SnippetDoc, opts: PublishOptions, forPdf: Boolean) {
         sn.title?.takeIf { it.isNotBlank() }?.let { sb.appendLine("<div class=\"snip-title\">${esc(it)}</div>") }
-        val numCls = if (opts.codeLineNumbers && !forPdf) " numbered" else ""
-        sb.appendLine("<div class=\"codewrap\">")
-        sb.appendLine("<div class=\"code-bar\"><span class=\"lang\">${esc(sn.language.lowercase())}</span><span class=\"dots\"><i></i><i></i><i></i></span></div>")
-        sb.appendLine("<pre class=\"code$numCls\"><code>${highlightCode(sn.code, sn.language)}</code></pre>")
-        sb.appendLine("</div>")
+        renderCodeBlock(sb, sn.language, sn.code, opts, forPdf)
         sn.caption?.takeIf { it.isNotBlank() }?.let { sb.appendLine("<div class=\"cap\">${esc(it)}</div>") }
+    }
+
+    /** 다크 코드박스 렌더(랭귀지 탭 + 신호등 + 하이라이팅). 스니펫/본문 펜스 블록 공용. */
+    private fun renderCodeBlock(sb: StringBuilder, language: String, code: String, opts: PublishOptions, forPdf: Boolean) {
+        val numCls = if (opts.codeLineNumbers && !forPdf) " numbered" else ""
+        val langLabel = language.ifBlank { "code" }.lowercase()
+        sb.appendLine("<div class=\"codewrap\">")
+        sb.appendLine("<div class=\"code-bar\"><span class=\"lang\">${esc(langLabel)}</span><span class=\"dots\"><i></i><i></i><i></i></span></div>")
+        sb.appendLine("<pre class=\"code$numCls\"><code>${highlightCode(code, language)}</code></pre>")
+        sb.appendLine("</div>")
     }
 
     /**
@@ -330,9 +336,10 @@ object HtmlRenderer {
         return fmt.format(occurredAt)
     }
 
+    // `@snippet(x)`/`@attach(x)` 마커만 제거. 공백은 collapse 하지 않는다
+    // (펜스 코드블록 들여쓰기 보존 — prose 의 이중 공백은 HTML 이 알아서 collapse).
     private fun stripMarkers(text: String): String =
-        text.replace(SNIPPET_MARKER, "").replace(ATTACH_MARKER, "")
-            .replace(Regex("[ \t]+"), " ").trim()
+        text.replace(SNIPPET_MARKER, "").replace(ATTACH_MARKER, "").trim()
 
     // 구문 하이라이팅 — 경량 토크나이저. 다언어 공통 키워드(과도한 오탐 방지 위해 핵심만).
     private val HL_KEYWORDS = setOf(
@@ -454,10 +461,11 @@ object HtmlRenderer {
             .replace("\n", "<br/>")
 
     /**
-     * 블록 프로즈 렌더. 빈 줄로 문단 분리, `>` 로 시작하는 줄(들)은 blockquote 로 묶는다.
+     * 블록 프로즈 렌더. 빈 줄로 문단 분리, ```` ``` ```` 펜스는 다크 코드박스로,
+     * `>` 로 시작하는 줄(들)은 blockquote 로 묶는다.
      * 각 조각 텍스트는 [inlineMd] 로(인라인 코드 + 줄바꿈) 처리. XSS 는 esc 로 차단.
      */
-    private fun renderProse(sb: StringBuilder, raw: String) {
+    private fun renderProse(sb: StringBuilder, raw: String, opts: PublishOptions, forPdf: Boolean) {
         val lines = raw.split("\n")
         val para = StringBuilder()
         fun flushPara() {
@@ -468,6 +476,19 @@ object HtmlRenderer {
         while (i < lines.size) {
             val line = lines[i]
             when {
+                line.trimStart().startsWith("```") -> {
+                    flushPara()
+                    // 여는 펜스 뒤 텍스트 = 언어. 닫는 ``` (또는 EOF) 까지 코드로 수집.
+                    val lang = line.trimStart().removePrefix("```").trim()
+                    i++
+                    val code = StringBuilder()
+                    while (i < lines.size && !lines[i].trimStart().startsWith("```")) {
+                        if (code.isNotEmpty()) code.append("\n")
+                        code.append(lines[i]); i++
+                    }
+                    if (i < lines.size) i++ // 닫는 펜스 소비
+                    renderCodeBlock(sb, lang, code.toString(), opts, forPdf)
+                }
                 line.trimStart().startsWith(">") -> {
                     flushPara()
                     val q = StringBuilder()

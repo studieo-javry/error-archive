@@ -1,0 +1,40 @@
+# 개선안: RollingUpdate + replicas 2 + maxUnavailable 0 / maxSurge 1 (무중단 배포)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: demo, labels: { app: demo } }
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # 항상 기존 파드 유지하며 새 파드 Ready 후 교체
+  selector: { matchLabels: { app: demo } }
+  template:
+    metadata:
+      labels: { app: demo }
+      annotations: { rev: "v1" }
+    spec:
+      # 2 레플리카를 가능하면 다른 노드에 분산(단일노드면 무시됨)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app: demo } }
+      containers:
+        - name: app
+          image: traefik/whoami:v1.10.2
+          args: ["--port=8080"]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            failureThreshold: 15
+---
+apiVersion: v1
+kind: Service
+metadata: { name: demo }
+spec:
+  selector: { app: demo }
+  ports: [{ port: 80, targetPort: 8080 }]

@@ -1,0 +1,21 @@
+# in-cluster 프로버: 0.2s 마다 demo 서비스 호출, OK/FAIL 을 타임스탬프와 함께 로그.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prober, labels: { app: prober } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prober } }
+  template:
+    metadata: { labels: { app: prober } }
+    spec:
+      containers:
+        - name: prober
+          image: busybox:1.36
+          command: ["sh","-c"]
+          args:
+            - |
+              while true; do
+                T=$(date +%s.%N)
+                if wget -q -T 1 -O /dev/null http://demo/health 2>/dev/null; then echo "$T OK"; else echo "$T FAIL"; fi
+                sleep 0.2
+              done

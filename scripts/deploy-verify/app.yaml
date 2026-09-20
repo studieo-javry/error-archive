@@ -1,0 +1,32 @@
+# 실제 core-api base 와 동일한 배포 특성 재현: replicas=1, strategy=Recreate, readiness initialDelay=20s.
+# 스탠드인 이미지(traefik/whoami)는 즉시 기동 → 측정되는 중단은 "Recreate 파드 교체 + readiness 게이트" 하한.
+# (프로덕션은 여기에 JVM 콜드스타트 25~150s 가 더해짐 — 매니페스트 startupProbe 예산으로 확인됨)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: demo, labels: { app: demo } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: demo } }
+  template:
+    metadata:
+      labels: { app: demo }
+      annotations: { rev: "v1" }
+    spec:
+      containers:
+        - name: app
+          image: traefik/whoami:v1.10.2
+          args: ["--port=8080"]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata: { name: demo }
+spec:
+  selector: { app: demo }
+  ports: [{ port: 80, targetPort: 8080 }]

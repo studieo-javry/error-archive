@@ -61,9 +61,29 @@ jobs:
           echo "services=$SVCS" >> "$GITHUB_OUTPUT"
           echo "대상 서비스: $SVCS"
 
-  # 2) 대상 서비스만 빌드 + ghcr push
-  build-push:
+  # 1.5) 품질 게이트 — 대상 서비스 테스트. 실패하면 build-push/bump-manifest 가 진행되지 않음.
+  #      (composite build 라 :<svc>:test 가 각 included build 로 위임됨. fail-fast:false = 서비스별 독립)
+  test:
     needs: detect
+    if: ${{ needs.detect.outputs.services != '[]' && needs.detect.outputs.services != '' }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        svc: ${{ fromJSON(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: test
+        run: ./gradlew :${{ matrix.svc }}:test --no-daemon
+
+  # 2) 대상 서비스만 빌드 + ghcr push (테스트 통과가 전제 — needs 에 test 포함)
+  build-push:
+    needs: [ detect, test ]
     if: ${{ needs.detect.outputs.services != '[]' && needs.detect.outputs.services != '' }}
     runs-on: ubuntu-24.04-arm
     permissions:

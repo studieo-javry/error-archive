@@ -5,7 +5,9 @@ metadata:
   labels: { app: insight-api }
 spec:
   replicas: 1
-  strategy: { type: Recreate }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # 기존 파드 유지하며 새 파드 Ready 후 교체 → 배포 무중단
   selector:
     matchLabels: { app: insight-api }
   template:
@@ -13,6 +15,7 @@ spec:
       labels: { app: insight-api }
     spec:
       nodeSelector: { role: apps }
+      terminationGracePeriodSeconds: 30            # preStop(5s) + in-flight 정리 여유
       volumes:
         - name: insight-weights
           configMap: { name: insight-weights }   # git 밖(kubectl 로 생성)
@@ -32,6 +35,8 @@ spec:
             - configMapRef: { name: insight-api-env }
           volumeMounts:
             - { name: insight-weights, mountPath: /config, readOnly: true }
+          lifecycle:
+            preStop: { exec: { command: ["sh", "-c", "sleep 5"] } }   # 종료 전 endpoints 반영 대기(무중단 blip 제거)
           readinessProbe:
             httpGet: { path: /internal/actuator/health/readiness, port: 8083 }
             initialDelaySeconds: 20

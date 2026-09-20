@@ -5,7 +5,10 @@ metadata:
   labels: { app: noti-api }
 spec:
   replicas: 1
-  strategy: { type: Recreate }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # 기존 파드 유지하며 새 파드 Ready 후 교체 → 배포 무중단
+    # 주의: SSE 브로커가 in-memory(레플리카-로컬)라 replicas 는 1 유지. fan-out 도입 후 상향(설계문서 §3-1)
   selector:
     matchLabels: { app: noti-api }
   template:
@@ -13,6 +16,7 @@ spec:
       labels: { app: noti-api }
     spec:
       nodeSelector: { role: apps }
+      terminationGracePeriodSeconds: 30            # preStop(5s) + in-flight 정리 여유
       # ghcr public 이미지라 imagePullSecrets 불필요. private 전환 시 여기에 추가.
       containers:
         - name: noti-api
@@ -26,6 +30,8 @@ spec:
           envFrom:
             - secretRef:    { name: noti-api-secrets }   # git 밖(kubectl 로 생성). ArgoCD 관리 X
             - configMapRef: { name: noti-api-env }
+          lifecycle:
+            preStop: { exec: { command: ["sh", "-c", "sleep 5"] } }   # 종료 전 endpoints 반영 대기(무중단 blip 제거)
           readinessProbe:
             httpGet: { path: /internal/actuator/health/readiness, port: 8082 }
             initialDelaySeconds: 20

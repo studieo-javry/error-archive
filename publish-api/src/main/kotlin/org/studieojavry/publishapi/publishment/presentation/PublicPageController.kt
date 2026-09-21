@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.publishapi.publishment.application.usecase.AttachmentRender
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublishmentBySlugUseCase
-import org.studieojavry.publishapi.publishment.application.usecase.HtmlRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
+import org.studieojavry.publishapi.publishment.application.usecase.PublicPageRenderCache
 import org.studieojavry.publishapi.publishment.application.usecase.PdfRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentForbiddenException
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentGoneException
@@ -43,6 +43,7 @@ class PublicPageController(
     private val attachmentPresigner: AttachmentPresigner,
     private val pageProps: PagePublicProperties,
     private val listPublicUseCase: ListPublicPublishmentsUseCase,
+    private val renderCache: PublicPageRenderCache,
 ) {
     /** 첨부 objectKey → presigned inline URL (PDF 이미지 임베드용). 웹/PDF 링크는 안정 라우트. */
     private val imageEmbedUrl: (String) -> String? = { attachmentPresigner.viewUrl(it) }
@@ -70,9 +71,8 @@ class PublicPageController(
                 .build()
             builder.header(HttpHeaders.SET_COOKIE, cookie.toString())
         }
-        return builder.body(
-            HtmlRenderer.render(p, forPdf = false, publicBaseUrl = pageProps.publicBaseUrl, imageEmbedUrl = imageEmbedUrl)
-        )
+        // 렌더는 캐시 경유(key = slug@updatedAt). 위 조회수/쿠키 로직은 캐시 밖이라 view_count 정확 유지.
+        return builder.body(renderCache.render(slug, p.updatedAt.toString(), p))
     }
 
     /** 쿠키 이름 — slug 는 `[a-z0-9-]` 라 토큰 안전. `.` 등 치환 방어용으로 sanitize. */

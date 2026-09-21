@@ -15,6 +15,16 @@ interface CasePublishmentJpaRepository : JpaRepository<CasePublishmentEntity, Lo
 
     fun existsBySlug(slug: String): Boolean
 
+    /**
+     * 공개 페이지 게이팅 + 렌더 캐시 key 용 **경량 조회** — content_json/options_json(jsonb) 을
+     * 읽지 않아 역직렬화 비용이 없다. 캐시 HIT 시 전체 엔티티 로드를 피하기 위한 것.
+     */
+    @Query(
+        "select p.status as status, p.ownerUserId as ownerUserId, p.updatedAt as updatedAt " +
+            "from CasePublishmentEntity p where p.slug = :slug",
+    )
+    fun findPublicMetaBySlug(@Param("slug") slug: String): PublicPageMetaView?
+
     /** 케이스당 1 canonical — 원본 case 로 발행물 조회(UNIQUE(original_case_id) 전제). */
     fun findByOriginalCaseId(originalCaseId: Long): CasePublishmentEntity?
 
@@ -127,4 +137,11 @@ interface CasePublishmentJpaRepository : JpaRepository<CasePublishmentEntity, Lo
         """
     )
     fun aggregateByOwner(@Param("owner") owner: Long): List<Array<Any>>
+}
+
+/** 공개 페이지 경량 조회 프로젝션(closed projection → status/owner/updatedAt 컬럼만 SELECT, jsonb 미조회). */
+interface PublicPageMetaView {
+    val status: PublishmentStatus
+    val ownerUserId: Long
+    val updatedAt: LocalDateTime
 }

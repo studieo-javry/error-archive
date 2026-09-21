@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.publishapi.publishment.application.usecase.AttachmentRender
+import org.studieojavry.publishapi.publishment.application.usecase.GetPublicPageMetaUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublishmentBySlugUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.PublicPageRenderCache
@@ -44,6 +45,7 @@ class PublicPageController(
     private val pageProps: PagePublicProperties,
     private val listPublicUseCase: ListPublicPublishmentsUseCase,
     private val renderCache: PublicPageRenderCache,
+    private val metaUseCase: GetPublicPageMetaUseCase,
 ) {
     /** 첨부 objectKey → presigned inline URL (PDF 이미지 임베드용). 웹/PDF 링크는 안정 라우트. */
     private val imageEmbedUrl: (String) -> String? = { attachmentPresigner.viewUrl(it) }
@@ -54,7 +56,8 @@ class PublicPageController(
         @Parameter(description = "slug") @PathVariable slug: String,
         request: HttpServletRequest,
     ): ResponseEntity<String> {
-        val p = lookup(slug)
+        // 경량 메타 조회로 게이팅 + 캐시 key(updatedAt) 확보 — content(jsonb) 역직렬화 없음.
+        val meta = lookupMeta(slug)
         val builder = ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, "text/html; charset=UTF-8")
         // 조회수 집계 — 공개 페이지에서만 + 쿠키 dedup(방문자당 이 slug 24h 1회).
@@ -71,8 +74,9 @@ class PublicPageController(
                 .build()
             builder.header(HttpHeaders.SET_COOKIE, cookie.toString())
         }
-        // 렌더는 캐시 경유(key = slug@updatedAt). 위 조회수/쿠키 로직은 캐시 밖이라 view_count 정확 유지.
-        return builder.body(renderCache.render(slug, p.updatedAt.toString(), p))
+        // 렌더는 캐시 경유(key = slug@updatedAt). HIT 시 전체 로드+렌더를 건너뜀(캐시 MISS 안에서만 수행).
+        // 위 조회수/쿠키 로직은 캐시 밖이라 view_count 정확 유지.
+        return builder.body(renderCache.render(slug, meta.updatedAt.toString()))
     }
 
     /** 쿠키 이름 — slug 는 `[a-z0-9-]` 라 토큰 안전. `.` 등 치환 방어용으로 sanitize. */
@@ -133,6 +137,15 @@ class PublicPageController(
         throw ResponseStatusException(HttpStatus.GONE, e.message, e)
     } catch (e: PublishmentForbiddenException) {
         throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+    }
+
+    /** 공개 페이지 경량 게이팅(content 역직렬화 없음). 없음→404, 내려짐→410. */
+    private fun lookupMeta(slug: String) = try {
+        metaUseCase.invoke(slug)
+    } catch (e: PublishmentNotFoundException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+    } catch (e: PublishmentGoneException) {
+        throw ResponseStatusException(HttpStatus.GONE, e.message, e)
     }
 
     private fun slugifyFilename(s: String): String =

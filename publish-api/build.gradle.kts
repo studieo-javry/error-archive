@@ -34,6 +34,10 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+  // 공개 페이지 렌더 캐시 (Caffeine) — /p/{slug} HTML 렌더는 CPU 무거움
+  implementation("org.springframework.boot:spring-boot-starter-cache")
+  implementation("com.github.ben-manes.caffeine:caffeine")
+
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
   implementation("io.micrometer:micrometer-tracing-bridge-brave")

@@ -6,6 +6,7 @@ import org.studieojavry.publishapi.publishment.application.port.CasePublishmentR
 import org.studieojavry.publishapi.publishment.application.port.MyPublishmentQuery
 import org.studieojavry.publishapi.publishment.application.port.MyPublishmentSort
 import org.studieojavry.publishapi.publishment.application.port.OwnerPublishmentSummary
+import org.studieojavry.publishapi.publishment.application.port.PublicPageMeta
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
 import org.studieojavry.publishapi.publishment.domain.ContentSnapshot
 import org.studieojavry.publishapi.publishment.domain.PublishOptions
@@ -59,6 +60,11 @@ class CasePublishmentRepositoryAdapter(
 
     override fun findBySlug(slug: String): CasePublishment? =
         jpa.findBySlug(slug)?.toDomain()
+
+    override fun findPublicMetaBySlug(slug: String): PublicPageMeta? =
+        jpa.findPublicMetaBySlug(slug)?.let {
+            PublicPageMeta(status = it.status, ownerUserId = it.ownerUserId, updatedAt = it.updatedAt)
+        }
 
     override fun findByOriginalCaseId(caseId: Long): CasePublishment? =
         jpa.findByOriginalCaseId(caseId)?.toDomain()

@@ -1,7 +1,19 @@
 package org.studieojavry.publishapi.publishment.application.port
 
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
+import org.studieojavry.publishapi.publishment.domain.PublishmentStatus
 import org.studieojavry.publishapi.publishment.domain.Visibility
+import java.time.LocalDateTime
+
+/**
+ * 공개 페이지 게이팅 + 렌더 캐시 key 용 **경량 메타** — content(jsonb) 역직렬화 없이 조회.
+ * `updatedAt` 은 모든 편집(재발행/메타편집)에서 갱신 → 캐시 무효화 토큰.
+ */
+data class PublicPageMeta(
+    val status: PublishmentStatus,
+    val ownerUserId: Long,
+    val updatedAt: LocalDateTime,
+)
 
 /** 내 발행물 목록 정렬 기준. */
 enum class MyPublishmentSort {
@@ -51,6 +63,8 @@ interface CasePublishmentRepositoryPort {
     fun save(p: CasePublishment): CasePublishment
     fun update(p: CasePublishment): CasePublishment
     fun findBySlug(slug: String): CasePublishment?
+    /** 공개 페이지 경량 메타 조회(jsonb 미조회) — 게이팅 + 캐시 key. 없으면 null. */
+    fun findPublicMetaBySlug(slug: String): PublicPageMeta?
     fun findById(id: Long): CasePublishment?
     /** 케이스당 1 canonical 발행물 정책 — 원본 case 로 기존 발행물 조회(없으면 null). */
     fun findByOriginalCaseId(caseId: Long): CasePublishment?

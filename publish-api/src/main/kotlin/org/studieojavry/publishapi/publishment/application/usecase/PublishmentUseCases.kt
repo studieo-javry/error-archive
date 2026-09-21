@@ -11,6 +11,7 @@ import org.studieojavry.publishapi.publishment.application.port.MyPublishmentQue
 import org.studieojavry.publishapi.publishment.application.port.MyPublishmentSort
 import org.studieojavry.publishapi.publishment.application.port.OriginalCaseStatusReaderPort
 import org.studieojavry.publishapi.publishment.application.port.OwnerPublishmentSummary
+import org.studieojavry.publishapi.publishment.application.port.PublicPageMeta
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
 import org.studieojavry.publishapi.publishment.domain.PublishmentStatus
 import org.studieojavry.publishapi.publishment.domain.SourceState
@@ -217,6 +218,25 @@ class GetPublishmentBySlugUseCase(
         }
         // PUBLIC/UNLISTED 모두 링크로 접근 가능(PRIVATE 제거). visibility 는 discovery 노출만 좌우.
         return p
+    }
+}
+
+/**
+ * 공개 페이지 **경량 게이팅** — content(jsonb) 역직렬화 없이 존재/상태만 확인 + 렌더 캐시 key(updatedAt) 확보.
+ * 캐시 HIT 시 전체 엔티티 로드를 피하기 위한 것(GetPublishmentBySlugUseCase 의 공개(viewer=null) 게이팅과 동일 의미).
+ */
+@Service
+class GetPublicPageMetaUseCase(
+    private val repository: CasePublishmentRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun invoke(slug: String): PublicPageMeta {
+        val m = repository.findPublicMetaBySlug(slug)
+            ?: throw PublishmentNotFoundException("publishment not found: $slug")
+        if (m.status == PublishmentStatus.UNPUBLISHED) {
+            throw PublishmentGoneException("이 발행물은 작성자가 비공개(내리기) 처리했습니다")
+        }
+        return m
     }
 }
 

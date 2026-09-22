@@ -28,6 +28,9 @@ class InternalAuthAutoConfiguration {
             privateKey = PemKeyParser.parsePrivateKey(issuer.privateKeyPem),
             keyId = issuer.keyId,
             ttlSeconds = properties.ttlSeconds,
+            cacheEnabled = properties.tokenCache.enabled,
+            refreshMarginSeconds = properties.tokenCache.refreshMarginSeconds,
+            maxCacheEntries = properties.tokenCache.maxEntries,
         )
     }
 

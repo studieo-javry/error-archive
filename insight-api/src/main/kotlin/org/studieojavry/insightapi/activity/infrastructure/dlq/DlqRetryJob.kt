@@ -2,6 +2,7 @@ package org.studieojavry.insightapi.activity.infrastructure.dlq
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
@@ -31,6 +32,8 @@ class DlqRetryJob(
     private val ingestUseCase: IngestActivityEventUseCase,
     private val objectMapper: ObjectMapper,
     transactionManager: PlatformTransactionManager,
+    // 운영 튜닝: 한 틱 처리량 / 폴링 주기. 복구 속도 ↔ DB·API 부하 트레이드오프(Phase 3 참고).
+    @Value("\${insight.dlq.batch-size:50}") private val batchSize: Int,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -38,12 +41,11 @@ class DlqRetryJob(
         propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
     }
 
-    private val batchSize = 50
     private val maxAttempts = 10
     private val baseBackoffMs = 5_000L
     private val maxBackoffMs = 3_600_000L  // 1h
 
-    @Scheduled(fixedDelay = 30_000)
+    @Scheduled(fixedDelayString = "\${insight.dlq.interval-ms:30000}")
     @SchedulerLock(name = "insight-dlq-retry", lockAtMostFor = "PT5M", lockAtLeastFor = "PT1S")
     fun tick() {
         try {

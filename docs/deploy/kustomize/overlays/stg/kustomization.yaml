@@ -40,7 +40,7 @@ images:
   newTag: d2ebbd1deda036fadfc8109b1dc32c9f3fb01cfc
 - name: insight-api
   newName: ghcr.io/studieo-javry/insight-api
-  newTag: d2ebbd1deda036fadfc8109b1dc32c9f3fb01cfc
+  newTag: 41917e8071df5bfa4e7335353cc7bd2c5a106c27
 - name: noti-api
   newName: ghcr.io/studieo-javry/noti-api
   newTag: d2ebbd1deda036fadfc8109b1dc32c9f3fb01cfc

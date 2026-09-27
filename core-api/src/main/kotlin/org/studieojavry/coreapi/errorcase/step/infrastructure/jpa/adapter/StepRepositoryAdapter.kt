@@ -43,6 +43,11 @@ class StepRepositoryAdapter(
         return jpa.countGrouped(caseIds).associate { it.errorCaseId to it.count }
     }
 
+    override fun countUnreadByCaseIds(caseIds: Collection<Long>, userId: Long): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.countUnreadByCaseIds(caseIds, userId).associate { it.errorCaseId to it.count }
+    }
+
     override fun countSinceExcludingAuthor(errorCaseId: Long, since: LocalDateTime, excludeUserId: Long): Long =
         jpa.countSinceExcludingAuthor(errorCaseId, since, excludeUserId)
 

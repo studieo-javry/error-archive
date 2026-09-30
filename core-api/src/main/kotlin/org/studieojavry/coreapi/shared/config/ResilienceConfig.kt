@@ -10,7 +10,9 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService
 import java.time.Duration
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * core-api 의 외부 호출용 CircuitBreaker 기본 정책.
@@ -30,9 +32,21 @@ import java.util.concurrent.Executors
 @Configuration
 class ResilienceConfig {
 
-    /** CircuitBreaker(TimeLimiter)용 스레드 풀. 컨텍스트 종료 시 정리되도록 빈으로 관리. */
+    /**
+     * CircuitBreaker(TimeLimiter)용 스레드 풀 — **bounded(bulkhead)**.
+     *
+     * 기존 `newCachedThreadPool()` 은 무제한이라 iam-api 지연 시 대기 스레드가 무한정 증가한다
+     * (부하 테스트에서 48→143 관측 — 정체는 future 를 기다리는 **Tomcat 워커 스레드**였음).
+     * **SynchronousQueue + 상한 풀 + AbortPolicy** 로 동시 외부호출을 max(16)개로 제한하고 초과분은
+     * **즉시 reject** → CircuitBreaker 가 실패로 집계 → **빠른 fallback**. 큐가 없으므로 Tomcat 워커가
+     * 큐 뒤에서 5초씩 블록되지 않고 곧바로 풀려, 대기 스레드 총량이 ~16 로 묶인다. CB OPEN 도 앞당김.
+     */
     @Bean(destroyMethod = "shutdown")
-    fun circuitBreakerExecutor(): ExecutorService = Executors.newCachedThreadPool()
+    fun circuitBreakerExecutor(): ExecutorService = ThreadPoolExecutor(
+        0, 16, 30L, TimeUnit.SECONDS,
+        SynchronousQueue(),
+        ThreadPoolExecutor.AbortPolicy(),
+    )
 
     @Bean
     fun defaultCircuitBreakerCustomizer(

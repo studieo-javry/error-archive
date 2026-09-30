@@ -13,6 +13,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDele
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAccessDeniedException
+import org.studieojavry.coreapi.errorcase.shared.infrastructure.iam.IamApiUnavailableException
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
 import org.studieojavry.sharederror.trace.TraceIdAccessor
 
@@ -65,12 +66,25 @@ class ErrorCaseExceptionHandler(
         res: HttpServletResponse,
     ): ProblemDetail = build(req, res, HttpStatus.BAD_REQUEST, "CASE_LINK_INVALID", ex.message ?: "Invalid snippet/attachment link.")
 
+    /**
+     * iam-api 지연/중단으로 권한(워크스페이스 role) 확인이 불가한 경우 — **일시 장애**.
+     * 500(서버 오류)이 아니라 **503(Service Unavailable, retryable)** 로 내려 클라이언트가 재시도 가능함을 인지시킨다.
+     * 접근은 여전히 거부(fail-closed) — 이 예외가 던져진 시점에 권한이 확인되지 않았으므로 데이터는 반환되지 않는다.
+     */
+    @ExceptionHandler(IamApiUnavailableException::class)
+    fun handleIamUnavailable(
+        ex: IamApiUnavailableException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail = build(req, res, HttpStatus.SERVICE_UNAVAILABLE, "IAM_UNAVAILABLE", "Authorization service temporarily unavailable. Please retry.", retryable = true)
+
     private fun build(
         req: HttpServletRequest,
         res: HttpServletResponse,
         status: HttpStatus,
         code: String,
         detail: String,
+        retryable: Boolean = false,
     ): ProblemDetail {
         val traceId = traceIdAccessor.currentOrNew()
         log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=$code] $detail" }
@@ -80,7 +94,7 @@ class ErrorCaseExceptionHandler(
             detail = detail,
             code = code,
             traceId = traceId,
-            retryable = false,
+            retryable = retryable,
             instance = req.requestURI,
         )
     }

@@ -34,7 +34,7 @@ generatorOptions:
 images:
 - name: core-api
   newName: ghcr.io/studieo-javry/core-api
-  newTag: be48e1d0adb70e5bf3449835fbaafdd916b29c03
+  newTag: 7cba40a3ffa0b2e293991084af1c6cf07e2bd2b2
 - name: iam-api
   newName: ghcr.io/studieo-javry/iam-api
   newTag: d2ebbd1deda036fadfc8109b1dc32c9f3fb01cfc

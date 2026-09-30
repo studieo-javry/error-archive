@@ -1,8 +1,11 @@
 package org.studieojavry.coreapi.errorcase.case.application.usecase
 
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
@@ -41,20 +44,33 @@ class GetSuggestedFolloweesUseCase(
     private val followedUserReader: FollowedUserReaderPort,
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val authorSummaryReader: AuthorSummaryReaderPort,
+    private val suggestionFallbackPool: SuggestionFallbackPool,
+    @Qualifier("fanoutExecutor") private val fanoutExecutor: ExecutorService,
 ) {
     @Cacheable(cacheNames = [CacheConfig.CACHE_SUGGESTED_FOLLOWEES], key = "#input.userId.toString() + ':' + #input.limit")
     @Transactional(readOnly = true)
     fun invoke(input: Input): Result {
         val limit = input.limit.coerceIn(1, MAX_LIMIT)
 
-        // 1. 제외 set: 본인 + 이미 follow 한 사용자
-        val excluded = (followedUserReader.findFollowingIds(input.userId, FOLLOWING_LOOKUP_SIZE).toSet()
-            + input.userId)
+        // 1~2. 제외 set(①) + 신호 3종(②③④) — 서로 독립이라 **fan-out 병렬**(가상 스레드).
+        //       기존엔 순차라 지연 = ①+②+③+④ 합. 병렬 시 지연 = max(①,②,③,④).
+        val excludedF = CompletableFuture.supplyAsync({
+            followedUserReader.findFollowingIds(input.userId, FOLLOWING_LOOKUP_SIZE).toSet() + input.userId
+        }, fanoutExecutor)
+        val meTooF = CompletableFuture.supplyAsync({
+            meTooRepository.findCoOccurringUserIds(input.userId, SIGNAL_LIMIT)
+        }, fanoutExecutor)
+        val watchlistF = CompletableFuture.supplyAsync({
+            watchlistRepository.findCoOccurringUserIds(input.userId, SIGNAL_LIMIT)
+        }, fanoutExecutor)
+        val workspaceF = CompletableFuture.supplyAsync({
+            workspaceMemberReader.findCoMemberIds(input.userId, SIGNAL_LIMIT)
+        }, fanoutExecutor)
 
-        // 2. 신호별 후보 fetch
-        val meTooOverlap = meTooRepository.findCoOccurringUserIds(input.userId, SIGNAL_LIMIT)
-        val watchlistOverlap = watchlistRepository.findCoOccurringUserIds(input.userId, SIGNAL_LIMIT)
-        val workspaceCoMembers = workspaceMemberReader.findCoMemberIds(input.userId, SIGNAL_LIMIT)
+        val excluded = excludedF.join()
+        val meTooOverlap = meTooF.join()
+        val watchlistOverlap = watchlistF.join()
+        val workspaceCoMembers = workspaceF.join()
 
         // 3. 후보별 score 계산
         val candidates: Map<Long, Long> = buildMap<Long, Long> {
@@ -79,8 +95,8 @@ class GetSuggestedFolloweesUseCase(
         var resultIds = signalRanked
         if (resultIds.size < limit) {
             val needed = limit - resultIds.size
-            val coldStart = errorCaseRepository
-                .findTopOwnersOfRecentPublic(LocalDateTime.now().minusDays(COLD_START_WINDOW_DAYS.toLong()), needed * 4)
+            // 전역 top-authors 는 userId 무관·결정적 → 캐시된 풀에서 취함(요청당 full-scan 제거).
+            val coldStart = suggestionFallbackPool.topRecentPublicAuthors()
                 .asSequence()
                 .filter { it !in excluded }
                 .filter { it !in resultIds }

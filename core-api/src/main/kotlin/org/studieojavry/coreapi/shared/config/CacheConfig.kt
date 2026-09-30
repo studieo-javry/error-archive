@@ -45,6 +45,8 @@ class CacheConfig {
                 buildCache(CACHE_RECENT_ACTIVE_CASES, ttlSeconds = 30, maxSize = 10_000),
                 buildCache(CACHE_WATCHLIST_FEED, ttlSeconds = 30, maxSize = 10_000),
                 buildCache(CACHE_MY_RECENT_ACTIVITIES, ttlMinutes = 5, maxSize = 10_000),
+                // 추천 fallback 의 전역 top-authors(userId 무관) — 전 유저 공유, 짧은 TTL 로 갱신.
+                buildCache(CACHE_SUGGESTION_TOP_AUTHORS, ttlMinutes = 5, maxSize = 4),
             )
         )
         return mgr
@@ -70,5 +72,6 @@ class CacheConfig {
         const val CACHE_RECENT_ACTIVE_CASES = "recent-active-cases"
         const val CACHE_WATCHLIST_FEED = "watchlist-feed"
         const val CACHE_MY_RECENT_ACTIVITIES = "my-recent-activities"
+        const val CACHE_SUGGESTION_TOP_AUTHORS = "suggestion-top-authors"
     }
 }

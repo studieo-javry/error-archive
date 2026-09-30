@@ -56,13 +56,18 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
 
     /**
      * PUBLIC case 작성자 distinct, random 순. native query — JPQL 에 `random()` 미지원.
-     * `DISTINCT + ORDER BY random()` 은 Postgres 가 reject 하므로 `GROUP BY` 로 dedupe.
-     * ORDER BY random() 은 작은 데이터셋(MVP) 한정 허용. PUBLIC case 총수가 늘면 sample 전략 재검토.
+     *
+     * 개선: 기존 `GROUP BY owner ORDER BY random()` 은 PUBLIC 전체를 Seq Scan(케이스 수에 O(N)) —
+     * 부하 테스트에서 20k 8.6ms → 100k 44.5ms 로 선형 확인. **TABLESAMPLE SYSTEM 으로 페이지 표본만
+     * 스캔**해 O(표본)으로 낮춘다(표본 내 GROUP BY dedupe + random 정렬). 이 쿼리는 신호 부족 시
+     * 채우는 last-resort fallback 이라 표본이 약간 적어도 허용된다.
+     * 주의: 표본 비율(현재 2%)은 PUBLIC 규모에 맞춰 조정 필요 — 소규모에선 결과가 적을 수 있고,
+     * 초대규모는 사전계산 추천풀(주기 갱신 캐시)로 대체 검토.
      */
     @Query(
         value = """
             select owner_user_id
-              from error_case
+              from error_case tablesample system (2)
              where visibility = 'PUBLIC'
              group by owner_user_id
              order by random()

@@ -89,6 +89,11 @@ class CommentRepositoryAdapter(
         }
     }
 
+    override fun countUnreadByCaseIds(caseIds: Collection<Long>, userId: Long): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return commentJpa.countUnreadByCaseIds(caseIds, userId).associate { it.errorCaseId to it.count }
+    }
+
     override fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long =
         commentJpa.countByAuthorSince(authorUserId, since)
 

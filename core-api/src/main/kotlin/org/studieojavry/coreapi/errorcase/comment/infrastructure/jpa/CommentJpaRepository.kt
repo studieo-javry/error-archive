@@ -90,6 +90,30 @@ interface CommentJpaRepository : JpaRepository<CommentEntity, Long> {
         @Param("globalSince") globalSince: LocalDateTime,
     ): List<CaseActivityProjection>
 
+    /**
+     * unread 집계 (DB-side, 일괄). case 별 lastViewedAt(case_view LEFT JOIN, 미열람이면 태초 1970) 이후 +
+     * author != userId 인 미삭제 댓글 수. **활동 전량을 앱 메모리로 물질화하지 않도록** count 를 DB 가 계산한다
+     * (기존 findActivitiesByCaseIdsSince + in-memory groupingBy 를 대체). 반환 행 수는 caseIds 크기 이하.
+     */
+    @Query(
+        value = """
+            SELECT a.error_case_id AS "errorCaseId", count(*) AS "count"
+              FROM error_case_comment a
+              LEFT JOIN case_view v
+                ON v.error_case_id = a.error_case_id AND v.user_id = :userId
+             WHERE a.error_case_id IN (:caseIds)
+               AND a.deleted_at IS NULL
+               AND a.author_user_id <> :userId
+               AND a.created_at > COALESCE(v.last_viewed_at, TIMESTAMP '1970-01-01')
+             GROUP BY a.error_case_id
+        """,
+        nativeQuery = true,
+    )
+    fun countUnreadByCaseIds(
+        @Param("caseIds") caseIds: Collection<Long>,
+        @Param("userId") userId: Long,
+    ): List<CaseCountProjection>
+
     @Query("""
         select count(c) from CommentEntity c
          where c.authorUserId = :authorUserId

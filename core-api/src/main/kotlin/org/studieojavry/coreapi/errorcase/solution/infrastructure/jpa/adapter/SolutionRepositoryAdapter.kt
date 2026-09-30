@@ -35,6 +35,11 @@ class SolutionRepositoryAdapter(
         return jpa.findMaxCreatedAtGrouped(caseIds).associate { it.errorCaseId to it.value }
     }
 
+    override fun countUnreadByCaseIds(caseIds: Collection<Long>, userId: Long): Map<Long, Long> {
+        if (caseIds.isEmpty()) return emptyMap()
+        return jpa.countUnreadByCaseIds(caseIds, userId).associate { it.errorCaseId to it.count }
+    }
+
     override fun countByCaseIds(caseIds: Collection<Long>): Map<Long, Long> {
         if (caseIds.isEmpty()) return emptyMap()
         return jpa.countGrouped(caseIds).associate { it.errorCaseId to it.count }

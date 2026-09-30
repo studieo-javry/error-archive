@@ -33,6 +33,9 @@ interface SolutionRepositoryPort {
     /** unread 정렬용 batch — globalSince 이후 활동 fetch. */
     fun findActivitiesByCaseIdsSince(caseIds: Collection<Long>, globalSince: LocalDateTime): List<CaseActivityRow>
 
+    /** unread 집계 (DB-side). case 별 lastViewedAt 이후 + author != userId 인 솔루션 수를 case-id 별 Map 으로. */
+    fun countUnreadByCaseIds(caseIds: Collection<Long>, userId: Long): Map<Long, Long>
+
     /** since 이후 + author = authorUserId solution 수. activity summary 산정용. */
     fun countByAuthorSince(authorUserId: Long, since: LocalDateTime): Long
 }

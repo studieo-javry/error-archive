@@ -4,7 +4,6 @@ import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
-import org.studieojavry.coreapi.errorcase.case.application.port.CaseViewRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
@@ -37,7 +36,6 @@ class GetMyRecentActiveCasesUseCase(
     private val commentRepository: CommentRepositoryPort,
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
-    private val caseViewRepository: CaseViewRepositoryPort,
     private val caseMeTooRepository: CaseMeTooRepositoryPort,
 ) {
     /**
@@ -81,24 +79,18 @@ class GetMyRecentActiveCasesUseCase(
         if (withinWindow.isEmpty()) return Result(items = emptyList())
 
         val activeCandidateCaseIds = withinWindow.map { it.first.id }
-        val lastViewedAtByCase = caseViewRepository.findByUserAndCaseIds(input.userId, activeCandidateCaseIds)
 
-        // 2. unread 계산 — batch projection 3 query. case 별 lastViewedAt + author != me 필터는 in-memory.
-        val globalSince = if (activeCandidateCaseIds.any { lastViewedAtByCase[it] == null }) EPOCH
-                          else lastViewedAtByCase.values.min() ?: EPOCH
-        val allActivities =
-            commentRepository.findActivitiesByCaseIdsSince(activeCandidateCaseIds, globalSince) +
-                stepRepository.findActivitiesByCaseIdsSince(activeCandidateCaseIds, globalSince) +
-                solutionRepository.findActivitiesByCaseIdsSince(activeCandidateCaseIds, globalSince)
-        val unreadByCase: Map<Long, Long> = allActivities
-            .filter { it.authorUserId != input.userId }
-            .filter {
-                val lastViewed = lastViewedAtByCase[it.errorCaseId]
-                lastViewed == null || it.createdAt.isAfter(lastViewed)
+        // 2. unread 계산 — **DB-side 집계** 3 query. case 별 lastViewedAt(case_view LEFT JOIN, 미열람이면 태초)
+        //    이후 + author != me 인 활동 수를 DB 가 count 하여 case-id 별 Map 만 받는다. 활동 전량을 앱 메모리로
+        //    물질화하지 않으므로 후보 케이스의 활동이 수만~수십만이어도 앱 힙·GC 에 영향 없음(반환 ≤ 후보수).
+        val unreadByCase: Map<Long, Long> = run {
+            val comment = commentRepository.countUnreadByCaseIds(activeCandidateCaseIds, input.userId)
+            val step = stepRepository.countUnreadByCaseIds(activeCandidateCaseIds, input.userId)
+            val solution = solutionRepository.countUnreadByCaseIds(activeCandidateCaseIds, input.userId)
+            (comment.keys + step.keys + solution.keys).associateWith { id ->
+                (comment[id] ?: 0L) + (step[id] ?: 0L) + (solution[id] ?: 0L)
             }
-            .groupingBy { it.errorCaseId }
-            .eachCount()
-            .mapValues { it.value.toLong() }
+        }
 
         // 3. (unreadCount > 0 desc, lastActivityAt desc) 정렬 → take(limit)
         val withLastActivity = withinWindow
@@ -176,7 +168,5 @@ class GetMyRecentActiveCasesUseCase(
         private const val MAX_LIMIT = 20
         /** 활동 후보로 보는 내 케이스 최근 updatedAt N건. */
         private const val CANDIDATE_WINDOW = 50
-        /** `lastViewed == null` 일 때 사용할 하한선. `LocalDateTime.MIN` 은 Postgres timestamp 범위 밖. */
-        private val EPOCH: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
     }
 }

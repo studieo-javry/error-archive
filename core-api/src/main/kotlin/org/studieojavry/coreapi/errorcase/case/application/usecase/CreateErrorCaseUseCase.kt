@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseIdempotencyRecordPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
@@ -30,10 +31,34 @@ class CreateErrorCaseUseCase(
     private val tagRepository: ErrorCaseTagRepositoryPort,
     private val activityEventPublisher: ActivityEventPublisherPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
+    private val caseIdempotency: CaseIdempotencyRecordPort,
 ) {
 
+    /**
+     * @param idempotencyKey 클라이언트 생성 키(선택). 주면 같은 (key, user) 재요청은 최초 케이스로 replay.
+     *   더블클릭/네트워크 재시도로 인한 중복 케이스 생성을 서버에서 차단한다.
+     * @param requestHash 요청 본문의 안정 해시(키가 있을 때만 의미). 같은 키+다른 본문이면 409.
+     */
     @Transactional
-    fun invoke(command: CreateErrorCaseCommand): Result {
+    fun invoke(
+        command: CreateErrorCaseCommand,
+        idempotencyKey: String? = null,
+        requestHash: String? = null,
+    ): Result {
+        // 멱등 재생 — 같은 (key, user) 재요청이면 최초 케이스를 그대로 돌려준다(새로 만들지 않음).
+        if (idempotencyKey != null && requestHash != null) {
+            caseIdempotency.find(idempotencyKey, command.userId)?.let { existing ->
+                if (existing.requestHash != requestHash) {
+                    throw IdempotencyConflictException(
+                        "Idempotency-Key '$idempotencyKey' 가 다른 요청 본문으로 재사용됨",
+                    )
+                }
+                val prior = errorCaseRepository.findById(existing.errorCaseId)
+                    ?: throw IdempotencyConflictException("멱등 기록은 있으나 케이스가 없음: ${existing.errorCaseId}")
+                return prior.toResult(replayed = true)
+            }
+        }
+
         // visibility 일관성 검사 — workspaceId 없이 WORKSPACE 는 도메인 invariant 위반(400)
         if (command.visibility == Visibility.WORKSPACE && command.workspaceId == null) {
             throw ErrorCaseLinkException("Visibility.WORKSPACE requires workspaceId")
@@ -90,6 +115,11 @@ class CreateErrorCaseUseCase(
         // 태그를 별도 테이블에 멱등 저장
         normalizedTags.forEach { tagRepository.add(saved.id!!, it) }
 
+        // 멱등 기록 저장 — 동시 중복 요청이면 여기서 IdempotencyConflictException (tx 롤백 → 케이스 INSERT 도 취소).
+        if (idempotencyKey != null && requestHash != null) {
+            caseIdempotency.save(idempotencyKey, command.userId, requestHash, saved.id!!)
+        }
+
         // 잔디용 activity event 발행 (fire-and-forget, 실패는 swallow)
         activityEventPublisher.publish(
             ActivityEventPublisherPort.ActivityEvent(
@@ -105,16 +135,19 @@ class CreateErrorCaseUseCase(
         runCatching { cacheInvalidator.evictRecentActive(command.userId) }
         runCatching { cacheInvalidator.evictMyRecentActivities(command.userId) }
 
-        return Result(
-            id = requireNotNull(saved.id) { "saved error case must have id" },
-            title = saved.title,
-            status = saved.status.name,
-            fingerprint = saved.snapshot?.fingeprint?.value,
-            snippetMarkerIds = saved.snippets.map { it.markerId },
-            attachmentMarkerIds = saved.attachments.map { it.markerId },
-            createdAt = saved.createdAt
-        )
+        return saved.toResult(replayed = false)
     }
+
+    private fun ErrorCase.toResult(replayed: Boolean): Result = Result(
+        id = requireNotNull(id) { "saved error case must have id" },
+        title = title,
+        status = status.name,
+        fingerprint = snapshot?.fingeprint?.value,
+        snippetMarkerIds = snippets.map { it.markerId },
+        attachmentMarkerIds = attachments.map { it.markerId },
+        createdAt = createdAt,
+        replayed = replayed,
+    )
 
     private fun buildSnapshot(paste: String): ErrorSnapshot? {
         val extracted = errorSnapshotExtractor.extract(paste)
@@ -189,7 +222,9 @@ class CreateErrorCaseUseCase(
         val fingerprint: String?,
         val snippetMarkerIds: List<String>,
         val attachmentMarkerIds: List<String>,
-        val createdAt: java.time.LocalDateTime
+        val createdAt: java.time.LocalDateTime,
+        /** 멱등 재생(같은 Idempotency-Key 재요청) 여부 — 컨트롤러가 200 vs 201 결정. */
+        val replayed: Boolean = false,
     )
 }
 

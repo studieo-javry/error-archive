@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -25,6 +26,7 @@ import java.util.UUID
  * 왕복만으로 토큰이 차버려 "즉시 고갈" 가정이 깨진다. 느린 refill + 넉넉한 sleep 으로 결정론을 확보한다.
  * 각 테스트는 유니크 key prefix 를 써 서로 간섭하지 않는다.
  */
+@EnabledIf("redisServerOnPath") // redis-server 바이너리 없으면(CI) skip
 class RedisRateLimiterTest {
 
     private fun key(name: String) = "$name-${UUID.randomUUID()}"
@@ -96,6 +98,15 @@ class RedisRateLimiterTest {
     }
 
     companion object {
+        /** redis-server 바이너리가 PATH 에 있어 기동 가능한가 — 없으면 이 테스트 클래스를 skip. */
+        @JvmStatic
+        fun redisServerOnPath(): Boolean = try {
+            val p = ProcessBuilder("redis-server", "--version").redirectErrorStream(true).start()
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS); p.destroy(); true
+        } catch (e: Exception) {
+            false
+        }
+
         private lateinit var redisProcess: Process
         private lateinit var connectionFactory: LettuceConnectionFactory
         private lateinit var limiter: RedisRateLimiter

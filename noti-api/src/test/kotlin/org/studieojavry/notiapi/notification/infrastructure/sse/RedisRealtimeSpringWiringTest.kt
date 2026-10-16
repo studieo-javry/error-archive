@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIf
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.doAnswer
@@ -40,6 +41,7 @@ import kotlin.concurrent.thread
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@EnabledIf("redisServerOnPath") // redis-server 바이너리 없으면(CI) skip
 class RedisRealtimeSpringWiringTest {
 
     @MockitoSpyBean
@@ -101,6 +103,15 @@ class RedisRealtimeSpringWiringTest {
     }
 
     companion object {
+        /** redis-server 바이너리가 PATH 에 있어 기동 가능한가 — 없으면 이 테스트 클래스를 skip. */
+        @JvmStatic
+        fun redisServerOnPath(): Boolean = try {
+            val p = ProcessBuilder("redis-server", "--version").redirectErrorStream(true).start()
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS); p.destroy(); true
+        } catch (e: Exception) {
+            false
+        }
+
         private lateinit var redisProcess: Process
         private var redisPort = 0
 

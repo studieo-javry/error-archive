@@ -1,5 +1,6 @@
 package org.studieojavry.gateway.filter
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
@@ -16,10 +17,12 @@ import java.util.concurrent.atomic.AtomicLong
  * (Spring Security로 못 막음: 이 경로들은 정의상 로그인 없이 열려 있어야 함.)
  *
  * ⚠️ 단일 인스턴스 전제(버킷이 프로세스 메모리). 게이트웨이를 수평 확장하면 인스턴스별로 별도 카운트가
- *    되므로 실질 한도가 N배로 늘어난다 → 그때는 Redis 등 분산 스토어(RequestRateLimiter)로 교체.
+ *    되므로 실질 한도가 N배로 늘어난다 → 수평 확장 환경에서는 [RedisRateLimiter](공유 버킷)를 쓴다.
+ *    `gateway.ratelimit.backend=memory` 일 때만 활성(기본은 redis).
  */
 @Component
-class IpRateLimiter {
+@ConditionalOnProperty(name = ["gateway.ratelimit.backend"], havingValue = "memory")
+class IpRateLimiter : RateLimiter {
 
     private class Bucket(@Volatile var tokens: Double, @Volatile var lastRefillNanos: Long)
 
@@ -31,7 +34,7 @@ class IpRateLimiter {
      * @param refillPerSec 초당 보충 토큰 수 (정상 상태 허용률)
      * @return 1 토큰 소비 성공 시 true, 고갈이면 false
      */
-    fun tryConsume(key: String, capacity: Double, refillPerSec: Double): Boolean {
+    override fun tryConsume(key: String, capacity: Double, refillPerSec: Double): Boolean {
         val bucket = buckets.computeIfAbsent(key) { Bucket(capacity, System.nanoTime()) }
         val allowed = synchronized(bucket) {
             val now = System.nanoTime()
@@ -77,7 +80,7 @@ object RateLimitFilters {
      * IP 는 [clientIp] 로 추출(CF-Connecting-IP 우선 → remoteAddr 폴백).
      */
     fun perIp(
-        limiter: IpRateLimiter,
+        limiter: RateLimiter,
         name: String,
         capacity: Double,
         refillPerSec: Double,

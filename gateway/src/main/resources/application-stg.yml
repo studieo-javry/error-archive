@@ -9,6 +9,13 @@ spring:
     activate:
       on-profile: stg
 
+  # 분산 rate limit 버킷 저장소 — 수평 확장 시 인스턴스 간 한도 공유.
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
 server:
   port: ${GATEWAY_PORT:8000}
   error:
@@ -32,6 +39,9 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
+  # 분산 rate limit — Redis 공유 버킷(RedisRateLimiter).
+  ratelimit:
+    backend: redis
   # G2: 다운스트림 base-url — stg k8s Service DNS 를 ENV 로 주입.
   downstream:
     iam-api: ${GATEWAY_IAM_API_URI}

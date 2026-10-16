@@ -36,6 +36,9 @@ dependencies {
   // Spring Cloud Gateway Server MVC (servlet 기반 SCG)
   implementation("org.springframework.cloud:spring-cloud-starter-gateway-server-webmvc")
 
+  // 분산 rate limit — per-IP 토큰버킷을 Redis 공유 버킷으로(수평 확장 시 인스턴스 간 한도 공유).
+  implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
   // OpenAPI/Swagger UI — 다운스트림(iam/core) 스펙 aggregator 용.
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 

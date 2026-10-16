@@ -25,6 +25,15 @@ services:
       - "-c"
       - "log_min_duration_statement=200"
 
+  # Redis — 실시간 SSE 알림의 노드 간 pub/sub fan-out 채널.
+  redis:
+    image: redis:7-alpine
+    container_name: noti-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no   # pub/sub 전용 → 영속화 off
+    ports:
+      - "6379:6379"
+
   # Kafka (KRaft 모드 — Zookeeper 불요). Apache 공식 이미지.
   # core-api 가 publish, noti-api 가 consume. topic 은 자동 생성.
   kafka:

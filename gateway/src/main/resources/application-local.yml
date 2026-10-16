@@ -13,6 +13,13 @@ spring:
     activate:
       on-profile: local
 
+  # 분산 rate limit 버킷 저장소 — docker-compose 의 redis(localhost:6379).
+  data:
+    redis:
+      host: "${REDIS_HOST:localhost}"
+      port: "${REDIS_PORT:6379}"
+      timeout: 2s
+
 # 라우트는 RouteConfig.kt 의 @Bean 으로 정의됨 (yml 키 호환성 이슈로 코드 정의가 더 안전)
 
 # Swagger UI aggregator — gateway 가 한 화면에서 다운스트림 서비스 스펙을 dropdown 으로 노출.
@@ -80,6 +87,9 @@ internal-auth:
       -----END PRIVATE KEY-----
 
 gateway:
+  # 분산 rate limit — Redis 공유 버킷(RedisRateLimiter). 수평 확장 시 인스턴스 간 한도 공유.
+  ratelimit:
+    backend: redis
   # G2: 다운스트림 base-url — local 은 localhost 포트. RouteConfig 가 DownstreamProperties 로 주입받아 사용.
   downstream:
     iam-api: http://localhost:8080

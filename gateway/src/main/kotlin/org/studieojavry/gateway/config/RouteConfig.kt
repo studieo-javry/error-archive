@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.web.servlet.function.RequestPredicates.path
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
-import org.studieojavry.gateway.filter.IpRateLimiter
+import org.studieojavry.gateway.filter.RateLimiter
 import org.studieojavry.gateway.filter.RateLimitFilters
 
 /**
@@ -30,7 +30,7 @@ import org.studieojavry.gateway.filter.RateLimitFilters
 @Configuration
 class RouteConfig(
     private val downstream: DownstreamProperties,
-    private val ipRateLimiter: IpRateLimiter,
+    private val rateLimiter: RateLimiter,
 ) {
 
     // ⚠️ Route Bean 순서가 매칭 우선순위. 더 구체적인 path를 먼저 정의해야 한다.
@@ -129,7 +129,7 @@ class RouteConfig(
                 http()
             )
             .before(uri(downstream.publishApi))
-            .filter(RateLimitFilters.perIp(ipRateLimiter, "publish-export", capacity = 5.0, refillPerSec = 0.1))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-export", capacity = 5.0, refillPerSec = 0.1))
             .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
             .filter(retry(2))
             .build()
@@ -150,7 +150,7 @@ class RouteConfig(
                 http()
             )
             .before(uri(downstream.publishApi))
-            .filter(RateLimitFilters.perIp(ipRateLimiter, "publish-public", capacity = 120.0, refillPerSec = 10.0))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-public", capacity = 120.0, refillPerSec = 10.0))
             .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
             .filter(retry(2))
             .build()

@@ -37,6 +37,13 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-security")
   implementation("org.springframework.boot:spring-boot-starter-cache")
   implementation("com.github.ben-manes.caffeine:caffeine")
+  // 분산 캐시(L2) + cross-instance 상태 — iam role/profile 캐시, 대시보드 캐시 공유.
+  // (단일 인스턴스 Caffeine 은 인스턴스 간 공유·evict 전파 불가 → 수평 확장 시 Redis 로.)
+  implementation("org.springframework.boot:spring-boot-starter-data-redis")
+  // Redis 캐시 값 직렬화 전용 — spring-data-redis 의 GenericJackson2(=Jackson 2)가 루트 타입/NullValue 를
+  // 처리하는데, 그 내부 매퍼가 Kotlin data class 를 역직렬화하려면 Jackson 2 용 Kotlin 모듈이 필요.
+  // (앱 기본 직렬화는 Jackson 3(tools.jackson) 유지 — 이 모듈은 Redis 직렬화기 내부에서만 쓰임.)
+  implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.21.1")
 
   // OpenAPI/Swagger UI — v3.x 가 Spring Boot 4 + Jackson 3 지원.
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")

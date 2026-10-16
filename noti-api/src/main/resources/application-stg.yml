@@ -35,6 +35,13 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
 
+  # 실시간 SSE 노드 간 fan-out 용 Redis.
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
   mail:
     host: ${NOTI_MAIL_HOST}
     port: ${NOTI_MAIL_PORT:587}

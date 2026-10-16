@@ -43,6 +43,13 @@ spring:
         delivery.timeout.ms: 8000  # 한 번의 전송 시도에서 브로커의 응답 (ack) 울 기다리는 최대 시간
         request.timeout.ms: 5000   # send() 호출부터 최종 성공/포기까지의 전체 마감시간 (재시도·대기 다 포함)
 
+  # 분산 캐시(L2) — iam role/profile + 대시보드 캐시 공유. 수평 확장 시 인스턴스 간 일관.
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
 # outbox → kafka 로 알림 발행
 noti:
   publisher:

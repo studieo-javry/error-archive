@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit
  * (Spring 컨텍스트 없이 pub/sub 배선만 직접 구성 — DB/JWT 등 env 불요. 로컬 전달은 실제 emitter 대신
  *  가짜 sink 로 캡처해 포맷·도달을 단언한다.)
  */
+@EnabledIf("redisServerOnPath") // redis-server 바이너리 없으면(CI) skip
 class RedisRealtimeFanoutTest {
 
     @Test
@@ -77,6 +79,15 @@ class RedisRealtimeFanoutTest {
     }
 
     companion object {
+        /** redis-server 바이너리가 PATH 에 있어 기동 가능한가 — 없으면 이 테스트 클래스를 skip. */
+        @JvmStatic
+        fun redisServerOnPath(): Boolean = try {
+            val p = ProcessBuilder("redis-server", "--version").redirectErrorStream(true).start()
+            p.waitFor(5, TimeUnit.SECONDS); p.destroy(); true
+        } catch (e: Exception) {
+            false
+        }
+
         private lateinit var redisProcess: Process
         private lateinit var connectionFactory: LettuceConnectionFactory
         private lateinit var template: StringRedisTemplate

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIf
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.cache.CacheManager
@@ -44,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@EnabledIf("redisServerOnPath") // CI 러너처럼 redis-server 바이너리가 없으면 통째로 skip(fail 아님)
 class IamCacheVerificationTest {
 
     @Autowired private lateinit var workspaceQuery: WorkspaceQueryPort
@@ -122,6 +124,15 @@ class IamCacheVerificationTest {
     }
 
     companion object {
+        /** redis-server 바이너리가 PATH 에 있어 기동 가능한가 — 없으면 이 테스트 클래스를 skip. */
+        @JvmStatic
+        fun redisServerOnPath(): Boolean = try {
+            val p = ProcessBuilder("redis-server", "--version").redirectErrorStream(true).start()
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS); p.destroy(); true
+        } catch (e: Exception) {
+            false
+        }
+
         private lateinit var mockIam: HttpServer
         private lateinit var redisProcess: Process
         private var redisPort: Int = 0

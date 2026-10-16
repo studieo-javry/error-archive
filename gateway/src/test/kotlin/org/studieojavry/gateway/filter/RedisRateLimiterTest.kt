@@ -1,6 +1,7 @@
 package org.studieojavry.gateway.filter
 
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -68,6 +69,30 @@ class RedisRateLimiterTest {
         assertTrue(limiter.tryConsume(k, capacity = 2.0, refillPerSec = 10.0), "회복분 1")
         assertTrue(limiter.tryConsume(k, capacity = 2.0, refillPerSec = 10.0), "회복분 2")
         assertFalse(limiter.tryConsume(k, capacity = 2.0, refillPerSec = 10.0), "capacity 상한 → 3번째 차단")
+    }
+
+    @Test
+    fun `두 인스턴스가 한 Redis 버킷을 공유 — 합산 한도 유지(수평 확장)`() {
+        val k = key("shared")
+        // node B: 별도 연결 팩토리/템플릿 = 또 하나의 게이트웨이 인스턴스를 모사(같은 Redis 를 공유).
+        val cfB = LettuceConnectionFactory(RedisStandaloneConfiguration("127.0.0.1", redisPort))
+            .apply { afterPropertiesSet(); start() }
+        val nodeB = RedisRateLimiter(StringRedisTemplate(cfB).apply { afterPropertiesSet() })
+        val nodeA = limiter
+        try {
+            val cap = 6.0
+            var allowed = 0
+            // A·B 번갈아 소비 — 각자 6 이 아니라 **두 노드 합쳐 6** 만 통과해야(한도 공유).
+            for (i in 0 until 12) {
+                val node = if (i % 2 == 0) nodeA else nodeB
+                if (node.tryConsume(k, capacity = cap, refillPerSec = 0.0)) allowed++
+            }
+            assertEquals(6, allowed, "두 인스턴스 합산 통과가 단일 capacity(6)로 제한 — 인스턴스 수만큼 한도가 늘지 않음")
+            assertFalse(nodeA.tryConsume(k, cap, 0.0), "고갈 후 node A 도 차단")
+            assertFalse(nodeB.tryConsume(k, cap, 0.0), "고갈 후 node B 도 차단")
+        } finally {
+            cfB.destroy()
+        }
     }
 
     companion object {

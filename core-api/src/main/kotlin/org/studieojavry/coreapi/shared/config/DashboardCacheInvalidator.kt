@@ -2,7 +2,10 @@ package org.studieojavry.coreapi.shared.config
 
 import com.github.benmanes.caffeine.cache.Cache
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.cache.CacheManager
+import org.springframework.data.redis.core.ScanOptions
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Component
 
 /**
@@ -34,10 +37,17 @@ import org.springframework.stereotype.Component
  *
  * evict 실패가 mutation 을 롤백시키면 안 되므로 내부에서 catch + WARN 로그만 남기고 삼킨다
  * (**never throws**). 호출부의 추가 `runCatching` 은 belt-and-suspenders.
+ *
+ * **백엔드 중립** — 캐시가 Caffeine([CacheConfig]) 이면 native map 에서 prefix 제거, Redis
+ * ([RedisCacheConfig]) 면 `<cacheName>::<userId>` 와 `<cacheName>::<userId>:*` 를 SCAN 후
+ * 삭제한다. 두 경우 모두 `userId=4` 가 `userId=42` entry 를 오지 않도록 ':' 경계를 지킨다.
+ * Redis 는 인스턴스 공유라 **한 번의 evict 가 전 노드에 반영**된다(Caffeine 의 노드별 한계 해소).
  */
 @Component
 class DashboardCacheInvalidator(
     private val cacheManager: CacheManager,
+    /** Redis 백엔드일 때만 존재 — Caffeine(test) 에서는 비어도 됨. */
+    private val redisTemplateProvider: ObjectProvider<StringRedisTemplate>,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -60,13 +70,28 @@ class DashboardCacheInvalidator(
     private fun evictByUser(cacheName: String, userId: Long) {
         try {
             val cache = cacheManager.getCache(cacheName) ?: return
-            @Suppress("UNCHECKED_CAST")
-            val native = cache.nativeCache as? Cache<Any, Any> ?: return
             val exact = userId.toString()
-            val prefix = "$exact:"
-            native.asMap().keys.removeIf { key ->
-                val k = key.toString()
-                k == exact || k.startsWith(prefix)
+            when (val native = cache.nativeCache) {
+                is Cache<*, *> -> {
+                    // Caffeine: native map 에서 `<userId>` / `<userId>:*` 키 직접 제거.
+                    val prefix = "$exact:"
+                    native.asMap().keys.removeIf { key ->
+                        val k = key.toString()
+                        k == exact || k.startsWith(prefix)
+                    }
+                }
+                else -> {
+                    // Redis(RedisCache): 키는 `<cacheName>::<cacheKey>`. 정확 키 + ':' prefix SCAN 삭제.
+                    val redis = redisTemplateProvider.ifAvailable ?: return
+                    val keyBase = "$cacheName::"
+                    redis.delete("$keyBase$exact")
+                    redis.scan(
+                        ScanOptions.scanOptions().match("$keyBase$exact:*").count(256).build()
+                    ).use { cursor ->
+                        val keys = cursor.asSequence().toList()
+                        if (keys.isNotEmpty()) redis.delete(keys)
+                    }
+                }
             }
         } catch (e: Exception) {
             log.warn("dashboard cache evict failed: cache={} userId={}", cacheName, userId, e)

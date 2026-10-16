@@ -11,6 +11,13 @@ spring:
     activate:
       on-profile: prod
 
+  # 분산 rate limit 버킷 저장소 — 수평 확장 시 인스턴스 간 한도 공유.
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
 server:
   port: ${GATEWAY_PORT}
   # TLS 종료(end-to-end HTTPS). Cloudflare Origin Certificate 를 PKCS12 keystore 로 주입.
@@ -45,6 +52,9 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
+  # 분산 rate limit — Redis 공유 버킷(RedisRateLimiter).
+  ratelimit:
+    backend: redis
   # G2: 다운스트림 base-url — k8s Service DNS 를 ENV 로 주입(예: http://core-api:8081).
   #     미해소 placeholder 는 ^https?://.+ 패턴 위반 → 부팅 실패(fail-fast, DownstreamProperties).
   downstream:

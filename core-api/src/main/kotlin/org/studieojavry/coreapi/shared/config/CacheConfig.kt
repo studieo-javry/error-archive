@@ -1,12 +1,14 @@
 package org.studieojavry.coreapi.shared.config
 
 import com.github.benmanes.caffeine.cache.Caffeine
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.cache.CacheManager
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.cache.caffeine.CaffeineCache
 import org.springframework.cache.support.SimpleCacheManager
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
 import java.util.concurrent.TimeUnit
 
 /**
@@ -25,17 +27,25 @@ import java.util.concurrent.TimeUnit
  * | `recent-active-cases` | `userId:windowDays:limit` | 30초 | 내 케이스, 대응 지연 최소화 |
  * | `watchlist-feed` | `userId:limit` | 30초 | 관심 케이스 track |
  * | `my-recent-activities` | `target:viewer` | 5분 | viewer 별 visibility 필터 결과 분리 |
+ * | `workspace-role` | `userId:workspaceId` | 60초 | iam 권한 조회 완충(짧게) |
+ * | `iam-user-profile` | `userId` | 5분 | iam 표시정보 완충(준정적) |
  *
  * **키에 param 포함** — 같은 userId 라도 다른 limit/windowDays 요청이 서로의 결과를 오염시키지
  * 않도록 param 을 키에 넣는다. 무효화는 `DashboardCacheInvalidator` 가 `userId` prefix 로 모든
  * variant 를 한 번에 제거한다 (`@CacheEvict` 단일 key 불가). following-feed 는 evict 대상이
  * 아니며 (팔로우/신규 case fan-out 비용) 60초 TTL 자연 만료에 의존.
+ *
+ * **backend 전환**: `core.cache.backend=caffeine`(test) 일 때만 이 인메모리 매니저가 활성이고,
+ * 기본(local/stg/prod)은 [RedisCacheConfig] 의 분산 캐시가 `@Primary`. 같은 캐시 이름/`@Cacheable`
+ * 을 공유하므로 애플리케이션 코드는 백엔드를 구분하지 않는다.
  */
 @Configuration
 @EnableCaching
+@ConditionalOnProperty(name = ["core.cache.backend"], havingValue = "caffeine")
 class CacheConfig {
 
     @Bean
+    @Primary
     fun cacheManager(): CacheManager {
         val mgr = SimpleCacheManager()
         mgr.setCaches(
@@ -47,6 +57,9 @@ class CacheConfig {
                 buildCache(CACHE_MY_RECENT_ACTIVITIES, ttlMinutes = 5, maxSize = 10_000),
                 // 추천 fallback 의 전역 top-authors(userId 무관) — 전 유저 공유, 짧은 TTL 로 갱신.
                 buildCache(CACHE_SUGGESTION_TOP_AUTHORS, ttlMinutes = 5, maxSize = 4),
+                // iam 동기호출 완충(2순위) — Redis 백엔드와 동일 이름/TTL 로 test 에서도 동작.
+                buildCache(CACHE_WORKSPACE_ROLE, ttlSeconds = 60, maxSize = 10_000),
+                buildCache(CACHE_IAM_USER_PROFILE, ttlMinutes = 5, maxSize = 10_000),
             )
         )
         return mgr
@@ -73,5 +86,7 @@ class CacheConfig {
         const val CACHE_WATCHLIST_FEED = "watchlist-feed"
         const val CACHE_MY_RECENT_ACTIVITIES = "my-recent-activities"
         const val CACHE_SUGGESTION_TOP_AUTHORS = "suggestion-top-authors"
+        const val CACHE_WORKSPACE_ROLE = "workspace-role"
+        const val CACHE_IAM_USER_PROFILE = "iam-user-profile"
     }
 }

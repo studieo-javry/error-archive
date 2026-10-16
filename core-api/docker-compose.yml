@@ -19,6 +19,14 @@ services:
     volumes:
       - core_pg_data:/var/lib/postgresql/data
 
+  # 분산 캐시(L2) — iam role/profile + 대시보드 캐시 공유 저장소.
+  redis:
+    image: redis:7-alpine
+    container_name: core-api-redis
+    command: redis-server --save "" --appendonly no   # 캐시 용도 → 영속화 off(원본은 항상 DB/iam)
+    ports:
+      - "6379:6379"
+
   # S3 호환 오브젝트 스토리지 (첨부 파일). presigned URL 로 브라우저가 <img> 직접 렌더.
   minio:
     image: minio/minio:latest

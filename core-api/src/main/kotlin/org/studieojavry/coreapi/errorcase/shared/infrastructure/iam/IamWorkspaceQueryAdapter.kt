@@ -3,7 +3,6 @@ package org.studieojavry.coreapi.errorcase.shared.infrastructure.iam
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory
-import org.springframework.http.HttpStatusCode
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientResponseException
@@ -25,7 +24,9 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQuery
 @Component
 class IamWorkspaceQueryAdapter(
     @Qualifier("iamApiRestClient") private val iamApi: RestClient,
-    cbFactory: CircuitBreakerFactory<*, *>
+    cbFactory: CircuitBreakerFactory<*, *>,
+    /** 역할 조회는 캐시 단위([IamWorkspaceRoleReader])로 위임 — hot path 의 iam 호출을 줄인다. */
+    private val roleReader: IamWorkspaceRoleReader,
 ) : WorkspaceQueryPort {
 
     private val log = KotlinLogging.logger {}
@@ -33,29 +34,13 @@ class IamWorkspaceQueryAdapter(
     /** 모든 iam 호출은 같은 CB 를 공유 — 충분한 샘플 누적으로 정확한 판단 */
     private val cb = cbFactory.create("iamApi")
 
-    override fun getViewerRole(userId: Long, workspaceId: Long): WorkspaceQueryPort.WorkspaceRole? = cb.run(
-        {
-            try {
-                val view = iamApi.get()
-                    .uri("/api/v1/workspaces/{id}", workspaceId)
-                    .retrieve()
-                    .body(IamWorkspaceView::class.java)
-                view?.viewerRole?.let { WorkspaceQueryPort.WorkspaceRole.fromCode(it) }
-            } catch (ex: RestClientResponseException) {
-                if (ex.statusCode in listOf(HttpStatusCode.valueOf(403), HttpStatusCode.valueOf(404))) {
-                    // 403(비멤버)/404(없음) 은 비즈니스 결과(=역할 없음) — CB 실패로 카운트 X
-                    return@run null
-                }
-                // 5xx 는 CB 가 실패로 카운트하도록 다시 throw
-                log.warn(ex) { "iam-api workspace role check failed: status=${ex.statusCode}" }
-                throw ex
-            }
-        },
-        { throwable ->
-            log.warn(throwable) { "iam-api unavailable on getViewerRole, circuit breaker fallback" }
-            throw IamApiUnavailableException("workspace role check unavailable", throwable)
-        }
-    )
+    /**
+     * 캐시 히트 시 iam 호출(및 CB executor 점유) 자체가 **발생하지 않는다** — 권한 판정 hot path 의
+     * iam 동기호출을 줄여, bulkhead 로 막아둔 장애 부하 자체를 낮춘다. 실제 조회·CB·캐시는
+     * [IamWorkspaceRoleReader.fetchViewerRole] 이 담당(외부 빈 호출이라 프록시 경유 → 캐시 적용).
+     */
+    override fun getViewerRole(userId: Long, workspaceId: Long): WorkspaceQueryPort.WorkspaceRole? =
+        roleReader.fetchViewerRole(userId, workspaceId).role
 
     override fun getAvailableWorkspaces(userId: Long): List<WorkspaceQueryPort.WorkspaceSummary> = cb.run(
         {
@@ -97,11 +82,6 @@ class IamWorkspaceQueryAdapter(
     private data class IamWorkspaceItem(
         val id: Long,
         val name: String
-    )
-
-    /** GET /workspaces/{id} 응답에서 viewerRole 만 발췌(나머지 필드는 무시). */
-    private data class IamWorkspaceView(
-        val viewerRole: String? = null
     )
 
     private data class IamMemberItem(

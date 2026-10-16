@@ -23,6 +23,8 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.IamUserQueryPo
 class IamUserQueryAdapter(
     @Qualifier("iamApiRestClient") private val iamApi: RestClient,
     cbFactory: CircuitBreakerFactory<*, *>,
+    /** 단건 프로필 캐시 단위 — findByIds 가 id 마다 외부 빈 호출로 캐시를 태운다. */
+    private val profileReader: IamUserProfileReader,
 ) : IamUserQueryPort {
 
     private val log = KotlinLogging.logger {}
@@ -63,23 +65,13 @@ class IamUserQueryAdapter(
         return if (exact.size == 1) exact.single().userId else null
     }
 
-    override fun findByIds(ids: Collection<Long>): List<IamUserQueryPort.UserSummary> = cb.run(
-        {
-            ids.distinct().mapNotNull { id ->
-                try {
-                    val view = iamApi.get()
-                        .uri("/api/v1/users/{id}", id)
-                        .retrieve()
-                        .body(IamPublicProfile::class.java)
-                    view?.let { IamUserQueryPort.UserSummary(it.userId, it.displayName, it.avatarUrl, it.handle) }
-                } catch (ex: RestClientResponseException) {
-                    if (ex.statusCode.value() == 404) null else { log.warn(ex) { "iam-api user fetch failed" }; null }
-                }
-            }
-        },
-        { t -> log.warn(t) { "iam-api unavailable on findByIds → empty" }; emptyList() }
-    )
+    /**
+     * id 마다 [IamUserProfileReader.fetch] 로 위임 — userId 단위 캐시를 태운다(외부 빈 호출이라 프록시 경유).
+     * 캐시에 있는 작성자는 iam 호출 없이 반환되고, 없는 id 만 실제 호출한다(부분 캐시). 각 fetch 는
+     * 개별 CB fallback(null)이라 일부 실패해도 나머지는 반환된다(mapNotNull).
+     */
+    override fun findByIds(ids: Collection<Long>): List<IamUserQueryPort.UserSummary> =
+        ids.distinct().mapNotNull { profileReader.fetch(it) }
 
     private data class IamUserItem(val userId: Long, val displayName: String, val avatarUrl: String?, val handle: String? = null)
-    private data class IamPublicProfile(val userId: Long, val displayName: String, val avatarUrl: String?, val handle: String? = null)
 }

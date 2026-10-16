@@ -42,6 +42,13 @@ spring:
         delivery.timeout.ms: 8000
         request.timeout.ms: 5000
 
+  # 분산 캐시(L2) — docker-compose 의 redis(localhost:6379). backend 기본값이 redis 라 로컬도 Redis 사용.
+  data:
+    redis:
+      host: "${REDIS_HOST:localhost}"
+      port: "${REDIS_PORT:6379}"
+      timeout: 2s
+
 logging:
   level:
     org.studieojavry: DEBUG

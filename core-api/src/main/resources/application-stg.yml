@@ -38,6 +38,13 @@ spring:
         delivery.timeout.ms: 8000
         request.timeout.ms: 5000
 
+  # 분산 캐시(L2) — iam role/profile + 대시보드 캐시 공유. 수평 확장 시 인스턴스 간 일관.
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
 noti:
   publisher:
     mode: ${NOTI_PUBLISHER_MODE:kafka}

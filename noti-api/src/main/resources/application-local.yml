@@ -21,6 +21,13 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
 
+  # 실시간 SSE 노드 간 fan-out 용 Redis — docker-compose 의 redis(localhost:6379).
+  data:
+    redis:
+      host: "${REDIS_HOST:localhost}"
+      port: "${REDIS_PORT:6379}"
+      timeout: 2s
+
   # SMTP — 로컬 mailhog. ENV 로 실제 SES/SendGrid 로 즉시 전환.
   mail:
     host: "${NOTI_MAIL_HOST:localhost}"

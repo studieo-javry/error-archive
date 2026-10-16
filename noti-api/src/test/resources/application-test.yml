@@ -40,6 +40,10 @@ iam:
     audience: noti-api
 
 noti:
+  # test 는 Redis 불요 — 실시간 publisher 를 로컬 직결로. Redis fan-out 자체 검증은
+  # RedisRealtimeFanoutTest 가 실 redis-server 를 띄워 독립적으로 수행.
+  realtime:
+    backend: local
   iam-api:
     base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
   email:

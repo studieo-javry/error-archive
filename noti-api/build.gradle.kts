@@ -49,6 +49,8 @@ dependencies {
 
   // Kafka consumer — core-api 의 mention 이벤트 수신
   implementation("org.springframework.kafka:spring-kafka")
+  // Redis pub/sub — 실시간 SSE 알림의 노드 간 fan-out(멀티 인스턴스에서 타 노드 발생 이벤트 전달).
+  implementation("org.springframework.boot:spring-boot-starter-data-redis")
   // SMTP 발송 (mailhog 로컬, 운영 SES/SendGrid)
   implementation("org.springframework.boot:spring-boot-starter-mail")
 

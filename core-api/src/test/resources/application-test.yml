@@ -45,6 +45,10 @@ core:
     base-url: "http://localhost:8080"   # base yml 에 기본값 없음 → test 는 여기서 제공
   noti-api:
     base-url: "http://localhost:8082"
+  # test 는 Redis 불요 — 인메모리 Caffeine 캐시 백엔드 사용(기존 테스트 그대로).
+  # Redis 백엔드 자체 검증은 IamCacheVerificationTest 가 실 redis-server 를 띄워 override.
+  cache:
+    backend: caffeine
 
 internal-auth:
   ttl-seconds: 60

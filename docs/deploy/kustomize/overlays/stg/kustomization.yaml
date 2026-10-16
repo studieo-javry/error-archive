@@ -10,6 +10,7 @@ resources:
 - ../../base/noti-api
 - ../../base/insight-api
 - ../../base/publish-api
+- ../../base/redis          # 분산 캐시(L2)·rate-limit 버킷·SSE pub/sub 공유 저장소
 
 configMapGenerator:
 - literals:
@@ -17,9 +18,15 @@ configMapGenerator:
   name: iam-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  # 분산 캐시(workspace-role·iam-user-profile + 대시보드) 공유. 같은 apps ns 의 redis Service.
+  - REDIS_HOST=redis
+  - REDIS_PORT=6379
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  # SSE 노드 간 pub/sub fan-out 용. 같은 apps ns 의 redis Service.
+  - REDIS_HOST=redis
+  - REDIS_PORT=6379
   name: noti-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod

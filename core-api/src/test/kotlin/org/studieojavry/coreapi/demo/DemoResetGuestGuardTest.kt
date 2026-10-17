@@ -62,7 +62,7 @@ class DemoResetGuestGuardTest {
         val after1 = searchWs(100)
         assertThat(after1).hasSize(r1.seeded)
         assertThat(after1).allMatch {
-            it.ownerUserId == botId && it.visibility == Visibility.WORKSPACE && it.workspaceId == wsId
+            it.ownerUserId == botId && it.visibility == Visibility.PUBLIC && it.workspaceId == wsId
         }
 
         // 재리셋 → 직전 시드 전부 wipe + 동일 수 reseed (누적 없음)

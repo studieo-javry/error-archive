@@ -39,13 +39,41 @@ class DemoResetService(
         return ResetResult(ran = true, wiped = wiped, seeded = seeded)
     }
 
-    /** 기동 시 비어있으면 populate(파괴 없음). iam 미기동 등으로 실패하면 조용히 넘어가고 야간 리셋이 보정. */
-    fun ensureSeededOnStartup() {
+    /**
+     * 기동 시 시드 동기화.
+     *  - 봇 소유 케이스가 0 → 비어있으니 populate(파괴 없음).
+     *  - 봇 소유 케이스 수 ≠ 시드 세트 크기 → **시드 버전이 바뀐 것**이라 wipe+reseed(배포 반영).
+     *    이렇게 하면 시드를 늘리고 새 core 이미지를 롤아웃하면 노드 수동 트리거 없이 자동 반영된다.
+     *  - 수가 일치 → no-op(게스트 콘텐츠 보존, 일반 재기동에서 불필요한 wipe 방지).
+     * iam 미기동 등으로 실패하면 조용히 넘어가고 야간 리셋이 보정.
+     */
+    fun syncSeedOnStartup() {
         if (!props.enabled) return
         val id = identityClient.fetchIdentity() ?: return
         if (!id.enabled || id.workspaceId == null || id.botUserId == null) return
-        val n = seeder.ensureSeeded(id.workspaceId, id.botUserId)
-        if (n > 0) log.info { "demo seed on startup: created=$n (ws=${id.workspaceId})" }
+        val botCount = errorCaseRepository.search(
+            ErrorCaseSearchCriteria(
+                workspaceId = id.workspaceId,
+                ownerUserId = id.botUserId,
+                status = null,
+                fingerprint = null,
+                visibility = null,
+                cursorCreatedAt = null,
+                cursorId = null,
+                limit = seeder.expectedCount + 1,
+            ),
+        ).size
+        when {
+            botCount == 0 -> {
+                val n = seeder.ensureSeeded(id.workspaceId, id.botUserId)
+                if (n > 0) log.info { "demo seed on startup: created=$n (ws=${id.workspaceId})" }
+            }
+            botCount != seeder.expectedCount -> {
+                val r = reset()
+                log.info { "demo seed changed on startup → reseeded: wiped=${r.wiped} seeded=${r.seeded}" }
+            }
+            else -> log.info { "demo seed up to date on startup (botCases=$botCount)" }
+        }
     }
 
     private fun wipeWorkspace(workspaceId: Long): Int {

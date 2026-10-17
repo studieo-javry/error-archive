@@ -20,7 +20,7 @@ class DemoBootstrap(
     @EventListener(ApplicationReadyEvent::class)
     fun onReady() {
         if (!props.enabled) return
-        runCatching { resetService.ensureSeededOnStartup() }
+        runCatching { resetService.syncSeedOnStartup() }
             .onFailure { log.warn { "demo seed on startup deferred: ${it.message}" } }
     }
 }

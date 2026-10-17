@@ -44,6 +44,9 @@ dependencies {
   // 처리하는데, 그 내부 매퍼가 Kotlin data class 를 역직렬화하려면 Jackson 2 용 Kotlin 모듈이 필요.
   // (앱 기본 직렬화는 Jackson 3(tools.jackson) 유지 — 이 모듈은 Redis 직렬화기 내부에서만 쓰임.)
   implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.21.1")
+  // 같은 이유로 java.time(LocalDateTime 등)도 Jackson 2 매퍼에 등록해야 함. 없으면 대시보드 캐시
+  // (watchlist-feed/recent-active-cases 등)의 non-empty 결과 직렬화가 LocalDateTime 에서 실패 → 500.
+  implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.1")
 
   // OpenAPI/Swagger UI — v3.x 가 Spring Boot 4 + Jackson 3 지원.
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")

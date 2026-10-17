@@ -52,6 +52,16 @@ iam:
     from-name: ${IAM_EMAIL_FROM_NAME}
     subject-prefix: "[Error Archive]"
 
+# 로그인 없이 둘러보기(게스트 데모). enabled 기본 false — stg overlay 에서 DEMO_ENABLED=true 로 켬(prod 노출 방지).
+demo:
+  enabled: ${DEMO_ENABLED:false}
+  workspace-slug: ${DEMO_WORKSPACE_SLUG:demo}
+  workspace-name: ${DEMO_WORKSPACE_NAME:Demo Workspace}
+  bot-handle: ${DEMO_BOT_HANDLE:demo-bot}
+  bot-display-name: ${DEMO_BOT_DISPLAY_NAME:Demo Bot}
+  guest-token-ttl-seconds: ${DEMO_GUEST_TOKEN_TTL:3600}
+  reset-cron: ${DEMO_RESET_CRON:0 0 4 * * *}
+
 management:
   endpoints:
     web:

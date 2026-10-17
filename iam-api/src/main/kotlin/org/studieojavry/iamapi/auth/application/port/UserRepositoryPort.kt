@@ -33,4 +33,16 @@ interface UserRepositoryPort {
 
     /** 여러 userId 한 번에 조회 — 알림 발송 등 batch 호출에 사용. */
     fun findAllByIds(ids: Collection<Long>): List<User>
+
+    /** handle 단건 조회 — 데모 봇 부트스트랩 멱등성. */
+    fun findByHandle(handle: String): User?
+
+    /** 게스트("로그인 없이 둘러보기") 사용자 목록 — 야간 리셋 정리 대상. */
+    fun findGuests(limit: Int): List<User>
+
+    /** 사용자 삭제 — 게스트 정리 전용(실제 사용자 삭제 경로 아님). */
+    fun deleteById(id: Long)
+
+    /** 게스트 사용자 일괄 삭제 — 야간 리셋. 삭제된 행 수 반환. */
+    fun deleteAllGuests(): Int
 }

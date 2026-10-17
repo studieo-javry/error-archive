@@ -23,12 +23,15 @@ class NimbusJwtIssuerAdapter(
     override fun issueAccessToken(userId: Long, expiresAt: Instant): String =
         sign(userId, expiresAt, typ = "access")
 
+    override fun issueGuestAccessToken(userId: Long, expiresAt: Instant): String =
+        sign(userId, expiresAt, typ = "access", roles = listOf("GUEST"))
+
     override fun issueSseTicket(userId: Long, expiresAt: Instant): String =
         sign(userId, expiresAt, typ = "sse")
 
-    private fun sign(userId: Long, expiresAt: Instant, typ: String): String {
+    private fun sign(userId: Long, expiresAt: Instant, typ: String, roles: List<String> = emptyList()): String {
         val now = Instant.now()
-        val claims = JWTClaimsSet.Builder()
+        val builder = JWTClaimsSet.Builder()
             .issuer(jwtProperties.issuer)
             .audience(jwtProperties.audience)
             .subject(userId.toString())
@@ -37,7 +40,8 @@ class NimbusJwtIssuerAdapter(
             .expirationTime(Date.from(expiresAt))
             .jwtID(UUID.randomUUID().toString())
             .claim("typ", typ)
-            .build()
+        if (roles.isNotEmpty()) builder.claim("roles", roles)
+        val claims = builder.build()
 
         val header = JWSHeader.Builder(JWSAlgorithm.HS256)
             .type(JOSEObjectType.JWT)

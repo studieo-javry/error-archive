@@ -6,6 +6,10 @@
 # - DEBUG 로그.
 # ===================================================================
 
+# local 게스트 데모 — 로컬에서 바로 /api/v1/auth/guest 를 테스트할 수 있게 ON.
+demo:
+  enabled: true
+
 spring:
   config:
     activate:

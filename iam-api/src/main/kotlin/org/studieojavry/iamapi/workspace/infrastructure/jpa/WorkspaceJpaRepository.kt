@@ -4,4 +4,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface WorkspaceJpaRepository : JpaRepository<WorkspaceEntity, Long> {
     fun existsBySlug(slug: String): Boolean
+    fun findFirstBySlug(slug: String): WorkspaceEntity?
 }

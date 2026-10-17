@@ -17,6 +17,8 @@ class WorkspaceRepositoryAdapter(
 
     override fun existsBySlug(slug: String): Boolean = jpa.existsBySlug(slug)
 
+    override fun findBySlug(slug: String): Workspace? = jpa.findFirstBySlug(slug)?.toDomain()
+
     override fun delete(id: Long) {
         jpa.deleteById(id)
     }

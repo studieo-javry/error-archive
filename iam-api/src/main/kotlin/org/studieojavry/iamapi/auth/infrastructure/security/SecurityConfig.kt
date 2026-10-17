@@ -81,6 +81,8 @@ class SecurityConfig {
                     // refresh / logout — refresh_token 쿠키만 가지고 호출. access 가 만료된 상태에서도 가능해야 하므로 permitAll.
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
+                    // 게스트("로그인 없이 둘러보기") — OAuth 없이 임시 토큰 발급. 로그인 *전* 이라 인증 없이 호출. (gateway 도 permitAll + rate-limit)
+                    "/api/v1/auth/guest",
                     // health probe — 기본 경로 + prod 의 base-path(/internal/actuator) 하위,
                     // readiness/liveness 그룹(/health/**) 까지 permit (k8s probe 401 방지).
                     "/actuator/health", "/actuator/health/**",

@@ -15,12 +15,16 @@ resources:
 configMapGenerator:
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  # 로그인 없이 둘러보기(게스트 데모) 활성 — iam 이 게스트 토큰 발급 + 데모 봇/WS 부트스트랩 + 야간 게스트 정리.
+  - DEMO_ENABLED=true
   name: iam-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
   # 분산 캐시(workspace-role·iam-user-profile + 대시보드) 공유. 같은 apps ns 의 redis Service.
   - REDIS_HOST=redis
   - REDIS_PORT=6379
+  # 게스트 데모 콘텐츠 wipe+reseed(야간) 활성. 데모 WS/봇 ID 는 iam /internal/demo/identity 로 조회.
+  - DEMO_ENABLED=true
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod

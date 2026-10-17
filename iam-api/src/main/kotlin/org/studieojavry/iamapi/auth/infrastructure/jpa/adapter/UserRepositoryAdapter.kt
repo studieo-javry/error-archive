@@ -51,4 +51,14 @@ class UserRepositoryAdapter(
 
     override fun findAllByIds(ids: Collection<Long>): List<User> =
         if (ids.isEmpty()) emptyList() else jpa.findAllByIdIn(ids).map { it.toDomain() }
+
+    override fun findByHandle(handle: String): User? =
+        jpa.findFirstByHandleIgnoreCase(handle)?.toDomain()
+
+    override fun findGuests(limit: Int): List<User> =
+        jpa.findByIsGuestTrueOrderByIdAsc(PageRequest.of(0, limit.coerceIn(1, 10_000))).map { it.toDomain() }
+
+    override fun deleteById(id: Long) = jpa.deleteById(id)
+
+    override fun deleteAllGuests(): Int = jpa.deleteAllGuests()
 }

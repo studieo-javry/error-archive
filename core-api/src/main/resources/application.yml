@@ -75,6 +75,12 @@ noti:
   publisher:
     mode: ${NOTI_PUBLISHER_MODE:http}
 
+# 로그인 없이 둘러보기(게스트 데모) — core 쪽. 데모 WS/봇 ID 는 iam `/internal/demo/identity` 로 조회.
+# enabled 기본 false. stg overlay 에서 DEMO_ENABLED=true 로 켬. 리셋은 iam(04:00) 뒤 04:10.
+demo:
+  enabled: ${DEMO_ENABLED:false}
+  reset-cron: ${DEMO_RESET_CRON:0 10 4 * * *}
+
 management:
   endpoints:
     web:

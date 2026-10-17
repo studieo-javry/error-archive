@@ -248,7 +248,7 @@ class DemoSeeder(
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 7
+        private const val SEED_VERSION = 8
         private val VERSION_TAG = "seed-v$SEED_VERSION"
 
         /** me-too 시드용 가짜 사용자 id 기준값(실 사용자와 충돌 없게 큼). 프로필 resolve 안 됨. */
@@ -301,15 +301,35 @@ java.lang.NullPointerException: Cannot invoke "String.length()" because "avatarU
     at org.studieojavry.coreapi.home.HomeController.recentActiveCases(HomeController.kt:39)
 """,
                 description = """
-### 증상
-GitHub OAuth 로그인 **직후** 홈 대시보드 진입에서 간헐적으로 500 이 뜬다. 응답은 `500 INTERNAL_ERROR`, 서버 로그엔 `NullPointerException`.
+### 요약
+GitHub OAuth 로그인 **직후 홈 대시보드 진입**에서 간헐적으로 `500 INTERNAL_ERROR`. 서버 로그 최상단은 `ProfileHydrator` 의 `NullPointerException`. **아바타를 설정하지 않은 신규 계정**에서만 재현된다.
 
-### 영향
-- **신규 가입자** 에게 집중 발생(아바타 미설정 계정).
-- 홈 첫 화면이 깨져 **온보딩 이탈** 유발.
+### 환경
+- `core-api` (Kotlin · Spring Boot 4) → `iam-api` 프로필 조회 연동
+- 재현 빈도: 신규 가입자 **약 100%** / 기존 사용자 0%
+- 최초 인입: 온보딩 퍼널 1스텝 이탈률 급증 알림
 
-### 1차 가설
-프로필 하이드레이션이 `avatarUrl` 을 non-null 로 가정 → iam 응답에 `avatarUrl: null` 이 오면 터진다.
+### 영향 범위
+- 신규 가입 → 첫 홈 진입이 깨져 **온보딩 초입에서 이탈**
+- 홈 대시보드 위젯(최근 활동·추천)이 통째로 미표시
+- 기존 사용자/다른 화면은 정상 → 체감 사용자는 한정적이나 **신규 유입에 직격**
+
+### 증상 로그
+```text
+2026-10-16 14:02:11 ERROR HomeController - 500 GET /api/v1/users/me/recent-active-cases
+java.lang.NullPointerException: Cannot invoke "String.length()" because "avatarUrl" is null
+    at ProfileHydrator.hydrate(ProfileHydrator.kt:48)
+    at HomeDashboardService.recentActive(HomeDashboardService.kt:72)
+```
+
+### 원인 (요약)
+프로필 하이드레이션이 iam 응답의 `avatarUrl` 을 **non-null 로 단정**하고 `.length` 로 이니셜을 계산한다. 아바타 미설정 계정은 `avatarUrl: null` 로 내려오므로 그 지점에서 NPE. 외부 응답 필드를 nullable 로 다루지 않은 전형적인 **경계(boundary) 버그**.
+
+### 조치
+- **임시 완화**: 없음 — 영향이 신규 가입 전원이라 우회 없이 핫픽스 롤포워드.
+- **영구 조치**: `avatarUrl` 을 nullable 로 받아 기본 아바타로 폴백 + 널 케이스 회귀 테스트 추가.
+
+> 상세 재현/수정 과정은 아래 **타임라인**, 재현 테스트는 첨부 스니펫 참고.
 """,
                 steps = listOf(
                     SeedStep("신규/기존 계정으로 재현 범위 좁히기", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -402,17 +422,35 @@ Caused by: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection i
     at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:197)
 """,
                 description = """
-### 증상
-트래픽 피크(오후 8시경)마다 `/error-cases` 조회가 **503 으로 무더기 실패**. 30초 타임아웃 후 응답.
+### 요약
+매일 **트래픽 피크(20:00 전후)**마다 `GET /api/v1/error-cases` 가 `503` 으로 무더기 실패하고 30초 뒤 타임아웃. HikariCP 커넥션 풀이 고갈되는데, **쿼리 자체는 12ms 로 빠르다** — 즉 쿼리가 느린 게 아니라 **커넥션을 오래 쥐고 있는 것**이 문제.
 
-### 핵심 지표
+### 환경
+- `core-api` · HikariCP(max-pool-size **10**) · PostgreSQL
+- 재현: 동시 사용자 급증 시점(피크)에만. 평시 재현 안 됨
+- 최초 인입: 피크 시간대 5xx 급증 + p99 폭증 알림
+
+### 영향 범위
+- 피크 10~15분간 케이스 목록/상세 **대량 503**
+- 커넥션 대기열(pending 37)에 밀린 요청들이 30초 타임아웃까지 스레드 점유 → 연쇄 지연
+- 피크 지나면 자연 회복 → 원인 추적이 까다로움
+
+### 핵심 지표 (피크 구간)
 ```text
-hikaricp_connections_active   10 / 10   (max 고갈)
-hikaricp_connections_pending  37        (대기 폭증)
-avg query time                12ms      (쿼리는 빠름!)
+hikaricp_connections_active     10 / 10    (max 고갈)
+hikaricp_connections_pending    37         (대기 폭증)
+hikaricp_connections_timeout    25/min     (30s 초과)
+avg query time                  12 ms      (쿼리는 빠름!)
 ```
 
-쿼리는 빠른데 풀이 고갈 → **커넥션 보유 시간**이 문제. `open-in-view` 가 뷰 렌더까지 커넥션을 쥐고 있는 게 의심된다.
+### 원인 분석
+`spring.jpa.open-in-view` 기본값 **true** 로, 커넥션이 서비스 메서드가 아니라 **요청 전체(뷰 렌더 포함) 생명주기** 동안 유지된다. 쿼리는 12ms 에 끝나도 커넥션 반납이 응답 완료까지 지연 → 피크에 10개 풀이 금세 소진. 여기에 작성자 조회 **N+1** 이 겹쳐 커넥션 점유 시간을 더 늘렸다.
+
+### 조치
+- **임시 완화**: 풀 크기 20→40 상향 시도 → 피크에 동일 고갈(보유 시간이 근본 원인이라 무의미했음).
+- **영구 조치**: `open-in-view=false` + 작성자 조회 N+1 → batch, 풀 크기 재튜닝. 커넥션 보유 시간을 줄여 피크를 견디게 함.
+
+> 지표 추이는 첨부 차트, 재발 방지 알럿은 댓글 참고. 상세 과정은 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("풀 메트릭으로 고갈 확인", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -482,15 +520,36 @@ java.lang.OutOfMemoryError: Java heap space
     at org.studieojavry.publishapi.publishment.PublicArticleController.exportPdf(PublicArticleController.kt:88)
 """,
                 description = """
-### 증상
-이미지가 많은 공개 아티클을 **PDF export** 할 때 컨테이너(1 vCPU / 512MB)가 힙을 소진해 OOM. 동시 2건이면 즉사.
+### 요약
+이미지가 많은 공개 아티클을 **PDF 로 export** 할 때 컨테이너(1 vCPU / 512MB)가 힙을 소진해 `OutOfMemoryError: Java heap space`. 동시 2건이 겹치면 즉사한다. 아직 **IN PROGRESS** — 완화책은 적용했지만 근본 조치 진행 중.
+
+### 환경
+- `publish-api` · OpenHTMLToPdf(PDFBox) 렌더 · JVM 25 / 컨테이너 512MB
+- 재현: 이미지 10장 이상 대형 아티클 PDF export, 특히 동시 요청 시
+- 최초 인입: 공개 PDF 다운로드 실패 제보 + 파드 OOMKilled 재시작
+
+### 영향 범위
+- 대형 아티클 PDF export 실패(그 외 export 는 정상)
+- OOM 시 파드 재시작 → 그 순간 **다른 요청들도 순단**
+- 공개 페이지 열람 자체는 영향 없음(렌더 경로만)
 
 ### 힙 덤프 요약
 ```text
-BufferedImage            357 MB   (70.1%)   <- 원본 해상도 이미지 통째 로드
-byte[] (PDFBox COSStream) 92 MB   (18.0%)
-그 외                      63 MB
+BufferedImage             357 MB   (70.1%)   <- 원본 해상도 이미지를 통째로 로드
+byte[] (PDFBox COSStream)  92 MB   (18.0%)
+그 외                       63 MB
+---
+peak heap ~ 512 MB (limit)  → OutOfMemoryError
 ```
+
+### 원인 분석
+PDF 렌더가 **원본 해상도 이미지를 BufferedImage 로 통째 로드**해 힙의 70% 를 차지한다. 512MB 컨테이너에서 대형 문서 1건도 아슬아슬한데, 동시 2건이면 즉시 초과. 렌더 동시성 제한도 없어 피크에 겹치면 바로 OOM.
+
+### 조치
+- **임시 완화(적용)**: export 전용 세마포어(permit=1)로 렌더 **직렬화** → 동시성발 OOM 빈도 급감. 단 대형 문서 1건은 여전히 위험.
+- **영구 조치(진행 중)**: 업로드 시 **렌더용 다운스케일 사본**(장변 2000px) 생성 → 렌더 입력 크기 상한을 둬 메모리 예측 가능하게.
+
+> 힙 추이는 첨부 차트. 진행 상황은 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("힙 덤프로 점유 주체 특정", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -544,17 +603,34 @@ total issued=1125  (EXPECTED <= 1000)   <- 125 초과
 root-cause: check-then-update race, 공유 락 없음
 """,
                 description = """
-### 증상
-한정 수량(1000) 쿠폰을 **2개 인스턴스** 가 공유 DB 에서 발급할 때 **1125건** 발급(125 초과).
+### 요약
+한정 수량(**1000**) 쿠폰을 **2개 인스턴스**가 공유 DB 에서 발급할 때 실제 발급이 **1125건**(125 초과)이 됐다. 재고 확인(check)과 차감(update) 사이에 원자성/직렬화가 없어 생기는 **분산 동시성(race)** 문제. 현재 **IN PROGRESS** — 락은 넣었고 장애 대비 이중화 설계 중.
+
+### 환경
+- `core-api` · 공유 MySQL · 앱 인스턴스 **2대**(수평확장)
+- 재현: k6 부하(VU 100)로 2대 동시 발급 시. **단일 인스턴스에선 재현 안 됨**
+- 최초 인입: 이벤트 종료 후 쿠폰 발급 수가 한도를 초과한 정산 불일치 제보
+
+### 영향 범위
+- 한정 수량 초과 발급 → **정산/비용 불일치**, 재고 신뢰도 하락
+- 단일 인스턴스 환경(로컬/테스트)에선 안 보여 **운영 수평확장에서만 발현**
 
 ### 레이스 타임라인
 ```text
-T1  A: SELECT issued(=990)  < 1000  -> OK
-T2  B: SELECT issued(=990)  < 1000  -> OK   (A 의 증분을 아직 못 봄)
+T1  A: SELECT issued (=990)  < 1000   -> OK
+T2  B: SELECT issued (=990)  < 1000   -> OK      (A 의 증분을 아직 못 봄)
 T3  A: UPDATE issued = 991
-T4  B: UPDATE issued = 991            <- 둘 다 통과 → 초과
+T4  B: UPDATE issued = 991                        <- 둘 다 통과 → 초과 발급
 ```
-확인(check)과 증분(update) 사이에 **원자성/직렬화가 없다.**
+
+### 원인 분석
+"읽고(check) 나서 쓰는(update)" 사이 구간이 **인스턴스 간 직렬화되지 않는다.** 비잠금 read 는 다른 인스턴스의 in-flight 증분을 보지 못하므로, 두 인스턴스가 같은 잔여수량을 보고 동시에 발급을 승인한다.
+
+### 조치
+- **1차(적용)**: 쿠폰 코드 키로 **Redisson 분산 락** → 임계구역 직렬화. 초과는 사라졌으나 Redis 가 **단일 장애점**이 됨.
+- **2차(진행 중)**: 정확성의 최종 보루를 DB 로 — `UPDATE ... WHERE issued < limit` **조건부 UPDATE** + `UNIQUE(coupon_id, user_id)`. Redis 불가 시 이 경로로 자동 전환(락=성능, 제약=정합성 이중화).
+
+> 부하 결과는 첨부 JSON, 초과 추이는 차트. 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("2-인스턴스 부하로 초과 재현", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -609,13 +685,33 @@ java.io.IOException: Broken pipe
     at org.studieojavry.notiapi.sse.NotificationSseBroker.deliverToLocal(NotificationSseBroker.kt:64)
 """,
                 description = """
-### 증상
-`EventSource` 가 약 **30초 간격** 으로 재연결 반복. 브라우저 네트워크 탭:
+### 요약
+실시간 알림 `EventSource`(SSE) 연결이 약 **30초마다 끊겼다 재연결**을 반복한다. 기능은 동작하지만 재연결마다 순간 누락/깜빡임이 생기고 불필요한 연결 비용이 든다. 원인은 **heartbeat 주기(45s)가 프록시 idle timeout(30s)보다 길어서**.
+
+### 환경
+- `noti-api` SSE(`text/event-stream`) · 앞단 프록시(Nginx) idle timeout **30s**
+- 서버 heartbeat(keep-alive 코멘트) 주기 **45s**
+- 재현: 알림 페이지를 열어두고 ~30초 무이벤트 구간
+
+### 영향 범위
+- 알림 스트림이 30초마다 재연결 → **순간적 이벤트 누락/지연** 가능
+- 서버/프록시에 불필요한 재연결 부하
+- 치명적이진 않으나 "실시간" 체감 품질 저하
+
+### 증상 (브라우저 네트워크)
 ```text
-200 text/event-stream  (30.1s)  -> closed
-200 text/event-stream  (29.9s)  -> closed
+200 text/event-stream  (30.1s)  -> closed → reconnect
+200 text/event-stream  (29.9s)  -> closed → reconnect
 ```
-서버 heartbeat 는 45초 주기 → 프록시 idle timeout(30s)이 먼저 끊는다.
+
+### 원인 분석
+SSE 는 이벤트가 없어도 연결을 살리려 주기적 **heartbeat(주석 프레임)** 를 보낸다. 그런데 그 주기(45s)가 경로상 **가장 짧은 idle timeout(프록시 30s)** 보다 길어서, 트래픽 없는 30초 구간에 프록시가 연결을 먼저 끊어버린다 → 클라이언트가 즉시 재연결.
+
+### 조치
+- **영구 조치**: heartbeat 주기를 **15s**(프록시 idle timeout 아래)로 단축. 이후 재연결 사라짐.
+- 원칙: `heartbeat 주기 < 경로상 최소 idle timeout` 을 항상 만족시킨다.
+
+> 재연결 로그는 첨부, 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("재연결 주기와 프록시 타임아웃 대조", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -655,12 +751,33 @@ B-node: emitters[42]=1  but never receives
 => 교차 노드 전달 경로 없음
 """,
                 description = """
-### 증상
-알림을 **생성한 노드** 와 사용자가 **접속한 노드** 가 다르면 SSE 가 전달되지 않음.
-`SseEmitter` 레지스트리가 노드-로컬이라, A노드 이벤트가 B노드 접속자에게 안 간다.
+### 요약
+알림을 **생성한 노드**와 사용자가 **SSE 로 접속한 노드**가 다르면 실시간 알림이 **전달되지 않는다**. `SseEmitter` 레지스트리가 노드-로컬이라, A 노드에서 만든 이벤트가 B 노드에 붙은 사용자에게 닿지 못한다 — 수평확장(2대 이상)에서만 발현되는 상태 공유 문제.
 
-### 해결 방향
-노드-로컬 emitter 는 유지하되, **트리거만 Redis pub/sub 로 브로드캐스트** → 모든 노드가 자기 로컬로 전달.
+### 환경
+- `noti-api` **2 노드** · 사용자별 `SseEmitter` 는 **접속한 노드에만** 등록
+- 재현: 노드 2대 이상 + 알림 생성 노드 ≠ 사용자 접속 노드
+- 단일 노드에선 항상 정상(그래서 스테이징 1대에선 안 보였음)
+
+### 영향 범위
+- 알림이 **무작위로 누락**(사용자가 어느 노드에 붙었는지에 따라)
+- 수평확장할수록 미전달 확률 증가 → 실시간 알림 신뢰도 붕괴
+
+### 증상 (관찰)
+```text
+A-node: createNotification(userId=42) -> local emitters[42] = []   (user 42 는 B-node 접속)
+B-node: emitters[42] = 1               but never receives
+redis PUBSUB NUMSUB noti:realtime -> 0  (아무도 구독 안 함 → 교차 전달 불가)
+```
+
+### 원인 분석
+알림 전달이 **노드 로컬 메모리(emitter 레지스트리)**에만 의존한다. 생성 이벤트가 다른 노드로 전파될 경로가 없어, 생성 노드 ≠ 접속 노드이면 그대로 유실. "인메모리라 1대에서만 맞는" 전형적인 수평확장 상태 공유 결함.
+
+### 조치
+- **영구 조치**: 노드-로컬 emitter 는 그대로 두고, **알림 생성 트리거만 Redis pub/sub(`noti:realtime`) 로 브로드캐스트**. 모든 노드가 구독해 자기 로컬 emitter 로 전달 → 어느 노드에서 생성해도 전 노드 접속자에게 도달.
+- 검증: `PUBSUB NUMSUB == 노드 수`, publish→구독→로컬 전달 바이트 동일 통합테스트.
+
+> 구독자 확인 스샷은 첨부, 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("구독자 수로 교차 미전달 확인", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -713,15 +830,36 @@ GET /api/v1/users/me/suggested-followees  p95=7,450ms
   author hydration (iam)  N calls           520ms
 """,
                 description = """
-### 증상
-추천 팔로우가 **cold-start(팔로잉 0)** 에서 p95 **7.4초**. 신규 사용자 홈이 체감상 멈춘다.
+### 요약
+추천 팔로우 조회(`/users/me/suggested-followees`)가 **cold-start(팔로잉 0)** 구간에서 p95 **7.4초**. 신규 사용자 홈이 체감상 멈춘다. 원인은 인덱스 없는 **full-scan fallback + 작성자 N+1** 이 겹친 것. 조치 후 **p95 7,450ms → 89ms**.
 
-### 병목 분해 (APM)
+### 환경
+- `core-api` 추천 로직 · PostgreSQL · 작성자 프로필은 iam-api 조회
+- 재현: **팔로잉이 없는 신규 사용자**(cold-start fallback 경로)
+- 최초 인입: 신규 홈 로딩 지연 제보 + 추천 API p95 알림
+
+### 영향 범위
+- 신규 사용자 홈 첫 로딩이 **7초+** → 사실상 멈춘 것처럼 보임
+- 추천 호출이 DB 를 풀스캔 → 피크에 **DB 부하 전파**
+- 기존(팔로잉 있는) 사용자는 빠름 → cold-start 한정
+
+### 병목 분해 (APM 트레이스)
 ```text
-total p95            7,450 ms
-├─ full-scan fallback 6,900 ms  (92%)   <- 인덱스 없는 랜덤 추출
-└─ author N+1         520 ms            <- 후보 수만큼 iam 호출
+total p95                 7,450 ms
+├─ full-scan fallback      6,900 ms  (92%)   <- ORDER BY random(), 인덱스 없음
+└─ author hydration N+1      520 ms          <- 후보 수만큼 iam 프로필 개별 호출
 ```
+
+### 원인 분석
+팔로잉이 없으면 "인기/랜덤 공개 작성자" **fallback** 으로 빠지는데, 그 쿼리가 `ORDER BY random()` + 인덱스 부재로 **전체 테이블 스캔**(142k rows)을 탄다(6.9s). 거기에 후보 작성자 프로필을 **건별로 iam 호출(N+1)** 해 0.5s 추가. cold-start 경로에서 "느린 fallback + N+1"이 **중첩**되며 최악 p95 를 만든 전형적 패턴.
+
+### 조치
+- **영구 조치 (p95 7,450→89ms)**:
+  1. fallback 쿼리에 `created_at` **부분 인덱스** + 최근 30일 윈도우 + `LIMIT` → full-scan 제거.
+  2. 작성자 프로필 조회를 **1회 batch** 로 병합(N+1 제거).
+- 교훈: cold-start 는 느린 경로일수록 N+1 과 겹치기 쉬워, **둘을 함께** 잡아야 효과가 난다.
+
+> before/after 실행계획은 첨부 스니펫, p95 추이는 차트. 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("실행계획으로 full-scan 확인", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -787,15 +925,36 @@ org.hibernate.tool.schema.spi.SchemaManagementException: Schema-validation: miss
     at org.hibernate.tool.schema.internal.AbstractSchemaValidator.validateTable(AbstractSchemaValidator.java:132)
 """,
                 description = """
-### 증상
-새 환경 부팅 시 `ddl-auto=validate` 가 **없는 테이블** 에서 실패. 그런데 Flyway 의존성은 분명 들어있다.
+### 요약
+새 환경에서 앱 부팅이 `ddl-auto=validate` 단계에서 **"없는 테이블" 스키마 검증 실패**로 죽는다. 그런데 Flyway 의존성(`flyway-core`)은 분명히 들어있다. 범인은 **Spring Boot 4.0 의 autoconfig 모듈 분리** — 라이브러리만으론 마이그레이션이 자동 실행되지 않는다.
+
+### 환경
+- `iam-api` · **Spring Boot 4.0** · PostgreSQL · Flyway 마이그레이션 + `ddl-auto=validate`
+- 재현: **깨끗한 DB** 로 첫 부팅(마이그레이션이 한 번도 안 돈 상태)
+- 최초 인입: 신규 스테이징 구성 중 부팅 CrashLoop
+
+### 영향 범위
+- 신규/초기화 환경에서 **앱 부팅 자체 실패** → 배포 불가
+- 기존(이미 스키마가 있는) 환경은 우연히 통과 → 문제를 늦게 발견
 
 ### 단서
+```text
+org.hibernate.tool.schema.spi.SchemaManagementException:
+  Schema-validation: missing table [iam_refresh_token]
+```
 ```sql
 -- flyway_schema_history 테이블 자체가 없음 → migrate 가 한 번도 안 돌았다
-SELECT * FROM flyway_schema_history;  -- ERROR: relation does not exist
+SELECT * FROM flyway_schema_history;   -- ERROR: relation does not exist
 ```
-Spring Boot **4.0** 은 autoconfig 가 모듈로 분리됨 → `flyway-core` 만으론 `FlywayAutoConfiguration` 이 안 붙는다.
+
+### 원인 분석
+Spring Boot **4.0** 은 자동설정을 모듈로 쪼갰다. `flyway-core` 라이브러리만 넣으면 **`FlywayAutoConfiguration` 이 클래스패스에 붙지 않아** 부팅 시 `migrate` 가 돌지 않는다. 그 결과 스키마가 비어있고, 뒤이은 `ddl-auto=validate` 가 "테이블 없음"으로 실패. 라이브러리는 있는데 자동설정이 빠진 **Boot 4 특유의 함정**.
+
+### 조치
+- **영구 조치**: `org.springframework.boot:spring-boot-flyway`(autoconfig 모듈)를 의존성에 추가 → 부팅 로그에 `Flyway ... migrating schema` 등장, 스키마 생성 확인.
+- 적용 범위: DB 를 쓰는 모든 서비스 공통 점검.
+
+> 상세 확인 과정은 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("migrate 미실행 확인", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -828,17 +987,36 @@ software.amazon.awssdk.services.s3.model.S3Exception: ... (Service: S3, Status C
     at org.studieojavry.coreapi.errorcase.attachment.infrastructure.s3.S3AttachmentStorageAdapter.put(S3AttachmentStorageAdapter.kt:41)
 """,
                 description = """
-### 증상
-첨부 업로드 `putObject` 가 **OCI 에서만 403**, MinIO(local)·AWS 에선 성공. 환경별 차이로 좁혀진다.
+### 요약
+첨부 업로드 `putObject` 가 **OCI Object Storage 에서만 403**(`required information to complete authentication...`). MinIO(local)·AWS 에선 성공해서 코드가 아니라 **S3 공급자 호환성** 문제로 좁혀졌다. 원인은 AWS SDK v2 의 기본 **aws-chunked 스트리밍 서명**을 OCI S3 호환 API 가 미지원.
+
+### 환경
+- `core-api` 첨부 스토리지 · AWS SDK v2(S3) · prod=**OCI Object Storage(S3 호환)**, local=MinIO
+- 재현: prod(OCI) 에서 이미지/파일 업로드 시 100%
+- 최초 인입: prod 첨부 업로드 전면 실패 제보
+
+### 영향 범위
+- prod 에서 **모든 첨부 업로드 불가**(이미지/로그 첨부 기능 마비)
+- 조회/다운로드(presigned GET)는 정상 → 업로드(put) 경로 한정
+- local·AWS 에선 재현 안 돼 환경 차이 추적이 필요했음
 
 ### 요청 비교
 ```http
-PUT /bucket/attachments/f0/f0c12ab9
+PUT /error-archive-attachments/attachments/f0/f0c12ab9
 x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD   <- aws-chunked
 Content-Encoding: aws-chunked
-< 403 Forbidden
+< HTTP/1.1 403 Forbidden
+< body: There is a required information to complete authentication that was not provided.
 ```
-AWS SDK v2 가 기본으로 **aws-chunked 스트리밍 서명** 을 쓰는데 OCI S3 호환 API 가 미지원.
+
+### 원인 분석
+AWS SDK v2 는 `putObject` 를 기본적으로 **aws-chunked content-encoding + streaming 서명**으로 보낸다. AWS·MinIO 는 이를 처리하지만 **OCI 의 S3 호환 API 는 미지원**이라 서명 검증에 실패해 403. "S3 호환"이라도 서명/인코딩 세부에서 공급자마다 갈린다는 점이 핵심.
+
+### 조치
+- **영구 조치**: S3 클라이언트에 **`chunkedEncodingEnabled(false)`**(+ path-style) 설정 → OCI `putObject` 정상. (iam 아바타, core 첨부 모두 동일 적용.)
+- 교훈: S3 "호환" 스토리지는 chunked encoding·path-style 등 세부 호환부터 의심.
+
+> 403 응답 로그는 첨부, 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("공급자별 호환성으로 원인 분리", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -881,15 +1059,41 @@ t=1..6  no endpoints  -> 502/503
 t=6   new pod Ready
 """,
                 description = """
-### 증상
-배포 전략이 `Recreate` 라 구 파드 종료~새 파드 Ready 사이 **약 6초 순단**(502/503).
+### 요약
+배포할 때마다 **약 6초간 502/503 순단**이 발생한다. 배포 전략이 `Recreate` 라 **구 파드를 먼저 내리고** 새 파드를 띄우는 공백이 생기기 때문. RollingUpdate + readiness 게이트 + preStop 드레인으로 **순단 0초** 달성.
 
-### 원인
+### 환경
+- k8s 배포(Deployment) · `strategy.type: Recreate`
+- 재현: 모든 배포(롤아웃)마다
+- 최초 인입: 배포 중 5xx 스파이크 + 사용자 "방금 잠깐 안 됐다" 제보
+
+### 영향 범위
+- 배포 때마다 **6초 downtime** → 무중단 배포 아님
+- 하루 여러 번 배포 시 체감 안정성·SLA 저하
+- in-flight 요청이 종료되는 파드에서 끊김
+
+### 증상 (배포 중 1초 간격 프로브)
+```text
+200 200 502 503 503 503 503 200 200
+            └──────── ~6초 순단 ────────┘
+```
 ```yaml
 spec:
   strategy:
-    type: Recreate   # 구 파드를 먼저 내리고 새 파드를 띄움 -> 공백 발생
+    type: Recreate   # 구 파드를 먼저 내리고 새 파드를 띄움 → 공백 발생
 ```
+
+### 원인 분석
+`Recreate` 는 롤아웃 시 **기존 파드를 전부 종료한 뒤** 새 파드를 생성한다. 새 파드가 Ready 될 때까지(기동 ~6초) **엔드포인트가 비어** 502/503. 또 readiness 게이트/드레인이 없어 종료 중 파드로도 트래픽이 흘러 끊김이 더 커진다.
+
+### 조치
+- **영구 조치 (순단 0초)**:
+  1. `RollingUpdate`(maxUnavailable **0**, maxSurge 1) — 새 파드가 Ready 된 뒤에만 구 파드 종료.
+  2. `readinessProbe` 로 준비된 파드에만 트래픽 라우팅.
+  3. `preStop: sleep 5` 로 종료 전 in-flight 드레인(LB 에서 빠질 시간 확보).
+- 결과: 배포 중 5xx **0건**.
+
+> 전/후 5xx 추이는 첨부 차트, 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("순단 구간 측정", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -934,17 +1138,38 @@ req B: read balance(비잠금)=10000 -> reserve 8000   (RR 스냅샷 고정: A �
 committed reserved=16000 > 10000
 """,
                 description = """
-### 증상
-동시 환불 요청이 가용액을 초과해 예약된다. MySQL 기본 격리 **REPEATABLE READ** 에서 비잠금 read 가 트랜잭션 시작 스냅샷에 고정되어, 서로의 in-flight 예약을 보지 못한다.
+### 요약
+동시 환불 요청이 결제 **가용액을 초과해 예약**된다(예: 잔액 10000 에 8000 예약 2건 → 16000). MySQL 기본 격리 **REPEATABLE READ** 에서 비잠금 `SELECT` 가 트랜잭션 시작 스냅샷에 고정돼, 서로의 in-flight 예약을 보지 못하기 때문. 현재 **OPEN** — 잠긴 행 기반 가드로 설계 중(prod DDL 필요).
+
+### 환경
+- `core-api` 환불 도메인 · MySQL(기본 격리 **REPEATABLE READ**)
+- 재현: 같은 결제 건에 **동시 환불 요청 2건**
+- 최초 인입: 환불 합계가 결제액을 넘긴 정합성 제보
+
+### 영향 범위
+- **초과 환불 예약** → 금전 정합성 리스크(실제 환불 과다 가능)
+- 동시 요청이 겹칠 때만 → 재현/추적이 어려움
+- 단건 순차 요청에선 안 보임
 
 ### 재현
 ```sql
--- tx A, tx B 동시
+-- tx A, tx B 동시 (RR)
 START TRANSACTION;
-SELECT balance FROM payment WHERE id=1;      -- 둘 다 10000 (스냅샷)
--- 각자 8000 예약 -> 합 16000 > 10000
-COMMIT;
+SELECT reserved_refund, balance FROM payment WHERE id = 1;  -- 둘 다 같은 스냅샷(0 / 10000)
+-- 각자 8000 예약 가능하다고 판단 → 합 16000 > 10000
+COMMIT;   -- 둘 다 커밋 → 초과
 ```
+
+### 원인 분석
+"가용액을 읽고(check) → 예약을 더하는(update)" 사이, **비잠금 read 가 MVCC 스냅샷**(트랜잭션 시작 시점)으로 고정돼 다른 트랜잭션의 **미커밋/in-flight 예약을 보지 못한다.** 그래서 두 트랜잭션이 같은 가용액을 근거로 각각 예약을 승인한다. 애플리케이션 메모리 가드로는 못 막는 격리 수준 이슈.
+
+### 조치
+- **진행 중(설계)**: 합산 대상을 **잠긴 행의 상태**로 이동 — `SELECT ... FOR UPDATE` 로 Payment 행을 잠그고, `reserved_refund` 컬럼을 **조건부 증분**:
+  `UPDATE payment SET reserved_refund = reserved_refund + :amt WHERE id=:id AND reserved_refund + :amt <= balance` (0 rows = 초과 거절).
+- prod DDL(`reserved_refund` 컬럼 추가) 선행 필요 → 적용 대기.
+- 교훈: '읽고 나서 쓰기' 갭은 비잠금 read 로 못 막는다 — 합산을 **잠긴 행**으로 옮겨야 한다.
+
+> 상세 분석은 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("RR 스냅샷 격리 확인", StepStatus.RESOLVED, "INVESTIGATION", """
@@ -976,15 +1201,34 @@ org.springframework.web.bind.MethodArgumentNotValidException: Validation failed 
 (핸들러 미등록 -> DefaultHandlerExceptionResolver -> 500)
 """,
                 description = """
-### 증상
-검증 실패/권한 오류가 `400/403` 이 아니라 **전부 500** 으로 내려가 FE 가 사용자 메시지를 구분 못 함.
+### 요약
+검증 실패/권한 오류 같은 **클라이언트 오류(4xx)가 전부 500 으로** 내려간다. FE 가 "입력 오류"와 "서버 장애"를 구분하지 못해 사용자에게 적절한 메시지를 못 보여주고, 알림/모니터링에서도 5xx 로 잡혀 노이즈가 된다.
+
+### 환경
+- `core-api` · Spring MVC · 전역 예외 핸들러(RestControllerAdvice) 부재
+- 재현: 잘못된 입력(빈 title 등)·권한 없는 접근 요청
+- 최초 인입: FE 에서 "왜 검증 오류인데 500 이 뜨냐" + 5xx 알림 과다
+
+### 영향 범위
+- FE 가 4xx 분기를 못 해 **사용자 친화 메시지 불가**(그냥 "서버 오류")
+- 실제 정상적인 검증 실패가 **5xx 지표/알림을 오염** → 진짜 장애 묻힘
+- traceId/code 없는 뭉뚱그린 응답으로 **지원/디버깅 난이도 상승**
 
 ### 기대 vs 실제
 ```text
-POST /error-cases { title: "" }
-expected: 400  { code: VALIDATION_ERROR, field: title }
-actual:   500  { title: "Internal Server Error" }
+POST /api/v1/error-cases  { "title": "" }
+expected: 400  { "code": "VALIDATION_ERROR", "errors": [{ "field": "title", ... }] }
+actual:   500  { "title": "Internal Server Error" }
 ```
+
+### 원인 분석
+전역 예외 핸들러가 없어, `MethodArgumentNotValidException`(검증)·권한 예외 등이 매핑되지 못하고 **기본 resolver 로 빠져 500**이 된다. 상태코드·에러코드·traceId 를 담은 표준(ProblemDetail) 응답 규약이 부재.
+
+### 조치
+- **영구 조치**: `shared-error` 의 `@RestControllerAdvice`(`GlobalExceptionHandler`) 도입 — 검증→400, 권한→403, 그 외→적절한 코드로 매핑하고 **ProblemDetail(type/title/status/code/traceId)** 로 통일.
+- 교훈: 도메인/검증 예외 → HTTP 상태 매핑을 **한 곳**에 모아야 FE 분기와 모니터링 신뢰도가 산다.
+
+> 개선 후 400 응답 예시는 첨부 JSON, 상세는 아래 타임라인.
 """,
                 steps = listOf(
                     SeedStep("예외 → 상태코드 매핑 공백 확인", StepStatus.RESOLVED, "INVESTIGATION", """

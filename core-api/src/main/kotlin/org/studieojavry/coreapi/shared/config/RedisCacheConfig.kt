@@ -1,5 +1,7 @@
 package org.studieojavry.coreapi.shared.config
 
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.cache.CacheManager
@@ -78,10 +80,19 @@ class RedisCacheConfig {
      * Redis 캐시 **값** 직렬화기 — JSON + 루트 타입정보.
      *
      * `GenericJackson2JsonRedisSerializer` 는 루트에 타입(`@class`)을 항상 기록해 enum(`WorkspaceRole`)·
-     * data class·중첩 컬렉션·null 마커를 안전하게 왕복시킨다. 내부 매퍼에 **Kotlin 모듈**만 얹어
-     * data class(파라미터 생성자) 역직렬화를 가능케 한다(앱 기본 Jackson 3 직렬화와는 분리).
+     * data class·중첩 컬렉션·null 마커를 안전하게 왕복시킨다. 내부 매퍼에 **Kotlin 모듈**로
+     * data class(파라미터 생성자) 역직렬화를, **JavaTime 모듈**로 `java.time`(LocalDateTime 등)
+     * 직렬화를 가능케 한다(앱 기본 Jackson 3 직렬화와는 분리).
+     *
+     * JavaTime 모듈이 없으면 대시보드 캐시(watchlist-feed/recent-active-cases 등)의 non-empty 결과에
+     * 섞인 LocalDateTime 직렬화가 실패해 @Cacheable PUT 이 터지고, 게이트웨이가 503 으로 감싼다
+     * (빈 결과는 날짜가 없어 우회됨). timestamp 배열 대신 ISO-8601 문자열로 기록한다.
      */
     @Bean
     fun redisCacheValueSerializer(): RedisSerializer<Any> =
-        GenericJackson2JsonRedisSerializer().configure { it.registerModule(KotlinModule.Builder().build()) }
+        GenericJackson2JsonRedisSerializer().configure {
+            it.registerModule(KotlinModule.Builder().build())
+            it.registerModule(JavaTimeModule())
+            it.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+        }
 }

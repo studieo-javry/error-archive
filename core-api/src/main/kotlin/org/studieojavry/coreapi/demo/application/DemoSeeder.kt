@@ -248,7 +248,7 @@ class DemoSeeder(
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 6
+        private const val SEED_VERSION = 7
         private val VERSION_TAG = "seed-v$SEED_VERSION"
 
         /** me-too 시드용 가짜 사용자 id 기준값(실 사용자와 충돌 없게 큼). 프로필 resolve 안 됨. */
@@ -266,7 +266,7 @@ class DemoSeeder(
                 val y = padT + plotH - plotH * g / 4
                 """<line x1="$padL" y1="$y" x2="${w - padR}" y2="$y" stroke="#e5e7eb" stroke-width="1"/><text x="${padL - 8}" y="${y + 4}" font-size="11" fill="#9ca3af" text-anchor="end">${maxV * g / 4}</text>"""
             }
-            return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" font-family="ui-sans-serif,system-ui,sans-serif"><rect width="$w" height="$h" rx="14" fill="#ffffff" stroke="#e5e7eb"/><text x="$padL" y="30" font-size="16" font-weight="700" fill="#111827">$title</text><text x="${w - padR}" y="30" font-size="12" fill="#9ca3af" text-anchor="end">$unit</text>$grid<polyline points="$pts" fill="none" stroke="$accent" stroke-width="2.5" stroke-linejoin="round"/><circle cx="%.1f" cy="%.1f" r="4.5" fill="$accent"/></svg>""".format(lastX, lastY)
+            return """<svg xmlns="http://www.w3.org/2000/svg" width="$w" height="$h" viewBox="0 0 $w $h" font-family="ui-sans-serif,system-ui,sans-serif"><rect width="$w" height="$h" rx="14" fill="#ffffff" stroke="#e5e7eb"/><text x="$padL" y="30" font-size="16" font-weight="700" fill="#111827">$title</text><text x="${w - padR}" y="30" font-size="12" fill="#9ca3af" text-anchor="end">$unit</text>$grid<polyline points="$pts" fill="none" stroke="$accent" stroke-width="2.5" stroke-linejoin="round"/><circle cx="%.1f" cy="%.1f" r="4.5" fill="$accent"/></svg>""".format(lastX, lastY)
         }
 
         private fun svgTerminal(title: String, lines: List<String>): String {
@@ -284,7 +284,7 @@ class DemoSeeder(
                 val safe = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 """<text x="18" y="${top + i * lineH}" font-size="12.5" font-family="ui-monospace,Menlo,monospace" fill="$color">$safe</text>"""
             }.joinToString("\n")
-            return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h"><rect width="$w" height="$h" rx="12" fill="#0b0f17"/><rect width="$w" height="34" rx="12" fill="#161b26"/><circle cx="20" cy="17" r="5" fill="#ef4444"/><circle cx="40" cy="17" r="5" fill="#f59e0b"/><circle cx="60" cy="17" r="5" fill="#22c55e"/><text x="${w - 14}" y="21" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace,monospace">$title</text>$body</svg>"""
+            return """<svg xmlns="http://www.w3.org/2000/svg" width="$w" height="$h" viewBox="0 0 $w $h"><rect width="$w" height="$h" rx="12" fill="#0b0f17"/><rect width="$w" height="34" rx="12" fill="#161b26"/><circle cx="20" cy="17" r="5" fill="#ef4444"/><circle cx="40" cy="17" r="5" fill="#f59e0b"/><circle cx="60" cy="17" r="5" fill="#22c55e"/><text x="${w - 14}" y="21" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace,monospace">$title</text>$body</svg>"""
         }
 
         private val SEED: List<RichSeed> = buildList {

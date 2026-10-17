@@ -13,8 +13,9 @@ import java.time.LocalDateTime
 /**
  * 데모 워크스페이스 시드 콘텐츠 — **데모 봇 소유**의 그럴듯한 에러 케이스 다수.
  * 둘러보기가 "텅 비지 않고 살아있어 보이도록" 상태(OPEN/IN_PROGRESS/RESOLVED/CLOSED)·태그·발생일을 다양화한다.
- * 가시성은 WORKSPACE(데모 WS 내부 전용) — 전역 PUBLIC 피드로 새지 않는다.
- * 리셋 때 wipe 후 재생성되므로 항상 동일한 베이스라인을 보장한다.
+ * **가시성 PUBLIC** — Search 탭(`/error-cases/search` = SearchPublicErrorCasesUseCase)은 전역 PUBLIC 만
+ * 반환하므로, 게스트·일반 사용자 누구나 Search 에서 예시를 확인할 수 있게 PUBLIC 으로 심는다.
+ * 워크스페이스는 데모 WS 로 묶여(reset 이 ws 단위로 wipe) 리셋 때 재생성된다 — 항상 동일한 베이스라인.
  */
 @Service
 class DemoSeeder(
@@ -43,7 +44,7 @@ class DemoSeeder(
                 snapshot = null,
                 description = s.description,
                 meta = Meta.create(workspaceId = workspaceId, severityCode = null),
-                visibility = Visibility.WORKSPACE,
+                visibility = Visibility.PUBLIC,
                 snippets = emptyList(),
                 attachments = emptyList(),
                 tags = s.tags,

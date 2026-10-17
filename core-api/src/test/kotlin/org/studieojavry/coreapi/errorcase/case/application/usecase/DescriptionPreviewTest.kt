@@ -82,6 +82,34 @@ class DescriptionPreviewTest {
     }
 
     @Test
+    fun `마크다운 문법(헤더_굵게_코드_목록)은 스트립되어 플레인 텍스트가 된다`() {
+        val body = """
+### 요약
+로그인 **직후** `홈` 진입에서 500.
+
+### 영향
+- 신규 가입자
+- 온보딩 이탈
+""".trimIndent()
+        val r = DescriptionPreview.of(body)!!
+        // ###, **, `, - 가 결과에 남지 않아야 함
+        assertEquals(false, r.contains("#"))
+        assertEquals(false, r.contains("*"))
+        assertEquals(false, r.contains("`"))
+        // 내용(텍스트)은 유지
+        assertEquals("요약 로그인 직후 홈 진입에서 500. 영향 신규 가입자 온보딩 이탈", r)
+    }
+
+    @Test
+    fun `코드펜스 블록은 미리보기에서 제거된다`() {
+        val body = "원인 설명.\n```yaml\nopen-in-view: false\n```\n조치 완료."
+        val r = DescriptionPreview.of(body)!!
+        assertEquals(false, r.contains("```"))
+        assertEquals(false, r.contains("open-in-view"))
+        assertEquals("원인 설명. 조치 완료.", r)
+    }
+
+    @Test
     fun `경계가 attach placeholder 한가운데에 걸쳐도 제거`() {
         val body = "가".repeat(116) + " @attach(z)"
         val r = DescriptionPreview.of(body)

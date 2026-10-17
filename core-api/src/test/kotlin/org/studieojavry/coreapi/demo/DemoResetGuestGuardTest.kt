@@ -20,12 +20,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.demo.application.DemoResetService
 import org.studieojavry.coreapi.demo.infrastructure.DemoIamIdentityClient
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
+import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.internalauth.InternalAuthentication
+import java.time.LocalDateTime
 
 /**
  * 데모 리셋(wipe+reseed) + 게스트 업로드 가드 검증 — @SpringBootTest + H2(실 JPA) + MockMvc.
@@ -41,6 +45,9 @@ class DemoResetGuestGuardTest {
     @Autowired private lateinit var errorCaseRepository: ErrorCaseRepositoryPort
     @Autowired private lateinit var stepRepository: StepRepositoryPort
     @Autowired private lateinit var solutionRepository: SolutionRepositoryPort
+    @Autowired private lateinit var commentRepository: CommentRepositoryPort
+    @Autowired private lateinit var codeSnippetRepository: CodeSnippetRepositoryPort
+    @Autowired private lateinit var meTooRepository: CaseMeTooRepositoryPort
 
     @MockitoBean private lateinit var identityClient: DemoIamIdentityClient
 
@@ -82,6 +89,16 @@ class DemoResetGuestGuardTest {
                 sol.stepIds.isNotEmpty() && sol.stepIds.size < stepCount
             },
         ).describedAs("a solution references a strict subset of its steps (dim 가능)").isTrue()
+
+        // 리치 요소: 댓글 · 코드 스니펫 · me-too · 백데이트 createdAt
+        assertThat(after1.any { commentRepository.findAllByErrorCaseId(it.id).isNotEmpty() })
+            .describedAs("some case has comments").isTrue()
+        assertThat(after1.any { codeSnippetRepository.findAllByErrorCaseId(it.id).isNotEmpty() })
+            .describedAs("some case has a code snippet").isTrue()
+        assertThat(after1.any { meTooRepository.count(it.id) > 0 })
+            .describedAs("some case has me-too").isTrue()
+        assertThat(after1.any { it.createdAt.isBefore(LocalDateTime.now().minusHours(1)) })
+            .describedAs("some case createdAt is backdated").isTrue()
 
         // 재리셋 → 직전 시드 전부 wipe + 동일 수 reseed (누적 없음)
         val r2 = resetService.reset()

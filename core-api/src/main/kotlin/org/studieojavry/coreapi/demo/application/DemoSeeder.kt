@@ -8,9 +8,15 @@ import org.studieojavry.coreapi.errorcase.attachment.application.port.Attachment
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.vo.AttachmentKind
+import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
+import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import org.studieojavry.coreapi.errorcase.comment.domain.model.Comment
+import org.studieojavry.coreapi.errorcase.comment.domain.model.vo.QuoteSourceKind
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
+import org.studieojavry.coreapi.errorcase.snippet.domain.model.CodeSnippet
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorSnapshot
@@ -43,6 +49,9 @@ class DemoSeeder(
     private val solutionRepository: SolutionRepositoryPort,
     private val attachmentRepository: ErrorCaseAttachmentRepositoryPort,
     private val tagRepository: ErrorCaseTagRepositoryPort,
+    private val commentRepository: CommentRepositoryPort,
+    private val codeSnippetRepository: CodeSnippetRepositoryPort,
+    private val meTooRepository: CaseMeTooRepositoryPort,
     private val storagePort: AttachmentStoragePort,
     private val markerIdGenerator: MarkerIdGeneratorPort,
     private val props: DemoProperties,
@@ -65,19 +74,32 @@ class DemoSeeder(
     }
 
     private fun seedOne(s: RichSeed, workspaceId: Long, botUserId: Long) {
+        // 스니펫(DB 전용) + 첨부(S3). 둘 다 markerId 로 먼저 저장돼야 case.save 가 링크할 수 있다.
+        val snippets = s.snippets.mapNotNull { buildSnippet(it, botUserId) }
         val attachments = if (props.seedAttachments) s.attachments.mapNotNull { buildAttachment(it, botUserId) } else emptyList()
+
+        val snapshot = buildSnapshot(s)
+        val meta = Meta.create(workspaceId = workspaceId, severityCode = s.severityCode)
+        val occurredAt = LocalDateTime.now().minusDays(s.daysAgo).minusHours(s.hoursAgo)
+
+        // 본문에 스니펫/첨부를 인라인 임베드(@snippet/@attach) — 렌더러가 해당 위치에 코드/이미지/파일을 끼워 넣는다.
+        val description = s.description + buildString {
+            snippets.forEach { append("\n\n@snippet(").append(it.markerId).append(")") }
+            attachments.forEach { append("\n\n@attach(").append(it.markerId).append(")") }
+        }
+
         val case = ErrorCase.create(
             ownerUserId = botUserId,
             title = s.title,
             project = s.project,
-            snapshot = buildSnapshot(s),
-            description = s.description,
-            meta = Meta.create(workspaceId = workspaceId, severityCode = s.severityCode),
+            snapshot = snapshot,
+            description = description,
+            meta = meta,
             visibility = Visibility.PUBLIC,
-            snippets = emptyList(),
+            snippets = snippets,
             attachments = attachments,
             tags = emptyList(), // 태그는 case.save 가 아니라 tagRepository 로 별도 저장(아래)
-            occurredAt = LocalDateTime.now().minusDays(s.daysAgo).minusHours(s.hoursAgo),
+            occurredAt = occurredAt,
         )
         applyStatus(case, s.status, botUserId)
         val caseId = errorCaseRepository.save(case).id!!
@@ -105,6 +127,50 @@ class DemoSeeder(
                 solutionRepository.save(Solution.create(caseId, botUserId, s.solutionTitle, solutionStepIds))
             }
         }
+
+        // 댓글(봇 작성 — 작성자 resolve 보장). 일부는 대댓글 포함.
+        s.comments.forEach { c ->
+            val top = commentRepository.save(
+                Comment.create(caseId, botUserId, null, c.body, QuoteSourceKind.NONE, null, null),
+            )
+            c.reply?.let {
+                commentRepository.save(
+                    Comment.create(caseId, botUserId, top.id, it, QuoteSourceKind.NONE, null, null),
+                )
+            }
+        }
+
+        // "나도 겪음"(me-too) — 심각도 기반으로 그럴듯한 수를 가짜 distinct userId 로 채움(프로필 resolve 안 함 → 안전).
+        repeat(meTooCountFor(s)) { i -> meTooRepository.add(caseId, ME_TOO_BASE_UID + i) }
+
+        // createdAt 백데이트 — 리스트 날짜가 자연스럽게 분산되도록(create 는 now 고정 → reconstitute+update).
+        val resolved = s.status == ErrorCaseStatus.RESOLVED
+        errorCaseRepository.update(
+            ErrorCase.reconstitute(
+                id = caseId, ownerUserId = botUserId, title = s.title, project = s.project,
+                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.PUBLIC,
+                snippets = emptyList(), attachments = emptyList(), tags = emptyList(),
+                status = s.status, occurredAt = occurredAt, createdAt = occurredAt, updatedAt = occurredAt,
+                resolvedAt = if (resolved) occurredAt else null,
+                resolvedByUserId = if (resolved) botUserId else null,
+            ),
+        )
+    }
+
+    private fun buildSnippet(sn: SeedSnippet, botUserId: Long): CodeSnippet? = runCatching {
+        codeSnippetRepository.save(
+            CodeSnippet(
+                markerId = markerIdGenerator.generateSnippetMarkerId(),
+                title = sn.title, language = sn.language, filePathOrClass = sn.file, lineRange = sn.lineRange,
+                caption = sn.caption, code = sn.code, uploadedByUserId = botUserId, uploadedAt = Instant.now(),
+            ),
+        )
+    }.getOrElse { log.warn { "demo seed snippet skipped (${sn.title}): ${it.message}" }; null }
+
+    /** 심각도 기반 me-too 수(S1 多 → S4 少) + 제목 해시 지터로 케이스마다 다른 '그럴듯한' 수. */
+    private fun meTooCountFor(s: RichSeed): Int {
+        val base = when (s.severityCode) { 1 -> 17; 2 -> 10; 3 -> 5; else -> 2 }
+        return base + Math.floorMod(s.title.hashCode(), 7)
     }
 
     private fun applyStatus(case: ErrorCase, target: ErrorCaseStatus, actor: Long) {
@@ -160,17 +226,33 @@ class DemoSeeder(
 
     private class SeedStep(val title: String, val status: StepStatus, val attemptType: String, val body: String, val insight: String? = null)
 
+    private class SeedComment(val body: String, val reply: String? = null)
+
+    private class SeedSnippet(
+        val title: String,
+        val language: String,
+        val code: String,
+        val file: String? = null,
+        val lineRange: String? = null,
+        val caption: String? = null,
+    )
+
     private class RichSeed(
         val title: String, val project: String, val status: ErrorCaseStatus, val severityCode: Int?,
         val daysAgo: Long, val hoursAgo: Long, val tags: List<String>,
         val exceptionClass: String?, val exceptionMessage: String?, val stackTrace: String,
         val description: String, val steps: List<SeedStep>, val solutionTitle: String?, val attachments: List<SeedAtt>,
+        val comments: List<SeedComment> = emptyList(),
+        val snippets: List<SeedSnippet> = emptyList(),
     )
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 5
+        private const val SEED_VERSION = 6
         private val VERSION_TAG = "seed-v$SEED_VERSION"
+
+        /** me-too 시드용 가짜 사용자 id 기준값(실 사용자와 충돌 없게 큼). 프로필 resolve 안 됨. */
+        private const val ME_TOO_BASE_UID = 900_000L
 
         private fun svgChart(title: String, unit: String, values: List<Int>, accent: String = "#ef4444"): String {
             val w = 720; val h = 360; val padL = 56; val padB = 44; val padT = 56; val padR = 24
@@ -290,6 +372,22 @@ iam 응답 샘플(첨부 `iam-profile-response.json`)에서 `avatarUrl` 이 `nul
   "bio": null
 }"""),
                 ),
+                comments = listOf(
+                    SeedComment(
+                        body = "저희도 신규 가입 직후 홈에서 동일 NPE 겪었어요. avatarUrl 이 null 인 계정에서만 재현되는 것까지 똑같네요.",
+                        reply = "외부(iam) 응답 필드는 전부 nullable 로 받고 경계에서 기본값 처리하도록 정리했습니다. 이후 재발 없어요.",
+                    ),
+                    SeedComment(body = "회귀 테스트까지 있어서 좋네요 👍 비슷한 하이드레이션 지점 다른 곳도 점검하면 좋겠습니다."),
+                ),
+                snippets = listOf(
+                    SeedSnippet(
+                        title = "재현 단위 테스트",
+                        language = "kotlin",
+                        file = "ProfileHydratorTest.kt",
+                        caption = "avatarUrl=null 일 때 기존 코드가 NPE 를 던짐을 고정",
+                        code = "@Test\nfun `avatarUrl 이 null 이면 기존 코드가 NPE`() {\n    val profile = profile(avatarUrl = null)\n    assertThrows<NullPointerException> { legacyHydrate(profile) }\n}",
+                    ),
+                ),
             ))
             add(RichSeed(
                 title = "피크 시간마다 터지는 503 — HikariCP 커넥션 풀 고갈",
@@ -363,6 +461,13 @@ spring:
                     SeedAtt(Att.LOG, "hikari-timeout.log", "타임아웃 로그", null, """2026-10-13 20:11:03.412 WARN  HikariPool-1 - Connection is not available, request timed out after 30000ms
 2026-10-13 20:11:03.980 ERROR ErrorCaseController - 503 GET /api/v1/error-cases (ws=public)
 2026-10-13 20:11:04.117 WARN  HikariPool-1 - Thread starvation or clock leap detected (housekeeper delta=31s)"""),
+                ),
+                comments = listOf(
+                    SeedComment(
+                        body = "풀 크기만 20→40 으로 올려봤는데 피크 때 똑같이 고갈되더라고요. 역시 보유 시간이 문제였네요.",
+                        reply = "맞습니다. 풀을 키우기 전에 open-in-view off + N+1 제거로 '커넥션 쥐는 시간'부터 줄이는 게 핵심이었어요.",
+                    ),
+                    SeedComment(body = "hikaricp_connections_pending 알럿을 추가해두면 다음 피크 전에 미리 잡을 수 있을 것 같아요."),
                 ),
             ))
             add(RichSeed(
@@ -650,6 +755,25 @@ CREATE INDEX ix_ec_public_recent
                 solutionTitle = "fallback 인덱스화 + 작성자 batch 로 p95 7,450→89ms",
                 attachments = listOf(
                     SeedAtt(Att.CHART, "p95-before-after.svg", "p95 개선", "7,450ms → 89ms", svgChart("suggested-followees p95", "ms", listOf(7450, 5200, 2600, 900, 300, 120, 89), "#10b981")),
+                ),
+                comments = listOf(
+                    SeedComment(body = "random() 정렬이 풀스캔을 유발하는 건 놓치기 쉬운데 실행계획 첨부가 명확하네요. 저도 비슷한 랜덤 추천에서 같은 패턴 발견했어요."),
+                ),
+                snippets = listOf(
+                    SeedSnippet(
+                        title = "before: 풀스캔 실행계획",
+                        language = "sql",
+                        file = "suggested_followees.sql",
+                        caption = "ORDER BY random() → Seq Scan",
+                        code = "EXPLAIN ANALYZE\nSELECT owner_user_id FROM error_case\nWHERE visibility = 'PUBLIC'\nORDER BY random() LIMIT 20;\n-- Seq Scan on error_case (rows=142000) actual time=6900ms",
+                    ),
+                    SeedSnippet(
+                        title = "after: 부분 인덱스 + 윈도우",
+                        language = "sql",
+                        file = "V__ec_public_recent.sql",
+                        caption = "created_at 부분 인덱스로 Index Scan",
+                        code = "CREATE INDEX ix_ec_public_recent\n  ON error_case (created_at DESC) WHERE visibility = 'PUBLIC';\n-- 조회: 최근 30일 윈도우 + created_at DESC LIMIT 20 → Index Scan, 89ms",
+                    ),
                 ),
             ))
             add(RichSeed(

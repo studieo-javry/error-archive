@@ -23,6 +23,8 @@ import org.studieojavry.coreapi.demo.infrastructure.DemoIamIdentityClient
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
+import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
+import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.internalauth.InternalAuthentication
 
 /**
@@ -31,12 +33,14 @@ import org.studieojavry.internalauth.InternalAuthentication
  */
 @SpringBootTest
 @ActiveProfiles("test")
-@TestPropertySource(properties = ["demo.enabled=true"])
+@TestPropertySource(properties = ["demo.enabled=true", "demo.seed-attachments=false"])
 class DemoResetGuestGuardTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var resetService: DemoResetService
     @Autowired private lateinit var errorCaseRepository: ErrorCaseRepositoryPort
+    @Autowired private lateinit var stepRepository: StepRepositoryPort
+    @Autowired private lateinit var solutionRepository: SolutionRepositoryPort
 
     @MockitoBean private lateinit var identityClient: DemoIamIdentityClient
 
@@ -64,6 +68,12 @@ class DemoResetGuestGuardTest {
         assertThat(after1).allMatch {
             it.ownerUserId == botId && it.visibility == Visibility.PUBLIC && it.workspaceId == wsId
         }
+
+        // 리치 콘텐츠 검증: 최소 한 케이스에 스텝이 있고, 최소 하나의 솔루션이 심어졌다.
+        assertThat(after1.any { stepRepository.findAllByErrorCaseId(it.id).isNotEmpty() })
+            .describedAs("at least one seeded case has steps").isTrue()
+        assertThat(after1.any { solutionRepository.findAllByErrorCaseId(it.id).isNotEmpty() })
+            .describedAs("at least one seeded case has a solution").isTrue()
 
         // 재리셋 → 직전 시드 전부 wipe + 동일 수 reseed (누적 없음)
         val r2 = resetService.reset()

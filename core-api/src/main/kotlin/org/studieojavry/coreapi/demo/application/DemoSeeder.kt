@@ -10,6 +10,7 @@ import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.vo.AttachmentKind
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorSnapshot
@@ -41,13 +42,15 @@ class DemoSeeder(
     private val stepRepository: StepRepositoryPort,
     private val solutionRepository: SolutionRepositoryPort,
     private val attachmentRepository: ErrorCaseAttachmentRepositoryPort,
+    private val tagRepository: ErrorCaseTagRepositoryPort,
     private val storagePort: AttachmentStoragePort,
     private val markerIdGenerator: MarkerIdGeneratorPort,
     private val props: DemoProperties,
 ) {
     private val log = KotlinLogging.logger {}
 
-    val expectedCount: Int get() = SEED.size
+    /** 현재 시드 콘텐츠 버전 태그 — 모든 시드 케이스에 부착. 내용이 바뀌면 SEED_VERSION 을 올려 재시드를 유발. */
+    val versionTag: String get() = VERSION_TAG
 
     @Transactional
     fun ensureSeeded(workspaceId: Long, botUserId: Long): Int {
@@ -73,11 +76,15 @@ class DemoSeeder(
             visibility = Visibility.PUBLIC,
             snippets = emptyList(),
             attachments = attachments,
-            tags = s.tags,
+            tags = emptyList(), // 태그는 case.save 가 아니라 tagRepository 로 별도 저장(아래)
             occurredAt = LocalDateTime.now().minusDays(s.daysAgo).minusHours(s.hoursAgo),
         )
         applyStatus(case, s.status, botUserId)
         val caseId = errorCaseRepository.save(case).id!!
+
+        // 태그는 별도 테이블 — 콘텐츠 태그 + 버전 태그를 정규화해 저장(버전 태그로 재시드 감지).
+        (s.tags + VERSION_TAG).mapNotNull { ErrorCase.normalizeTag(it) }.distinct()
+            .forEach { tagRepository.add(caseId, it) }
         val stepIds = s.steps.mapIndexed { i, st ->
             stepRepository.save(
                 Step.create(
@@ -153,6 +160,10 @@ class DemoSeeder(
     )
 
     companion object {
+        /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
+        private const val SEED_VERSION = 4
+        private val VERSION_TAG = "seed-v$SEED_VERSION"
+
         private fun svgChart(title: String, unit: String, values: List<Int>, accent: String = "#ef4444"): String {
             val w = 720; val h = 360; val padL = 56; val padB = 44; val padT = 56; val padR = 24
             val maxV = (values.maxOrNull() ?: 1).coerceAtLeast(1)

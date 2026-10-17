@@ -74,6 +74,14 @@ class DemoResetGuestGuardTest {
             .describedAs("at least one seeded case has steps").isTrue()
         assertThat(after1.any { solutionRepository.findAllByErrorCaseId(it.id).isNotEmpty() })
             .describedAs("at least one seeded case has a solution").isTrue()
+        // 솔루션은 스텝의 **엄격한 부분집합** 이어야 함(선택 시 나머지 스텝이 흐려지도록).
+        assertThat(
+            after1.any { c ->
+                val sol = solutionRepository.findAllByErrorCaseId(c.id).firstOrNull() ?: return@any false
+                val stepCount = stepRepository.findAllByErrorCaseId(c.id).size
+                sol.stepIds.isNotEmpty() && sol.stepIds.size < stepCount
+            },
+        ).describedAs("a solution references a strict subset of its steps (dim 가능)").isTrue()
 
         // 재리셋 → 직전 시드 전부 wipe + 동일 수 reseed (누적 없음)
         val r2 = resetService.reset()

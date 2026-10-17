@@ -94,8 +94,16 @@ class DemoSeeder(
                 ),
             ).id!!
         }
-        if (s.solutionTitle != null && stepIds.isNotEmpty()) {
-            solutionRepository.save(Solution.create(caseId, botUserId, s.solutionTitle, stepIds))
+        // 솔루션은 **실제 해결 스텝(비-INVESTIGATION)**만 묶는다 — 조사 스텝은 솔루션 선택 시 흐려져(dim)
+        // "이 스텝들이 실제 해결책"이 드러난다. (전부 포함하면 흐려질 '나머지'가 없어 기능이 안 보임.)
+        if (s.solutionTitle != null) {
+            val solutionStepIds = s.steps.zip(stepIds)
+                .filter { (st, _) -> st.attemptType != "INVESTIGATION" }
+                .map { it.second }
+                .ifEmpty { stepIds }
+            if (solutionStepIds.isNotEmpty()) {
+                solutionRepository.save(Solution.create(caseId, botUserId, s.solutionTitle, solutionStepIds))
+            }
         }
     }
 
@@ -161,7 +169,7 @@ class DemoSeeder(
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 4
+        private const val SEED_VERSION = 5
         private val VERSION_TAG = "seed-v$SEED_VERSION"
 
         private fun svgChart(title: String, unit: String, values: List<Int>, accent: String = "#ef4444"): String {

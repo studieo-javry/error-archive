@@ -83,6 +83,22 @@ class DemoResetGuestGuardTest {
     }
 
     @Test
+    fun `syncSeedOnStartup 은 버전이 같으면 재시드하지 않는다 (ID 보존)`() {
+        Mockito.`when`(identityClient.fetchIdentity())
+            .thenReturn(DemoIamIdentityClient.DemoIdentity(enabled = true, workspaceId = wsId, botUserId = botId))
+
+        // 1회차: 비어있음 → 시드 생성
+        resetService.syncSeedOnStartup()
+        val ids1 = searchWs(100).map { it.id }.toSet()
+        assertThat(ids1).isNotEmpty()
+
+        // 2회차: 현재 버전 태그가 이미 붙어있음 → no-op (wipe+reseed 안 함 → 케이스 ID 보존)
+        resetService.syncSeedOnStartup()
+        val ids2 = searchWs(100).map { it.id }.toSet()
+        assertThat(ids2).isEqualTo(ids1)
+    }
+
+    @Test
     fun `게스트는 첨부 업로드가 403, 일반 사용자는 403 이 아니다`() {
         val mvc: MockMvc = MockMvcBuilders.webAppContextSetup(context)
             .apply<DefaultMockMvcBuilder>(springSecurity()).build()

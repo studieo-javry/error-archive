@@ -20,4 +20,10 @@ data class DemoProperties(
      */
     @field:NotBlank
     val resetCron: String = "0 10 4 * * *",
+
+    /**
+     * 시드 케이스에 첨부(스크린샷/JSON/로그)를 S3 에 올려 붙일지. 기본 true(stg).
+     * 스토리지 미가용 환경(테스트 등)에선 false 로 꺼서 불필요한 S3 호출을 피한다.
+     */
+    val seedAttachments: Boolean = true,
 )

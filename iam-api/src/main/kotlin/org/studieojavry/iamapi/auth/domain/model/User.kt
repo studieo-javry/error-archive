@@ -29,6 +29,11 @@ class User private constructor(
     /** 사용자가 로그인 후 기본으로 열 워크스페이스. null=개인 홈. */
     var defaultWorkspaceId: Long?,
     // ───────────────────────────────────────────────────────────────
+    /**
+     * 게스트("로그인 없이 둘러보기") 전용 사용자 표식. OAuth 없이 발급된 임시 계정.
+     * 야간 리셋이 **실제 사용자(=false)를 절대 지우지 않도록** handle prefix 추정 대신 명시 플래그로 식별한다.
+     */
+    val isGuest: Boolean,
     val createdAt: Instant,
     var updatedAt: Instant
 ) {
@@ -166,7 +171,13 @@ class User private constructor(
         /** 탈퇴 확정 사용자의 표시명. UI 가 status=DELETED 를 보고 "탈퇴한 사용자" 로 렌더해도 됨. */
         fun anonymizedDisplayName(userId: Long?): String = "deleted_user_${userId ?: "unknown"}"
 
-        fun create(email: Email?, handle: String, displayName: String, avatarUrl: String?): User {
+        fun create(
+            email: Email?,
+            handle: String,
+            displayName: String,
+            avatarUrl: String?,
+            isGuest: Boolean = false
+        ): User {
             val now = Instant.now()
             return User(
                 id = null,
@@ -181,10 +192,18 @@ class User private constructor(
                 timezone = null,
                 theme = Theme.SYSTEM,
                 defaultWorkspaceId = null,
+                isGuest = isGuest,
                 createdAt = now,
                 updatedAt = now
             )
         }
+
+        /**
+         * 게스트("로그인 없이 둘러보기") 임시 사용자 — email/avatar 없음, `isGuest=true`.
+         * 데모 워크스페이스에만 소속되며 야간 리셋으로 정리된다.
+         */
+        fun createGuest(handle: String, displayName: String): User =
+            create(email = null, handle = handle, displayName = displayName, avatarUrl = null, isGuest = true)
 
         fun rehydrate(
             id: Long,
@@ -199,11 +218,12 @@ class User private constructor(
             timezone: String?,
             theme: Theme,
             defaultWorkspaceId: Long?,
+            isGuest: Boolean,
             createdAt: Instant,
             updatedAt: Instant
         ): User = User(
             id, email, handle, displayName, avatarUrl, bio, status, pendingDeletionAt,
-            language, timezone, theme, defaultWorkspaceId,
+            language, timezone, theme, defaultWorkspaceId, isGuest,
             createdAt, updatedAt
         )
 

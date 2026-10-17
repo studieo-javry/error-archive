@@ -74,6 +74,10 @@ class UserEntity(
     var defaultWorkspaceId: Long?,
     // ───────────────────────────────────────────────────────────────
 
+    /** 게스트("로그인 없이 둘러보기") 전용 사용자 표식. 야간 리셋 대상 식별 — 실제 사용자는 항상 false. */
+    @Column(name = "is_guest", nullable = false)
+    var isGuest: Boolean,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 
@@ -94,6 +98,7 @@ class UserEntity(
         timezone = timezone,
         theme = theme,
         defaultWorkspaceId = defaultWorkspaceId,
+        isGuest = isGuest,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -112,6 +117,7 @@ class UserEntity(
             timezone = user.timezone,
             theme = user.theme,
             defaultWorkspaceId = user.defaultWorkspaceId,
+            isGuest = user.isGuest,
             createdAt = user.createdAt,
             updatedAt = user.updatedAt
         )

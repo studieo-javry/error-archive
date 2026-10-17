@@ -41,6 +41,10 @@ class SecurityConfig {
                     // 공개 페이지 + 공개 export(pdf) — 인증 불필요
                     .requestMatchers("/p/**").permitAll()
                     .requestMatchers("/api/v1/publishments/by-slug/**").permitAll()
+                    // 게스트("로그인 없이 둘러보기")는 발행 금지 — 외부(공개 웹) 노출 방어. 발행물 생성 차단만으로
+                    // 이후 publish/unpublish 대상 자체가 없어진다(게스트는 발행물을 만들 수 없음).
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/publishments")
+                    .access(denyGuests())
                     .anyRequest().authenticated()
             }
             .exceptionHandling {
@@ -54,4 +58,16 @@ class SecurityConfig {
         }
         return http.build()
     }
+
+    /**
+     * 인증은 됐지만 `ROLE_GUEST` authority 를 가진 요청은 거부(그 외 인증 사용자는 허용).
+     * 일반 사용자는 roles claim 이 비어 ROLE_* authority 가 없어 통과하고, 게스트 토큰만 걸린다.
+     */
+    private fun denyGuests(): org.springframework.security.authorization.AuthorizationManager<org.springframework.security.web.access.intercept.RequestAuthorizationContext> =
+        org.springframework.security.authorization.AuthorizationManager { authentication, _ ->
+            val auth = authentication.get()
+            val allowed = auth != null && auth.isAuthenticated &&
+                auth.authorities.none { it.authority == "ROLE_GUEST" }
+            org.springframework.security.authorization.AuthorizationDecision(allowed)
+        }
 }

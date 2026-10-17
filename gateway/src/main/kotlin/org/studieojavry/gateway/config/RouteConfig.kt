@@ -94,6 +94,20 @@ class RouteConfig(
             .filter(retry(2))
             .build()
 
+    /**
+     * 게스트("로그인 없이 둘러보기") 토큰 발급 — 무인증 public. per-IP rate limit 로 계정 폭주/남용 방어.
+     * iamApiRoute(`/api/v1/auth` 하위) 의 서브셋이라 더 구체적인 이 라우트를 위에 선언해야 먼저 매칭된다.
+     * 비멱등 create 라 retry 미적용(재시도 시 중복 게스트 생성 방지).
+     */
+    @Bean
+    fun guestLoginRoute(): RouterFunction<ServerResponse> =
+        route("auth-guest")
+            .route(path("/api/v1/auth/guest"), http())
+            .before(uri(downstream.iamApi))
+            .filter(RateLimitFilters.perIp(rateLimiter, "auth-guest", capacity = 5.0, refillPerSec = 0.05))
+            .filter(circuitBreaker("iamApiCB", "/__fallback/iam-api"))
+            .build()
+
     @Bean
     fun iamApiRoute(): RouterFunction<ServerResponse> =
         route("iam-api")

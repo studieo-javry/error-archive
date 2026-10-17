@@ -58,7 +58,20 @@ class DeleteErrorCaseUseCase(
         if (ownerUserId != requesterUserId) {
             throw ErrorCaseDeleteForbiddenException("case owner != requester (caseId=$errorCaseId)")
         }
+        purgeCascade(errorCaseId, ownerUserId)
+    }
 
+    /**
+     * 소유자 검사 **없이** 케이스+자식 cascade 삭제 — 데모 워크스페이스 야간 리셋 등 **시스템 경로 전용**.
+     * (사용자 요청 삭제는 반드시 [invoke] — 소유자 검사 포함.) 케이스가 없으면 no-op.
+     */
+    @Transactional
+    fun purge(errorCaseId: Long) {
+        val ownerUserId = errorCaseRepository.findOwnerUserIdById(errorCaseId) ?: return
+        purgeCascade(errorCaseId, ownerUserId)
+    }
+
+    private fun purgeCascade(errorCaseId: Long, ownerUserId: Long) {
         // 자식 먼저 (단일 삭제 루틴 재사용). 한 건이라도 실패하면 예외 전파 → 케이스 보존 → 재시도.
         attachmentRepository.findAllByErrorCaseId(errorCaseId).forEach { attachmentDeleter.delete(it) }
         snippetRepository.findAllByErrorCaseId(errorCaseId).forEach { snippetDeleter.delete(it) }
@@ -86,7 +99,7 @@ class DeleteErrorCaseUseCase(
         caseWatchlistRepository.deleteAllByCaseId(errorCaseId)
 
         errorCaseRepository.deleteById(errorCaseId)
-        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist) by user=$requesterUserId" }
+        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist) owner=$ownerUserId" }
 
         // 캐시 무효화 — 삭제 후 owner 의 recent-active + my-recent-activities 갱신 필수
         // (삭제된 case 관련 activity 항목이 사라져야 함)

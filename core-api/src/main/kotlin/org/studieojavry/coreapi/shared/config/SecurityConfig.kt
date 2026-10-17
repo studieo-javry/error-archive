@@ -53,6 +53,10 @@ class SecurityConfig {
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // 로컬 테스트 페이지 — 정적 리소스(같은 origin). API 호출은 여전히 X-Test-User-Id 필요.
                     .requestMatchers("/comment-tester.html", "/comment-tester/**").permitAll()
+                    // 게스트("로그인 없이 둘러보기")는 첨부 업로드 금지 — S3 비용/남용 방어.
+                    // (멘션 초대/공개 승격은 워크스페이스 ADMIN 전용이라 게스트 WRITE 역할만으로 이미 차단됨.)
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-attachments")
+                    .access(denyGuests())
                     .anyRequest().authenticated()
             }
             .exceptionHandling {
@@ -68,4 +72,16 @@ class SecurityConfig {
         }
         return http.build()
     }
+
+    /**
+     * 인증은 됐지만 `ROLE_GUEST` authority 를 가진 요청은 거부(그 외 인증 사용자는 허용).
+     * 일반 사용자는 roles claim 이 비어 ROLE_* authority 가 없으므로 통과하고, 게스트 토큰만 걸린다.
+     */
+    private fun denyGuests(): org.springframework.security.authorization.AuthorizationManager<org.springframework.security.web.access.intercept.RequestAuthorizationContext> =
+        org.springframework.security.authorization.AuthorizationManager { authentication, _ ->
+            val auth = authentication.get()
+            val allowed = auth != null && auth.isAuthenticated &&
+                auth.authorities.none { it.authority == "ROLE_GUEST" }
+            org.springframework.security.authorization.AuthorizationDecision(allowed)
+        }
 }

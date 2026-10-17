@@ -51,6 +51,8 @@ class SecurityConfig {
                     "/api/v1/auth/oauth/**",
                     "/api/v1/auth/refresh",
                     "/api/v1/auth/logout",
+                    // 게스트("로그인 없이 둘러보기") — 무인증 토큰 발급. RouteConfig 에서 per-IP rate limit 적용.
+                    "/api/v1/auth/guest",
                     // health probe — local(/actuator) + prod(base-path=/internal/actuator) 둘 다.
                     "/actuator/health", "/actuator/health/**",
                     "/internal/actuator/health", "/internal/actuator/health/**",

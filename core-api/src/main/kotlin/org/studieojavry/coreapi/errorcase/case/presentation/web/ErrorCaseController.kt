@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -32,6 +34,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.CountMyCasesB
 import org.studieojavry.coreapi.errorcase.case.application.usecase.CreateErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.DeleteErrorCaseUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseAccessDeniedException
+import org.studieojavry.coreapi.errorcase.case.application.usecase.IdempotencyConflictException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
@@ -120,6 +123,7 @@ class ErrorCaseController(
                 {"id":15,"title":"NPE in OrderService","status":"OPEN","fingerprint":"a3f1...","snippetMarkerIds":["7a7d35e9"],"attachmentMarkerIds":[],"createdAt":"2026-05-27T19:42:00"}
             """)])]
         ),
+        ApiResponse(responseCode = "200", description = "멱등 재생 — 같은 Idempotency-Key+같은 본문 재요청은 최초 케이스를 그대로 반환(응답 헤더 `Idempotent-Replayed: true`)", content = [Content()]),
         ApiResponse(
             responseCode = "400", description = "잘못된 입력 (검증 실패 / 미존재 marker / 타인 소유 marker / 이미 연결된 marker)",
             content = [Content(examples = [ExampleObject(value = """
@@ -132,14 +136,22 @@ class ErrorCaseController(
             content = [Content(examples = [ExampleObject(value = """
                 {"type":"about:blank","title":"Forbidden","status":403,"detail":"WRITE role required to create an error case in workspace 1 (current=READ)","instance":"/api/v1/error-cases"}
             """)])]
-        )
+        ),
+        ApiResponse(responseCode = "409", description = "Idempotency-Key 를 다른 본문으로 재사용 / 동시 중복 요청 경합", content = [Content()])
     )
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
     fun create(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "멱등 키(선택). 클라이언트 생성 UUID 권장 — 같은 키로 온 재요청(더블클릭·재시도)은 최초 케이스로 재생하여 중복 생성을 막는다. 재시도 시 같은 키를 재사용해야 한다.")
+        @RequestHeader(value = "Idempotency-Key", required = false) idempotencyKey: String?,
         @Valid @RequestBody request: CreateErrorCaseRequest
-    ): CreateErrorCaseResponse {
+    ): ResponseEntity<CreateErrorCaseResponse> {
+        val key = idempotencyKey?.trim()?.takeIf { it.isNotEmpty() }
+        if (key != null && key.length > IDEMPOTENCY_KEY_MAX) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Idempotency-Key too long (max $IDEMPOTENCY_KEY_MAX)")
+        }
+        val requestHash = key?.let { request.canonicalHash() }
+
         val result = try {
             createErrorCaseUseCase.invoke(
                 CreateErrorCaseCommand(
@@ -154,15 +166,19 @@ class ErrorCaseController(
                     tags = request.tags,
                     occurredAt = request.occurredAt,
                     visibility = request.visibility,
-                )
+                ),
+                idempotencyKey = key,
+                requestHash = requestHash,
             )
         } catch (e: WorkspaceAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         } catch (e: ErrorCaseLinkException) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+        } catch (e: IdempotencyConflictException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
         }
 
-        return CreateErrorCaseResponse(
+        val body = CreateErrorCaseResponse(
             id = result.id,
             title = result.title,
             status = result.status,
@@ -171,6 +187,33 @@ class ErrorCaseController(
             attachmentMarkerIds = result.attachmentMarkerIds,
             createdAt = result.createdAt
         )
+        // 멱등 재생이면 200, 신규 생성이면 201. 클라이언트가 구분할 수 있게 헤더도 노출.
+        val status = if (result.replayed) HttpStatus.OK else HttpStatus.CREATED
+        return ResponseEntity.status(status)
+            .header("Idempotent-Replayed", result.replayed.toString())
+            .body(body)
+    }
+
+    /**
+     * 요청 본문의 안정적 해시 — 같은 Idempotency-Key 로 다른 payload 재사용을 탐지.
+     * 필드/배열 순서에 무관하도록 정렬·정규화한 canonical 문자열을 SHA-256.
+     */
+    private fun CreateErrorCaseRequest.canonicalHash(): String {
+        val canonical = listOf(
+            title,
+            project.orEmpty(),
+            paste.orEmpty(),
+            description.orEmpty(),
+            snippetMarkerIds.sorted().joinToString(","),
+            attachmentMarkerIds.sorted().joinToString(","),
+            workspaceId?.toString().orEmpty(),
+            tags?.map { it.trim().lowercase() }?.sorted()?.joinToString(",").orEmpty(),
+            occurredAt?.toString().orEmpty(),
+            visibility.name,
+        ).joinToString(" ")
+        return java.security.MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
     }
 
     @Operation(
@@ -627,5 +670,10 @@ class ErrorCaseController(
         return org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.TagsResponse(
             tag = r.tag, added = false, removed = r.removed, allTags = r.allTags
         )
+    }
+
+    companion object {
+        /** Idempotency-Key 최대 길이 — DB 컬럼(varchar 200)과 일치. */
+        private const val IDEMPOTENCY_KEY_MAX = 200
     }
 }

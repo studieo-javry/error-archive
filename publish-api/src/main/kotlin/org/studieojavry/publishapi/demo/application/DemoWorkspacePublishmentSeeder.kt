@@ -43,6 +43,13 @@ class DemoWorkspacePublishmentSeeder(
         return created
     }
 
+    /**
+     * 게스트 1회용 데모 발행물 정리 — 예약 owner([DEMO_WORKSPACE_OWNER_ID], 워크스페이스분)는 보존.
+     * 부팅/야간 공용. 별도 빈 메서드라 호출부(Bootstrap)에서 트랜잭션이 프록시로 적용된다.
+     */
+    @Transactional
+    fun purgeGuestDemo(): Int = repository.purgeGuestDemo(DEMO_WORKSPACE_OWNER_ID)
+
     private fun buildPublishment(idx: Int, originalCaseId: Long, case: WsCase): CasePublishment {
         // 케이스 생성시각 = 과거로 back-date(최신이 위로 오도록 idx 역순 간격). 스텝은 그 뒤로 누적 전개.
         val caseCreatedAt = LocalDateTime.now()

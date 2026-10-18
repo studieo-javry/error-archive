@@ -34,6 +34,11 @@ class CasePublishment private constructor(
     var sourceState: SourceState,
     /** 발행물 라이프사이클 — LIVE(공개 중) / UNPUBLISHED(내려짐). sourceState 와 직교. */
     var status: PublishmentStatus = PublishmentStatus.LIVE,
+    /**
+     * 데모 환경(둘러보기) 자동 시드 발행물 여부. 실 사용자 발행물은 항상 false.
+     * 라이프사이클(야간 정리)·노출 정책 식별자로만 쓰이고 렌더/권한에는 영향 없음.
+     */
+    val demo: Boolean = false,
 ) {
     init {
         require(title.isNotBlank()) { "title must not be blank" }
@@ -117,6 +122,7 @@ class CasePublishment private constructor(
             visibility: Visibility,
             contentSnapshot: ContentSnapshot,
             options: PublishOptions,
+            demo: Boolean = false,
         ): CasePublishment {
             val now = LocalDateTime.now()
             return CasePublishment(
@@ -129,6 +135,7 @@ class CasePublishment private constructor(
                 version = 1, viewCount = 0, downloadCount = 0,
                 publishedAt = now, updatedAt = now,
                 sourceState = SourceState.LIVE,
+                demo = demo,
             )
         }
 
@@ -140,10 +147,11 @@ class CasePublishment private constructor(
             publishedAt: LocalDateTime, updatedAt: LocalDateTime,
             sourceState: SourceState = SourceState.LIVE,
             status: PublishmentStatus = PublishmentStatus.LIVE,
+            demo: Boolean = false,
         ) = CasePublishment(
             id, slug, ownerUserId, originalCaseId,
             title, summary, visibility, contentSnapshot, options,
-            version, viewCount, downloadCount, publishedAt, updatedAt, sourceState, status,
+            version, viewCount, downloadCount, publishedAt, updatedAt, sourceState, status, demo,
         )
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import java.time.LocalDateTime
@@ -130,6 +131,40 @@ class InternalCasePublishDataController(
     }
 
     @Operation(
+        summary = "내 개인 케이스 id 목록 (데모 발행물 시드용)",
+        description = """
+            caller 가 소유한 **개인 케이스(workspaceId=null)** 의 id 를 최신순 최대 50개 반환.
+            publish-api 가 데모 게스트의 "내 발행물" 라이브러리를 지연 시드할 때, 발행 대상
+            개인 케이스를 찾기 위해 호출한다. caller 본인 소유만 조회하므로 추가 권한 검사 없음.
+            개인 케이스가 없으면 빈 배열.
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공 — 내 개인 케이스 id 배열(없으면 빈 배열)"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+    )
+    @GetMapping("/mine/personal-ids")
+    @Transactional(readOnly = true)
+    fun myPersonalCaseIds(
+        @Parameter(hidden = true) @AuthenticationPrincipal callerUserId: Long?,
+    ): List<Long> {
+        val uid = callerUserId
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing principal")
+        return errorCaseRepository.search(
+            ErrorCaseSearchCriteria(
+                workspaceId = null,
+                ownerUserId = uid,
+                status = null,
+                fingerprint = null,
+                visibility = null,
+                cursorCreatedAt = null,
+                cursorId = null,
+                limit = PERSONAL_IDS_LIMIT,
+            ),
+        ).map { it.id }
+    }
+
+    @Operation(
         summary = "케이스 배치 status (원본 살아있는지 / 마지막 수정 시각)",
         description = """
             publish-api 가 발행물의 원본 case 라이프사이클(삭제/수정)을 lazy 판정할 때 사용.
@@ -153,6 +188,11 @@ class InternalCasePublishDataController(
         val statuses = errorCaseRepository.findSummariesByIds(request.caseIds.toSet())
             .map { CaseStatusItem(id = it.id, updatedAt = it.updatedAt) }
         return CaseStatusResponse(statuses)
+    }
+
+    private companion object {
+        // 개인 케이스 데모 시드는 소수(현재 3건)지만 여유 있게 상한.
+        const val PERSONAL_IDS_LIMIT = 50
     }
 
     // ──────────────────────── DTO ────────────────────────

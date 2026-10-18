@@ -10,6 +10,12 @@ import java.time.LocalDateTime
  */
 interface CoreCaseDataPort {
     fun fetchFullData(caseId: Long): CoreCaseFullData?
+
+    /**
+     * 현재 요청 컨텍스트 사용자(caller)의 개인 케이스(workspaceId=null) id 목록.
+     * 데모 게스트 "내 발행물" 지연 시드에서 발행 대상을 찾는 용도. 실패/없음이면 빈 리스트.
+     */
+    fun fetchMyPersonalCaseIds(): List<Long>
 }
 
 data class CoreCaseFullData(

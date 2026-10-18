@@ -65,6 +65,18 @@ interface CasePublishmentJpaRepository : JpaRepository<CasePublishmentEntity, Lo
     @Query("update CasePublishmentEntity p set p.sourceState = org.studieojavry.publishapi.publishment.domain.SourceState.SOURCE_DELETED where p.id = :id")
     fun markSourceDeleted(@Param("id") id: Long): Int
 
+    // ──────────────────── 데모 시드 라이프사이클 ────────────────────
+    /** 소유자가 데모 발행물을 이미 보유하는지(지연 시더 재호출 시 core 왕복 회피용). */
+    fun existsByOwnerUserIdAndIsDemoTrue(ownerUserId: Long): Boolean
+
+    /**
+     * 게스트 데모 발행물 정리 — `is_demo = true` 이면서 예약 owner(워크스페이스 데모분)가 *아닌* 행 삭제.
+     * 워크스페이스 데모 발행물(정적·멱등)은 보존하고, 1회용 게스트 소유분만 야간에 수거한다.
+     */
+    @Modifying
+    @Query("delete from CasePublishmentEntity p where p.isDemo = true and p.ownerUserId <> :keepOwnerId")
+    fun deleteDemoExceptOwner(@Param("keepOwnerId") keepOwnerId: Long): Int
+
     // ──────────────────── 내 발행물 목록 (keyset 페이징) ────────────────────
     // 필터(vis/q)는 nullable 파라미터로 조건부. keyset: (정렬키, id) < (cursor).
 

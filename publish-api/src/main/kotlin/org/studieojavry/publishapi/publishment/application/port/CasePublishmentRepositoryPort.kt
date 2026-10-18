@@ -88,4 +88,11 @@ interface CasePublishmentRepositoryPort {
 
     /** 소유자 발행물 요약 집계(필터 무관 전체) — visibility별 카운트 + 총 조회수 합계. */
     fun summaryOf(ownerUserId: Long): OwnerPublishmentSummary
+
+    // ──────────────────── 데모 시드 라이프사이클 ────────────────────
+    /** 소유자가 데모 발행물을 이미 보유하는지 — 게스트 지연 시더 재호출 시 조기 skip 용. */
+    fun existsDemoByOwner(ownerUserId: Long): Boolean
+
+    /** 게스트 데모 발행물 정리 — 예약 owner(워크스페이스 데모) 제외 전부 삭제. 삭제 행 수 반환. */
+    fun purgeGuestDemo(keepOwnerUserId: Long): Int
 }

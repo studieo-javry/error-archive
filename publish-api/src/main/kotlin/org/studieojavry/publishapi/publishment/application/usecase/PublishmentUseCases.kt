@@ -63,6 +63,8 @@ data class PublishInput(
     val excludedSnippetMarkerIds: Set<String> = emptySet(),
     val excludedAttachmentMarkerIds: Set<String> = emptySet(),
     val options: PublishOptions = PublishOptions.defaults(),
+    /** 데모 시더 전용 — true 면 발행물에 데모 마커(is_demo) 부착. 일반 발행 요청은 항상 false. */
+    val demo: Boolean = false,
 )
 
 @Service
@@ -126,6 +128,7 @@ class CreatePublishmentUseCase(
             visibility = input.visibility,
             contentSnapshot = snapshot,
             options = input.options,
+            demo = input.demo,
         )
         val saved = repository.save(publishment)
 

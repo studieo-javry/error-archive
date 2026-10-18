@@ -27,6 +27,13 @@ management:
       exposure:
         include: health
 
+# 데모(둘러보기) 발행물 시드 — stg 에서 DEMO_ENABLED=true. 실서비스는 false(모든 진입점 no-op).
+#   · 부팅 시 워크스페이스 데모 발행물 10건 멱등 시드.
+#   · 게스트 "내 발행물" 지연 시드 + 야간 purge(core 리셋 04:10 이후 04:30).
+demo:
+  enabled: ${DEMO_ENABLED:false}
+  purge-cron: ${DEMO_PUBLISHMENT_PURGE_CRON:0 30 4 * * *}
+
 publish:
   core-api:
     # fail-fast: 기본값 없음. local/test yml 에 concrete, stg/prod 는 PUBLISH_CORE_API_BASE_URL env 필수.

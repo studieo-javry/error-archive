@@ -36,7 +36,8 @@ class InternalTokenAuthenticationFilter(
         filterChain: FilterChain,
     ) {
         val token = request.getHeader(HEADER_NAME)
-        logger.info { "internal token header = $token" }
+        // 토큰 원문은 민감정보 — 로그에 남기지 않는다. 존재 여부/길이만, 그것도 DEBUG 로.
+        logger.debug { "internal token header ${if (token.isNullOrBlank()) "absent" else "present(len=${token.length})"}" }
         if (token.isNullOrBlank()) {
             filterChain.doFilter(request, response)
             return

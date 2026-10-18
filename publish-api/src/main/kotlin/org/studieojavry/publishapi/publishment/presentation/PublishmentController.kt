@@ -26,6 +26,8 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.security.core.Authentication
+import org.studieojavry.publishapi.demo.application.DemoGuestPublishmentSeeder
 import org.studieojavry.publishapi.publishment.application.port.CoreCaseAccessDeniedException
 import org.studieojavry.publishapi.publishment.application.port.CoreCaseNotFoundException
 import org.studieojavry.publishapi.publishment.application.port.MyPublishmentSort
@@ -78,6 +80,7 @@ class PublishmentController(
     private val recordDownloadUseCase: RecordPublishmentDownloadUseCase,
     private val pageProps: PagePublicProperties,
     private val attachmentPresigner: org.studieojavry.publishapi.publishment.infrastructure.attachment.AttachmentPresigner,
+    private val demoGuestPublishmentSeeder: DemoGuestPublishmentSeeder,
 ) {
     /** 첨부 objectKey → presigned inline URL (미리보기/MD 렌더 시점 발급). */
     /** preview(transient, slug 無)용 presigned inline URL — 발행물은 안정 라우트 사용. */
@@ -210,6 +213,7 @@ class PublishmentController(
     @GetMapping("/me")
     fun listMine(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long?,
+        @Parameter(hidden = true) authentication: Authentication?,
         @Parameter(description = "검색어 — 발행 title 부분매치") @RequestParam(required = false) q: String?,
         @Parameter(description = "PUBLIC/UNLISTED") @RequestParam(required = false) visibility: String?,
         @Parameter(description = "정렬 · published(default)/views") @RequestParam(required = false, defaultValue = "published") sort: String,
@@ -217,6 +221,10 @@ class PublishmentController(
         @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") limit: Int,
     ): PublishmentListResponse {
         val uid = userId ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing principal")
+        // 데모 게스트가 발행물 라이브러리를 처음 열면, 본인 개인 케이스를 발행물로 지연 시드(best-effort).
+        if (isGuest(authentication)) {
+            runCatching { demoGuestPublishmentSeeder.ensureSeededForGuest(uid) }
+        }
         val vis = visibility?.takeIf { it.isNotBlank() }?.let {
             runCatching { Visibility.valueOf(it.uppercase()) }
                 .getOrElse { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid visibility: $visibility") }
@@ -369,6 +377,9 @@ class PublishmentController(
             .header(HttpHeaders.LOCATION, "/api/v1/publishments/by-slug/${e.existingSlug}")
             .body(pd)
     }
+
+    private fun isGuest(authentication: Authentication?): Boolean =
+        authentication?.authorities?.any { it.authority == "ROLE_GUEST" } ?: false
 
     private companion object {
         const val IDEMPOTENCY_KEY_MAX = 200

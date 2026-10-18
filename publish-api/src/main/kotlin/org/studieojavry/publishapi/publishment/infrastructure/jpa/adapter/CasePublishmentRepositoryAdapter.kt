@@ -40,6 +40,7 @@ class CasePublishmentRepositoryAdapter(
             updatedAt = p.updatedAt,
             sourceState = p.sourceState,
             status = p.status,
+            isDemo = p.demo,
         )
         val saved = jpa.save(entity)
         return saved.toDomain()
@@ -138,6 +139,12 @@ class CasePublishmentRepositoryAdapter(
         )
     }
 
+    override fun existsDemoByOwner(ownerUserId: Long): Boolean =
+        jpa.existsByOwnerUserIdAndIsDemoTrue(ownerUserId)
+
+    override fun purgeGuestDemo(keepOwnerUserId: Long): Int =
+        jpa.deleteDemoExceptOwner(keepOwnerUserId)
+
     private fun CasePublishmentEntity.toDomain(): CasePublishment = CasePublishment.rehydrate(
         id = id!!, slug = slug, ownerUserId = ownerUserId,
         originalCaseId = originalCaseId,
@@ -147,6 +154,6 @@ class CasePublishmentRepositoryAdapter(
         options = objectMapper.readValue(optionsJson, PublishOptions::class.java),
         version = version, viewCount = viewCount, downloadCount = downloadCount,
         publishedAt = publishedAt, updatedAt = updatedAt,
-        sourceState = sourceState, status = status,
+        sourceState = sourceState, status = status, demo = isDemo,
     )
 }

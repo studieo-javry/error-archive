@@ -28,6 +28,8 @@ import java.time.LocalDateTime
     indexes = [
         Index(name = "ix_case_publishment_owner", columnList = "owner_user_id"),
         Index(name = "ix_case_publishment_visibility_published", columnList = "visibility, published_at DESC"),
+        // 데모 시드 행 식별 — 야간 purge(게스트분) 가 풀스캔하지 않도록. (Flyway 부분 인덱스와 동치, local ddl-auto 용)
+        Index(name = "ix_case_publishment_demo", columnList = "is_demo, owner_user_id"),
     ]
 )
 class CasePublishmentEntity(
@@ -85,4 +87,8 @@ class CasePublishmentEntity(
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     var status: PublishmentStatus = PublishmentStatus.LIVE,
+
+    /** 데모 환경 자동 시드 행 여부(실데이터 false). 라이프사이클 정리(야간 purge) 식별자. */
+    @Column(name = "is_demo", nullable = false)
+    var isDemo: Boolean = false,
 )

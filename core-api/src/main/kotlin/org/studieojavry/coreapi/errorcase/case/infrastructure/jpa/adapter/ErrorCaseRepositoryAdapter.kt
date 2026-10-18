@@ -41,6 +41,9 @@ class ErrorCaseRepositoryAdapter(
     override fun findOwnerUserIdById(errorCaseId: Long): Long? =
         errorCaseRepo.findOwnerUserIdById(errorCaseId)
 
+    override fun findPersonalCaseIds(limit: Int): List<Long> =
+        errorCaseRepo.findIdsWithNullWorkspace(PageRequest.of(0, limit))
+
     override fun deleteById(errorCaseId: Long) = errorCaseRepo.deleteById(errorCaseId)
 
     override fun findRecentByOwner(ownerUserId: Long, limit: Int): List<ErrorCaseSummary> {

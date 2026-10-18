@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.security.core.Authentication
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
@@ -31,6 +32,7 @@ import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.Wat
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.WatchlistItemResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.WatchlistListResponse
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
+import org.studieojavry.coreapi.demo.application.DemoGuestPersonalSeeder
 
 @Tag(
     name = "users-me",
@@ -45,7 +47,11 @@ class MeController(
     private val getMyWatchlistFeedUseCase: GetMyWatchlistFeedUseCase,
     private val getMyFollowingFeedUseCase: GetMyFollowingFeedUseCase,
     private val getSuggestedFolloweesUseCase: GetSuggestedFolloweesUseCase,
+    private val demoGuestPersonalSeeder: DemoGuestPersonalSeeder,
 ) {
+
+    private fun isGuest(authentication: Authentication): Boolean =
+        authentication.authorities.any { it.authority == "ROLE_GUEST" }
 
     @Operation(
         summary = "내 최근 활동 케이스 목록",
@@ -72,11 +78,18 @@ class MeController(
     @GetMapping("/recent-active-cases")
     fun recentActiveCases(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(hidden = true) authentication: Authentication,
         @Parameter(description = "활동 기준 윈도우 (일). 기본 7.")
         @RequestParam(defaultValue = "7") windowDays: Int,
         @Parameter(description = "응답 카드 수. 1~20. 기본 5.")
         @RequestParam(defaultValue = "5") limit: Int,
     ): RecentActiveCasesListResponse {
+        // 게스트가 '개인/Public 홈' 피드를 처음 열면 그 게스트 소유 개인 케이스를 지연 생성(멱등, 데모 전용).
+        // recent-active-cases 단일 지점에서만 트리거해 두 홈 엔드포인트 동시 호출 시 중복 생성을 피한다.
+        // 실패해도 피드 조회는 계속되도록 삼킨다(베스트에포트).
+        if (isGuest(authentication)) {
+            runCatching { demoGuestPersonalSeeder.ensureSeededForGuest(userId) }
+        }
         val result = getMyRecentActiveCasesUseCase.invoke(
             GetMyRecentActiveCasesUseCase.Input(
                 userId = userId,

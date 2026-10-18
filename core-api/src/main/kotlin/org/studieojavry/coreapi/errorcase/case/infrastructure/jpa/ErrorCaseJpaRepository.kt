@@ -12,6 +12,10 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
     @Query("SELECT e.ownerUserId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findOwnerUserIdById(@Param("id") id: Long): Long?
 
+    /** workspace 없는(개인) 케이스 id — 데모 게스트 개인 케이스 정리(purge)용. id ASC, limit = pageable.size. */
+    @Query("SELECT e.id FROM ErrorCaseEntity e WHERE e.meta.workspaceId IS NULL ORDER BY e.id ASC")
+    fun findIdsWithNullWorkspace(pageable: Pageable): List<Long>
+
     fun findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
         ownerUserId: Long,
         pageable: Pageable,

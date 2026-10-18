@@ -43,7 +43,7 @@ class DemoGuestPublishmentSeeder(
         val caseIds = coreCaseData.fetchMyPersonalCaseIds()
         if (caseIds.isEmpty()) return
 
-        caseIds.forEachIndexed { idx, caseId ->
+        caseIds.forEach { caseId ->
             // 각 발행은 자체 트랜잭션(CreatePublishmentUseCase @Transactional). 개별 실패는 격리.
             runCatching {
                 createPublishment.invoke(
@@ -54,8 +54,9 @@ class DemoGuestPublishmentSeeder(
                         caseId = caseId,
                         title = null,
                         summary = null,
-                        // 3건 중 2 PUBLIC · 1 UNLISTED → /me 요약 배지(public/unlisted)를 그럴듯하게 채움.
-                        visibility = if (idx % 3 == 2) Visibility.UNLISTED else Visibility.PUBLIC,
+                        // 게스트 개인 발행물은 전부 UNLISTED — "내 발행물"엔 뜨되(상태 무관 3건 보장),
+                        // 공개 Explore(PUBLIC)엔 노출하지 않는다(게스트 개인 케이스가 공개 인덱스를 어지럽히지 않게).
+                        visibility = Visibility.UNLISTED,
                         includeStepIds = null,
                         includeSolutionIds = null,
                         demo = true,

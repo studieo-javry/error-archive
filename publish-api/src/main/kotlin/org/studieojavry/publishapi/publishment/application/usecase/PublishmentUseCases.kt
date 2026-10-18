@@ -24,8 +24,11 @@ import java.time.Instant
 class PublishmentNotFoundException(message: String) : RuntimeException(message)
 class PublishmentForbiddenException(message: String) : RuntimeException(message)
 
-/** 공개 발행물 허용 원본 상태 — core ErrorCaseStatus.RESOLVED.name. 해결된 케이스만 발행. */
-private const val RESOLVED_STATUS = "RESOLVED"
+/**
+ * 공개(PUBLIC) 발행 허용 원본 상태 — core ErrorCaseStatus 중 "완료" 상태.
+ * UNLISTED(링크 공유)는 상태 무관 허용(진행 중 케이스 공유 가능). PUBLIC 만 공개 인덱스 품질을 위해 제한.
+ */
+private val PUBLIC_PUBLISHABLE_STATUSES = setOf("RESOLVED", "CLOSED")
 
 /**
  * 발행 콘텐츠 규칙 위반 — 예: 선별된 step 이 0개.
@@ -44,8 +47,8 @@ class IdempotencyConflictException(message: String) : RuntimeException(message)
 class PublishmentSourceDeletedException(message: String) : RuntimeException(message)
 
 /**
- * 미해결 케이스 발행 시도 → 422. 공개 발행물은 "해결된(RESOLVED) 케이스"만 — IN_PROGRESS/OPEN/DRAFT 등은 불가.
- * (공개 목록에 미해결 케이스가 노출되던 이슈 차단. 원본 case.status 기준.)
+ * 미해결 케이스를 **공개(PUBLIC)** 로 발행 시도 → 422. 공개 인덱스는 해결(RESOLVED/CLOSED) 케이스만.
+ * 진행 중 케이스를 공유하려면 UNLISTED(링크 공유)로는 발행 가능. (원본 case.status 기준.)
  */
 class PublishmentNotResolvedException(message: String) : RuntimeException(message)
 
@@ -118,10 +121,11 @@ class CreatePublishmentUseCase(
         val full = coreCaseData.fetchFullData(input.caseId)
             ?: throw CoreCaseNotFoundException("case not found: ${input.caseId}")
 
-        // 공개 발행물은 해결된 케이스만 — 미해결(IN_PROGRESS/OPEN/DRAFT/CLOSED) 은 발행 불가.
-        if (full.status != RESOLVED_STATUS) {
+        // 공개(PUBLIC) 발행은 해결(RESOLVED/CLOSED) 케이스만 — 미해결은 UNLISTED 로만.
+        if (input.visibility == Visibility.PUBLIC && full.status !in PUBLIC_PUBLISHABLE_STATUSES) {
             throw PublishmentNotResolvedException(
-                "해결된(RESOLVED) 케이스만 발행할 수 있습니다 (현재 상태: ${full.status}).",
+                "공개(PUBLIC) 발행은 해결된(RESOLVED/CLOSED) 케이스만 가능합니다 " +
+                    "(현재 상태: ${full.status}). 진행 중 케이스는 UNLISTED 로 발행하세요.",
             )
         }
 
@@ -333,10 +337,11 @@ class RepublishPublishmentUseCase(
             repository.markSourceDeleted(existing.id!!)
             throw PublishmentSourceDeletedException("원본 케이스가 삭제되어 재발행할 수 없습니다")
         } ?: throw CoreCaseNotFoundException("original case not found: ${existing.originalCaseId}")
-        // 재발행도 해결된 케이스만 — 원본이 미해결로 되돌아갔으면 재발행 불가.
-        if (full.status != RESOLVED_STATUS) {
+        // 재발행도 공개(PUBLIC)면 해결 케이스만 — 원본이 미해결로 되돌아갔고 PUBLIC 유지 시 차단.
+        if (input.visibility == Visibility.PUBLIC && full.status !in PUBLIC_PUBLISHABLE_STATUSES) {
             throw PublishmentNotResolvedException(
-                "해결된(RESOLVED) 케이스만 발행할 수 있습니다 (현재 상태: ${full.status}).",
+                "공개(PUBLIC) 발행은 해결된(RESOLVED/CLOSED) 케이스만 가능합니다 " +
+                    "(현재 상태: ${full.status}). 진행 중 케이스는 UNLISTED 로 발행하세요.",
             )
         }
         val snapshot = ContentSnapshotBuilder.build(

@@ -120,7 +120,7 @@ class PublishmentController(
         ApiResponse(responseCode = "403", description = "케이스 owner 아님 (core-api 에서)", content = [Content()]),
         ApiResponse(responseCode = "404", description = "원본 케이스 없음", content = [Content()]),
         ApiResponse(responseCode = "409", description = "Idempotency-Key 재사용(다른 본문) / 동시 중복 요청 / **이미 발행된 케이스**(케이스당 1 canonical — message 에 기존 slug)", content = [Content()]),
-        ApiResponse(responseCode = "422", description = "발행 정책 위반 — 선별된 step 0개 / **원본 케이스가 미해결(RESOLVED 아님)**", content = [Content()]),
+        ApiResponse(responseCode = "422", description = "발행 정책 위반 — 선별된 step 0개 / **공개(PUBLIC) 발행인데 원본이 미해결(RESOLVED·CLOSED 아님)** (UNLISTED 는 상태 무관 허용)", content = [Content()]),
     )
     @PostMapping
     fun publish(

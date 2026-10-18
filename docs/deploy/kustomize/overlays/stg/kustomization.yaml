@@ -16,6 +16,8 @@ resources:
   # 분산 캐시(workspace-role·iam-user-profile + 대시보드) 공유. 같은 apps ns 의 redis Service.
   # 게스트 데모 콘텐츠 wipe+reseed(야간) 활성. 데모 WS/봇 ID 는 iam /internal/demo/identity 로 조회.
   # SSE 노드 간 pub/sub fan-out 용. 같은 apps ns 의 redis Service.
+  # 데모(둘러보기) 발행물 시드 on — 워크스페이스 10건 부팅 시드 + 게스트 /me 지연 시드 + 야간 purge.
+  # core-api/iam-api 와 동일. 실서비스 overlay 에선 넣지 않는다(기본 false).
 configMapGenerator:
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
@@ -37,8 +39,6 @@ configMapGenerator:
   name: insight-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
-  # 데모(둘러보기) 발행물 시드 on — 워크스페이스 10건 부팅 시드 + 게스트 /me 지연 시드 + 야간 purge.
-  # core-api/iam-api 와 동일. 실서비스 overlay 에선 넣지 않는다(기본 false).
   - DEMO_ENABLED=true
   name: publish-api-env
 generatorOptions:
@@ -60,4 +60,4 @@ images:
   newTag: 98f10ff7209e5c26ea03523ad98399a20fda86b0
 - name: publish-api
   newName: ghcr.io/studieo-javry/publish-api
-  newTag: ab8d0ecee9269ba76d694a0c4b8d1e7bbcbdc875
+  newTag: de5d395e6e0ccbd37052933f10238ba08e75084e

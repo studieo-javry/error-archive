@@ -37,6 +37,9 @@ configMapGenerator:
   name: insight-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  # 데모(둘러보기) 발행물 시드 on — 워크스페이스 10건 부팅 시드 + 게스트 /me 지연 시드 + 야간 purge.
+  # core-api/iam-api 와 동일. 실서비스 overlay 에선 넣지 않는다(기본 false).
+  - DEMO_ENABLED=true
   name: publish-api-env
 generatorOptions:
   disableNameSuffixHash: true

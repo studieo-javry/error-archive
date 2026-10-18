@@ -75,3 +75,38 @@ data class PublishmentListResponse(
     val hasNext: Boolean,
     val totalCount: Long?,
 )
+
+/**
+ * Explore(공개 목록) 카드 항목 — 누구나 볼 수 있는 PUBLIC+LIVE 발행물. 소유자 전용 필드(sourceStale 등) 없음.
+ * 카드 → 공개 페이지 `/p/{slug}` 링크. 본문(content)은 제외(미리보기만).
+ */
+data class PublicPublishmentItemResponse(
+    val slug: String,
+    val title: String,
+    val summary: String?,
+    val descriptionPreview: String?,
+    val author: String?,
+    val tags: List<String>,
+    val stepCount: Int,
+    val solutionCount: Int,
+    val viewCount: Long,
+    val publishedAt: LocalDateTime,
+    val publicUrl: String,
+) {
+    companion object {
+        fun from(p: org.studieojavry.publishapi.publishment.domain.CasePublishment, publicBaseUrl: String) =
+            PublicPublishmentItemResponse(
+                slug = p.slug,
+                title = p.title,
+                summary = p.summary,
+                descriptionPreview = ContentPreview.of(p.contentSnapshot.description),
+                author = p.options.authorDisplayName,
+                tags = p.contentSnapshot.tags,
+                stepCount = p.contentSnapshot.steps.size,
+                solutionCount = p.contentSnapshot.solutions.size,
+                viewCount = p.viewCount,
+                publishedAt = p.publishedAt,
+                publicUrl = "$publicBaseUrl/p/${p.slug}",
+            )
+    }
+}

@@ -8,6 +8,7 @@ import org.studieojavry.publishapi.publishment.application.port.CoreCaseDataPort
 import org.studieojavry.publishapi.publishment.application.usecase.CreatePublishmentUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.PublishInput
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentAlreadyExistsException
+import org.studieojavry.publishapi.publishment.application.usecase.PublishmentNotResolvedException
 import org.studieojavry.publishapi.publishment.domain.Visibility
 
 /**
@@ -61,8 +62,8 @@ class DemoGuestPublishmentSeeder(
                     ),
                 )
             }.onFailure { e ->
-                // 이미 발행된 케이스(멱등 경쟁)는 정상 — 그 외만 경고.
-                if (e !is PublishmentAlreadyExistsException) {
+                // 이미 발행됨(멱등 경쟁) / 미해결 케이스(발행 정책상 skip) 는 정상 — 그 외만 경고.
+                if (e !is PublishmentAlreadyExistsException && e !is PublishmentNotResolvedException) {
                     log.warn(e) { "demo guest publishment seed failed (guest=$guestUserId, case=$caseId)" }
                 }
             }

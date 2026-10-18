@@ -24,6 +24,9 @@ import java.time.Instant
 class PublishmentNotFoundException(message: String) : RuntimeException(message)
 class PublishmentForbiddenException(message: String) : RuntimeException(message)
 
+/** 공개 발행물 허용 원본 상태 — core ErrorCaseStatus.RESOLVED.name. 해결된 케이스만 발행. */
+private const val RESOLVED_STATUS = "RESOLVED"
+
 /**
  * 발행 콘텐츠 규칙 위반 — 예: 선별된 step 이 0개.
  * 요청 자체는 well-formed 이나 발행 정책을 만족하지 못하는 경우 → 422 로 매핑.
@@ -39,6 +42,12 @@ class IdempotencyConflictException(message: String) : RuntimeException(message)
  * 원본 case 가 삭제되어 재발행 불가 → 409. (발행물 자체는 유지되나 새 스냅샷을 못 만듦.)
  */
 class PublishmentSourceDeletedException(message: String) : RuntimeException(message)
+
+/**
+ * 미해결 케이스 발행 시도 → 422. 공개 발행물은 "해결된(RESOLVED) 케이스"만 — IN_PROGRESS/OPEN/DRAFT 등은 불가.
+ * (공개 목록에 미해결 케이스가 노출되던 이슈 차단. 원본 case.status 기준.)
+ */
+class PublishmentNotResolvedException(message: String) : RuntimeException(message)
 
 /**
  * 케이스당 1 canonical 발행물 정책 — 이미 발행된 케이스를 (새 요청으로) 다시 발행 → 409.
@@ -108,6 +117,13 @@ class CreatePublishmentUseCase(
 
         val full = coreCaseData.fetchFullData(input.caseId)
             ?: throw CoreCaseNotFoundException("case not found: ${input.caseId}")
+
+        // 공개 발행물은 해결된 케이스만 — 미해결(IN_PROGRESS/OPEN/DRAFT/CLOSED) 은 발행 불가.
+        if (full.status != RESOLVED_STATUS) {
+            throw PublishmentNotResolvedException(
+                "해결된(RESOLVED) 케이스만 발행할 수 있습니다 (현재 상태: ${full.status}).",
+            )
+        }
 
         val snapshot = ContentSnapshotBuilder.build(
             full = full,
@@ -317,6 +333,12 @@ class RepublishPublishmentUseCase(
             repository.markSourceDeleted(existing.id!!)
             throw PublishmentSourceDeletedException("원본 케이스가 삭제되어 재발행할 수 없습니다")
         } ?: throw CoreCaseNotFoundException("original case not found: ${existing.originalCaseId}")
+        // 재발행도 해결된 케이스만 — 원본이 미해결로 되돌아갔으면 재발행 불가.
+        if (full.status != RESOLVED_STATUS) {
+            throw PublishmentNotResolvedException(
+                "해결된(RESOLVED) 케이스만 발행할 수 있습니다 (현재 상태: ${full.status}).",
+            )
+        }
         val snapshot = ContentSnapshotBuilder.build(
             full, input.includeStepIds, input.includeSolutionIds,
             input.excludedSnippetMarkerIds, input.excludedAttachmentMarkerIds,

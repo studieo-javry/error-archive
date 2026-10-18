@@ -454,10 +454,14 @@ object HtmlRenderer {
     private fun esc(s: String?): String = (s ?: "").replace("&", "&amp;").replace("<", "&lt;")
         .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
 
-    /** 인라인: esc → `code` 를 <code> 로 → 개행 <br/>. 블록 요소 없음(<p>/<div> 내부 전용). */
+    /**
+     * 인라인: esc → `code` → `**bold**` → 개행 <br/>. 블록 요소 없음(<p>/<div> 내부 전용).
+     * 볼드는 코드 치환 뒤에 적용(코드 안의 `**` 는 보존). `.+?` 라 줄바꿈은 안 넘는다(인라인 한정).
+     */
     private fun inlineMd(s: String): String =
         esc(s)
             .replace(Regex("`([^`\\n]+)`")) { "<code>${it.groupValues[1]}</code>" }
+            .replace(Regex("\\*\\*(.+?)\\*\\*")) { "<strong>${it.groupValues[1]}</strong>" }
             .replace("\n", "<br/>")
 
     /**
@@ -499,6 +503,16 @@ object HtmlRenderer {
                         i++
                     }
                     sb.appendLine("<blockquote>${inlineMd(q.toString())}</blockquote>")
+                }
+                // 헤딩(#/##/###) — 케이스 본문이 쓰는 마크다운 헤딩을 프로즈 헤딩으로. `# ` 뒤 내용 필수.
+                line.trimStart().matches(Regex("^#{1,3}\\s+\\S.*")) -> {
+                    flushPara()
+                    val t = line.trimStart()
+                    val level = t.takeWhile { it == '#' }.length
+                    val text = t.dropWhile { it == '#' }.trim()
+                    val tag = if (level <= 1) "h3" else "h4"
+                    sb.appendLine("<$tag class=\"ph\">${inlineMd(text)}</$tag>")
+                    i++
                 }
                 line.isBlank() -> { flushPara(); i++ }
                 else -> { if (para.isNotEmpty()) para.append("\n"); para.append(line); i++ }
@@ -616,6 +630,12 @@ object HtmlRenderer {
         /* 인용 — GitHub md 스타일(본문 폰트 + 회색 톤) */
         blockquote{margin:26px 0;padding:2px 0 2px 18px;border-left:3px solid #dcd8d1;
                   font-family:var(--body);font-weight:400;font-size:16px;line-height:1.65;color:#6f6a63}
+
+        /* 프로즈 헤딩(#/##/### — 케이스 본문 마크다운) */
+        h3.ph{font-family:var(--serif-disp);font-weight:600;font-size:19px;line-height:1.35;letter-spacing:-.01em;color:var(--ink);margin:30px 0 10px}
+        h4.ph{font-family:var(--body);font-weight:700;font-size:15px;line-height:1.4;color:var(--ink);margin:22px 0 8px}
+        article > h3.ph:first-child,article > h4.ph:first-child{margin-top:0}
+        .st h3.ph,.st h4.ph{margin-top:16px}
 
         /* The Journey — K3 에디토리얼 타임라인 (좌측 상태 컬럼 + 아이콘 dot + 얇은 rail) */
         .tl{position:relative;margin-top:6px}

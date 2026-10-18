@@ -36,9 +36,12 @@ class DemoResetService(
             return ResetResult(ran = false, wiped = 0, seeded = 0)
         }
         val wiped = wipeWorkspace(id.workspaceId)
+        // 게스트가 지연 생성한 개인(workspaceId=null) 케이스도 정리 — 데모 환경에선 개인 케이스=게스트 산물.
+        // (iam 의 야간 deleteAllGuests 와 짝. 워크스페이스 wipe 로는 안 지워지므로 별도 purge.)
+        val wipedPersonal = wipePersonalCases()
         val seeded = seeder.seedFresh(id.workspaceId, id.botUserId)
-        log.info { "demo reset: wiped=$wiped seeded=$seeded (ws=${id.workspaceId})" }
-        return ResetResult(ran = true, wiped = wiped, seeded = seeded)
+        log.info { "demo reset: wiped=$wiped wipedPersonal=$wipedPersonal seeded=$seeded (ws=${id.workspaceId})" }
+        return ResetResult(ran = true, wiped = wiped + wipedPersonal, seeded = seeded)
     }
 
     /**
@@ -86,6 +89,17 @@ class DemoResetService(
             )
             if (batch.isEmpty()) return total
             batch.forEach { deleteErrorCaseUseCase.purge(it.id); total++ }
+        }
+        return total
+    }
+
+    /** workspace 없는(개인) 케이스 전량 purge(cascade). 게스트 지연 생성분 정리. */
+    private fun wipePersonalCases(): Int {
+        var total = 0
+        repeat(MAX_WIPE_BATCHES) {
+            val ids = errorCaseRepository.findPersonalCaseIds(WIPE_BATCH)
+            if (ids.isEmpty()) return total
+            ids.forEach { deleteErrorCaseUseCase.purge(it); total++ }
         }
         return total
     }

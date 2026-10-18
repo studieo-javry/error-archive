@@ -27,6 +27,9 @@ interface ErrorCaseRepositoryPort {
 
     fun findOwnerUserIdById(errorCaseId: Long): Long?
 
+    /** workspace 없는(개인) 케이스 id 를 최대 limit 개. 데모 게스트 개인 케이스 정리(purge)용. */
+    fun findPersonalCaseIds(limit: Int): List<Long>
+
     fun deleteById(errorCaseId: Long)
 
     // ── Recent Activity (home dashboard) ──────────────────────

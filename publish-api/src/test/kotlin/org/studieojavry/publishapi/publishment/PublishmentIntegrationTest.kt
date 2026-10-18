@@ -69,7 +69,7 @@ class PublishmentIntegrationTest {
 
     private fun fullDataFor(caseId: Long) = CoreCaseFullData(
         id = caseId, ownerUserId = ownerId, title = "케이스 $caseId", description = "본문",
-        tags = listOf("kotlin"), status = "OPEN", visibility = "PUBLIC",
+        tags = listOf("kotlin"), status = "RESOLVED", visibility = "PUBLIC",  // 발행은 해결된 케이스만 허용
         createdAt = LocalDateTime.of(2026, 1, 1, 9, 0), occurredAt = null, snapshot = null,
         steps = listOf(
             CoreCaseFullData.StepData(

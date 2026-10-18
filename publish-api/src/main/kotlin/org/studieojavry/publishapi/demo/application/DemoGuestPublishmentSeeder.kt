@@ -8,6 +8,7 @@ import org.studieojavry.publishapi.publishment.application.port.CoreCaseDataPort
 import org.studieojavry.publishapi.publishment.application.usecase.CreatePublishmentUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.PublishInput
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentAlreadyExistsException
+import org.studieojavry.publishapi.publishment.application.usecase.PublishmentNotResolvedException
 import org.studieojavry.publishapi.publishment.domain.Visibility
 
 /**
@@ -42,7 +43,7 @@ class DemoGuestPublishmentSeeder(
         val caseIds = coreCaseData.fetchMyPersonalCaseIds()
         if (caseIds.isEmpty()) return
 
-        caseIds.forEachIndexed { idx, caseId ->
+        caseIds.forEach { caseId ->
             // 각 발행은 자체 트랜잭션(CreatePublishmentUseCase @Transactional). 개별 실패는 격리.
             runCatching {
                 createPublishment.invoke(
@@ -53,16 +54,17 @@ class DemoGuestPublishmentSeeder(
                         caseId = caseId,
                         title = null,
                         summary = null,
-                        // 3건 중 2 PUBLIC · 1 UNLISTED → /me 요약 배지(public/unlisted)를 그럴듯하게 채움.
-                        visibility = if (idx % 3 == 2) Visibility.UNLISTED else Visibility.PUBLIC,
+                        // 게스트 개인 발행물은 전부 UNLISTED — "내 발행물"엔 뜨되(상태 무관 3건 보장),
+                        // 공개 Explore(PUBLIC)엔 노출하지 않는다(게스트 개인 케이스가 공개 인덱스를 어지럽히지 않게).
+                        visibility = Visibility.UNLISTED,
                         includeStepIds = null,
                         includeSolutionIds = null,
                         demo = true,
                     ),
                 )
             }.onFailure { e ->
-                // 이미 발행된 케이스(멱등 경쟁)는 정상 — 그 외만 경고.
-                if (e !is PublishmentAlreadyExistsException) {
+                // 이미 발행됨(멱등 경쟁) / 미해결 케이스(발행 정책상 skip) 는 정상 — 그 외만 경고.
+                if (e !is PublishmentAlreadyExistsException && e !is PublishmentNotResolvedException) {
                     log.warn(e) { "demo guest publishment seed failed (guest=$guestUserId, case=$caseId)" }
                 }
             }

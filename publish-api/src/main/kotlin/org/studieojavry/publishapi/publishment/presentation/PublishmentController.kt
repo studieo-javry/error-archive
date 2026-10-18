@@ -36,6 +36,7 @@ import org.studieojavry.publishapi.publishment.application.usecase.DeletePublish
 import org.studieojavry.publishapi.publishment.application.usecase.GetMyPublishmentSummaryUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.GetMyPublishmentByCaseUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.ListMyPublishmentsUseCase
+import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.HtmlRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.IdempotencyConflictException
 import org.studieojavry.publishapi.publishment.application.usecase.MarkdownRenderer
@@ -44,6 +45,7 @@ import org.studieojavry.publishapi.publishment.application.usecase.PublishmentAl
 import org.studieojavry.publishapi.publishment.application.usecase.RecordPublishmentDownloadUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.PublishInput
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentContentException
+import org.studieojavry.publishapi.publishment.application.usecase.PublishmentNotResolvedException
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentForbiddenException
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentNotFoundException
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentGoneException
@@ -58,6 +60,7 @@ import org.studieojavry.publishapi.publishment.domain.Visibility
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishRequest
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentListItemResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentListResponse
+import org.studieojavry.publishapi.publishment.presentation.dto.PublicPublishmentItemResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentSummaryResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.UpdateMetadataRequest
@@ -75,6 +78,7 @@ class PublishmentController(
     private val deletePublishmentUseCase: DeletePublishmentUseCase,
     private val getByCaseUseCase: GetMyPublishmentByCaseUseCase,
     private val listMyUseCase: ListMyPublishmentsUseCase,
+    private val listPublicUseCase: ListPublicPublishmentsUseCase,
     private val summaryUseCase: GetMyPublishmentSummaryUseCase,
     private val previewPublishmentUseCase: PreviewPublishmentUseCase,
     private val recordDownloadUseCase: RecordPublishmentDownloadUseCase,
@@ -116,7 +120,7 @@ class PublishmentController(
         ApiResponse(responseCode = "403", description = "케이스 owner 아님 (core-api 에서)", content = [Content()]),
         ApiResponse(responseCode = "404", description = "원본 케이스 없음", content = [Content()]),
         ApiResponse(responseCode = "409", description = "Idempotency-Key 재사용(다른 본문) / 동시 중복 요청 / **이미 발행된 케이스**(케이스당 1 canonical — message 에 기존 slug)", content = [Content()]),
-        ApiResponse(responseCode = "422", description = "발행 정책 위반 — 선별된 step 0개", content = [Content()]),
+        ApiResponse(responseCode = "422", description = "발행 정책 위반 — 선별된 step 0개 / **공개(PUBLIC) 발행인데 원본이 미해결(RESOLVED·CLOSED 아님)** (UNLISTED 는 상태 무관 허용)", content = [Content()]),
     )
     @PostMapping
     fun publish(
@@ -139,6 +143,8 @@ class PublishmentController(
         } catch (e: CoreCaseAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         } catch (e: PublishmentContentException) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
+        } catch (e: PublishmentNotResolvedException) {
             throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
         } catch (e: IdempotencyConflictException) {
             throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
@@ -245,6 +251,26 @@ class PublishmentController(
             hasNext = result.hasNext,
             totalCount = result.totalCount,
         )
+    }
+
+    @Operation(
+        summary = "공개 발행물 목록 (Explore)",
+        description = """
+            누구나 볼 수 있는 **PUBLIC + LIVE** 발행물을 최신순으로 반환(소유자 무관). Explore/둘러보기 공개 목록의 소스.
+            카드용 slim 응답(본문 content 제외, 미리보기/카운트만). 각 항목은 공개 페이지 `/p/{slug}` 로 연결.
+            UNLISTED/내려진(UNPUBLISHED) 발행물은 제외. `limit` 기본 50(최대 100).
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공 — 공개 발행물 카드 목록"),
+    )
+    @GetMapping("/public")
+    fun listPublic(
+        @Parameter(description = "최대 개수(기본 50, 최대 100)") @RequestParam(required = false, defaultValue = "50") limit: Int,
+    ): List<PublicPublishmentItemResponse> {
+        val capped = limit.coerceIn(1, 100)
+        return listPublicUseCase.invoke(capped)
+            .map { PublicPublishmentItemResponse.from(it, pageProps.publicBaseUrl) }
     }
 
     @Operation(summary = "발행 내리기 (soft unpublish — 공개 라우트 410, 재공개 가능)")

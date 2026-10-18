@@ -11,6 +11,7 @@ import org.studieojavry.publishapi.demo.application.DemoWorkspacePublishmentSeed
 import org.studieojavry.publishapi.demo.application.DemoWorkspacePublishmentSeeder.Companion.WS_ORIGIN_BASE
 import org.studieojavry.publishapi.demo.application.WORKSPACE_PUBLISHMENT_SEED
 import org.studieojavry.publishapi.publishment.application.port.CasePublishmentRepositoryPort
+import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
 import org.studieojavry.publishapi.publishment.domain.ContentSnapshot
 import org.studieojavry.publishapi.publishment.domain.PublishOptions
@@ -30,6 +31,7 @@ class DemoWorkspacePublishmentSeederTest {
 
     @Autowired private lateinit var seeder: DemoWorkspacePublishmentSeeder
     @Autowired private lateinit var repository: CasePublishmentRepositoryPort
+    @Autowired private lateinit var listPublic: ListPublicPublishmentsUseCase
 
     @Test
     fun `워크스페이스 발행물 10건을 멱등 시드한다`() {
@@ -60,6 +62,17 @@ class DemoWorkspacePublishmentSeederTest {
         }
 
         assertThat(repository.existsDemoByOwner(DEMO_WORKSPACE_OWNER_ID)).isTrue()
+    }
+
+    @Test
+    fun `Explore 공개 목록에 워크스페이스 10건이 노출된다`() {
+        seeder.seed()
+        val public = listPublic.invoke(100)
+        // 전부 PUBLIC + 워크스페이스 10건 포함
+        assertThat(public).hasSizeGreaterThanOrEqualTo(10)
+        assertThat(public.all { it.visibility == Visibility.PUBLIC }).isTrue()
+        val wsIds = (1..10).map { DemoWorkspacePublishmentSeeder.WS_ORIGIN_BASE + it }
+        assertThat(public.map { it.originalCaseId }).containsAll(wsIds)
     }
 
     @Test

@@ -41,6 +41,8 @@ class SecurityConfig {
                     // 공개 페이지 + 공개 export(pdf) — 인증 불필요
                     .requestMatchers("/p/**").permitAll()
                     .requestMatchers("/api/v1/publishments/by-slug/**").permitAll()
+                    // 공개 Explore 목록(PUBLIC+LIVE 쇼케이스) — 로그아웃도 접근(랜딩/SEO/데모). GET 만 개방.
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/publishments/public").permitAll()
                     // 게스트("로그인 없이 둘러보기")는 발행 금지 — 외부(공개 웹) 노출 방어. 발행물 생성 차단만으로
                     // 이후 publish/unpublish 대상 자체가 없어진다(게스트는 발행물을 만들 수 없음).
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/publishments")

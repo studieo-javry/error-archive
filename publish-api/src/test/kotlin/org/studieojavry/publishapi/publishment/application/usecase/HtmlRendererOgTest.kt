@@ -86,21 +86,24 @@ class HtmlRendererOgTest {
     @Test
     fun `web share bar - markdown button is coming-soon disabled, not a working link`() {
         val html = HtmlRenderer.render(pub("t", "s", withImage = false), forPdf = false, publicBaseUrl = base)
-        // Markdown 은 도입 예정 — 비활성 버튼으로 자리만 노출(aria-disabled + 툴팁).
-        assertTrue(html.contains("""class="soon""""), "coming-soon button rendered")
-        assertTrue(html.contains("도입 예정"), "coming-soon tooltip")
+        // Markdown 은 도입 예정 — 비활성 버튼으로 자리만 노출(aria-disabled + 호버 툴팁).
+        assertTrue(html.contains("class=\"soon tip\""), "coming-soon button rendered")
+        assertTrue(html.contains("""data-tip="Markdown · 도입 예정""""), "coming-soon tooltip text")
         assertTrue(html.contains("""aria-disabled="true""""), "disabled for a11y")
         // 실제 export.md 링크로 나가면 안 됨(핸들러 비활성 + markdownUrl null 과 일관).
         assertFalse(html.contains("export.md"), "must not link to export.md")
-        // 기존 공유 버튼은 그대로.
+        // 기존 공유 버튼은 그대로 + 커스텀 툴팁(data-tip) 적용. 네이티브 title 중복 없음.
         assertTrue(html.contains("/p/k9m2x8.pdf"), "pdf link still present")
+        assertTrue(html.contains("""data-tip="링크 복사""""), "copy-link tooltip")
+        assertTrue(html.contains("""data-tip="PDF 다운로드""""), "pdf tooltip")
+        assertFalse(html.contains("""title="링크 복사""""), "no duplicate native title")
     }
 
     @Test
     fun `forPdf - no share bar, so no coming-soon markdown button`() {
         val html = HtmlRenderer.render(pub("t", "s", withImage = false), forPdf = true, publicBaseUrl = base)
         // 버튼 요소 기준으로 검사("도입 예정" 문자열은 CSS 주석에도 있어 부적합).
-        assertFalse(html.contains("""class="soon""""), "no coming-soon button element in pdf")
+        assertFalse(html.contains("class=\"soon tip\""), "no coming-soon button element in pdf")
         assertFalse(html.contains("""aria-disabled="true""""), "no disabled button in pdf")
     }
 

@@ -8,7 +8,12 @@ import java.time.LocalDateTime
 data class PublishmentResponse(
     val slug: String,
     val publicUrl: String,
-    val markdownUrl: String,
+    /**
+     * Markdown 내보내기 링크 — 기능 미출시로 현재 항상 null("도입 예정").
+     * 공개 핸들러(export.md)를 끈 상태라 깨진 링크를 광고하지 않도록 null 을 내보낸다.
+     * 출시 시 "$publicBaseUrl/api/v1/publishments/by-slug/{slug}/export.md" 로 채운다.
+     */
+    val markdownUrl: String?,
     val pdfUrl: String,
     val ownerUserId: Long,
     val originalCaseId: Long,
@@ -43,7 +48,7 @@ data class PublishmentResponse(
         ): PublishmentResponse = PublishmentResponse(
             slug = p.slug,
             publicUrl = "$publicBaseUrl/p/${p.slug}",
-            markdownUrl = "$publicBaseUrl/api/v1/publishments/by-slug/${p.slug}/export.md",
+            markdownUrl = null, // 도입 예정 — export.md 핸들러 비활성
             pdfUrl = "$publicBaseUrl/api/v1/publishments/by-slug/${p.slug}/export.pdf",
             ownerUserId = p.ownerUserId,
             originalCaseId = p.originalCaseId,

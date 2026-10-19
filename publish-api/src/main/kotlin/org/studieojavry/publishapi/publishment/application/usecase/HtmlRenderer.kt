@@ -33,6 +33,9 @@ object HtmlRenderer {
         "<svg fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244\"/></svg>"
     private const val ICON_PDF =
         "<svg fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3\"/></svg>"
+    // Markdown 마크 — 도입 예정 버튼용(비활성). 문서 테두리 + 내부 M↓ 글리프.
+    private const val ICON_MD =
+        "<svg fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" viewBox=\"0 0 24 24\"><rect x=\"2.5\" y=\"5\" width=\"19\" height=\"14\" rx=\"2.5\"/><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 15V9l3 3 3-3v6M17 9v4.5m0 0l-1.6-1.6M17 13.5l1.6-1.6\"/></svg>"
 
     // 읽기 진행 바 (블로그 감성) — 웹 전용
     private val PROGRESS_JS = """
@@ -144,6 +147,8 @@ object HtmlRenderer {
             sb.appendLine("<div class=\"share\">")
             sb.appendLine("<button type=\"button\" title=\"링크 복사\" onclick=\"navigator.clipboard&amp;&amp;navigator.clipboard.writeText(location.href)\">$ICON_LINK</button>")
             sb.appendLine("<a href=\"/p/${esc(p.slug)}.pdf\" title=\"PDF 다운로드\">$ICON_PDF</a>")
+            // Markdown 내보내기 — 도입 예정. 비활성 버튼으로 자리만 노출(클릭 불가·앰버 점).
+            sb.appendLine("<span class=\"soon\" role=\"button\" aria-disabled=\"true\" title=\"Markdown · 도입 예정\"><span class=\"dot\"></span>$ICON_MD</span>")
             sb.appendLine("</div>")
         }
         sb.appendLine("</div>")
@@ -576,6 +581,10 @@ object HtmlRenderer {
         .share button,.share a{width:34px;height:34px;border-radius:50%;border:1px solid var(--hair);background:#fff;color:var(--sub);display:grid;place-items:center;cursor:pointer;transition:.15s;text-decoration:none}
         .share button:hover,.share a:hover{border-color:var(--accent);color:var(--accent)}
         .share svg{width:16px;height:16px}
+        /* Markdown coming-soon(도입예정) 버튼 — 비활성(점선 테두리 + 앰버 점). 클릭/호버 강조 없음. */
+        .share .soon{width:34px;height:34px;border-radius:50%;border:1px dashed #e4bd7a;background:#fff;color:#9aa1ad;display:grid;place-items:center;cursor:default;position:relative}
+        .share .soon:hover{color:#b45309;border-color:#d8a85f}
+        .share .soon .dot{position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:#f59e0b;border:2px solid #fff}
 
         /* 본문 */
         article{font-family:var(--body);font-size:16px;line-height:1.75;color:#26221d;padding:38px 0 0}

@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import org.studieojavry.sharederror.exception.BaseAppException
 import org.studieojavry.sharederror.masking.ErrorMaskingPolicy
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
@@ -82,6 +83,27 @@ open class GlobalExceptionHandler(
         return ProblemDetailBuilder.build(
             status = HttpStatus.NOT_FOUND,
             detail = ex.message ?: "Resource not found",
+            code = "NOT_FOUND",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 존재하지 않는 경로(핸들러/정적 리소스 없음) — 404 (500 아님).
+     * 과거엔 아래 Throwable 핸들러로 떨어져 500 이 되어 gateway 서킷브레이커를 열었다
+     * (2026-10-19 인시던트: 미구현 export.md 호출이 500 → publishApiCB open → publish-api 전면 503).
+     * 클라이언트 실수(없는 URL)이지 서버 장애가 아니므로 4xx 로 매핑해 서킷브레이커 오염을 막는다.
+     */
+    @ExceptionHandler(NoResourceFoundException::class)
+    open fun handleNoResource(ex: NoResourceFoundException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=NOT_FOUND] no handler/resource" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.NOT_FOUND,
+            detail = "No resource for ${req.method} ${req.requestURI}",
             code = "NOT_FOUND",
             traceId = traceId,
             retryable = false,

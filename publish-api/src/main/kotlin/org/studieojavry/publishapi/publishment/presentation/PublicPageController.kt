@@ -18,6 +18,7 @@ import org.studieojavry.publishapi.publishment.application.usecase.AttachmentRen
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublicPageMetaUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublishmentBySlugUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
+import org.studieojavry.publishapi.publishment.application.usecase.MarkdownRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.PublicPageRenderCache
 import org.studieojavry.publishapi.publishment.application.usecase.PdfRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentForbiddenException
@@ -98,6 +99,24 @@ class PublicPageController(
     // 또한 `/api/v1/publishments/by-slug/{slug}/export.pdf` 별칭 (응답 DTO 의 pdfUrl 과 일관)
     @GetMapping("/api/v1/publishments/by-slug/{slug}/export.pdf")
     fun downloadPdfAlias(@PathVariable slug: String) = downloadPdf(slug)
+
+    /**
+     * Markdown 다운로드 — 응답 DTO 의 `markdownUrl` 이 가리키는 엔드포인트.
+     * ⚠️ 2026-10-19 인시던트: 이 핸들러가 없어 호출마다 NoResourceFoundException→500 이 났고
+     *    gateway 서킷브레이커가 열려 publish-api 전면 503 이 됐다. MarkdownRenderer 로 구현해 메움.
+     */
+    @Operation(summary = "공개 페이지 Markdown 다운로드")
+    @GetMapping("/api/v1/publishments/by-slug/{slug}/export.md", produces = ["text/markdown"])
+    fun downloadMd(@PathVariable slug: String): ResponseEntity<String> {
+        val p = lookup(slug)
+        recordDownloadUseCase.invoke(slug) // export = 다운로드 지표(+1). view 와 분리.
+        val md = MarkdownRenderer.render(p, publicBaseUrl = pageProps.publicBaseUrl)
+        val fileName = "${slugifyFilename(p.title)}.md"
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
+            .header(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8")
+            .body(md)
+    }
 
     /**
      * 안정 파일 라우트 — 첨부 원본을 클릭 시점에 presign 해 302 redirect.

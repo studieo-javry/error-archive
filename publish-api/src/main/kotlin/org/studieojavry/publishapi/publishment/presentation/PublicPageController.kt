@@ -18,7 +18,6 @@ import org.studieojavry.publishapi.publishment.application.usecase.AttachmentRen
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublicPageMetaUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.GetPublishmentBySlugUseCase
 import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
-import org.studieojavry.publishapi.publishment.application.usecase.MarkdownRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.PublicPageRenderCache
 import org.studieojavry.publishapi.publishment.application.usecase.PdfRenderer
 import org.studieojavry.publishapi.publishment.application.usecase.PublishmentForbiddenException
@@ -100,23 +99,10 @@ class PublicPageController(
     @GetMapping("/api/v1/publishments/by-slug/{slug}/export.pdf")
     fun downloadPdfAlias(@PathVariable slug: String) = downloadPdf(slug)
 
-    /**
-     * Markdown 다운로드 — 응답 DTO 의 `markdownUrl` 이 가리키는 엔드포인트.
-     * ⚠️ 2026-10-19 인시던트: 이 핸들러가 없어 호출마다 NoResourceFoundException→500 이 났고
-     *    gateway 서킷브레이커가 열려 publish-api 전면 503 이 됐다. MarkdownRenderer 로 구현해 메움.
-     */
-    @Operation(summary = "공개 페이지 Markdown 다운로드")
-    @GetMapping("/api/v1/publishments/by-slug/{slug}/export.md", produces = ["text/markdown"])
-    fun downloadMd(@PathVariable slug: String): ResponseEntity<String> {
-        val p = lookup(slug)
-        recordDownloadUseCase.invoke(slug) // export = 다운로드 지표(+1). view 와 분리.
-        val md = MarkdownRenderer.render(p, publicBaseUrl = pageProps.publicBaseUrl)
-        val fileName = "${slugifyFilename(p.title)}.md"
-        return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
-            .header(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8")
-            .body(md)
-    }
+    // Markdown 다운로드(export.md)는 도입 예정 — 핸들러 의도적으로 두지 않음.
+    // 공개 페이지 공유 바에는 "도입 예정" 비활성 버튼만 노출(HtmlRenderer), 응답 DTO 의 markdownUrl 은 null.
+    // 호출이 와도 shared-error 의 NoResourceFoundException→404 매핑으로 500(서킷 오염) 없이 404 로 떨어진다.
+    // 출시 시: MarkdownRenderer 로 downloadPdf 와 대칭되는 export.md 핸들러를 복원하면 된다.
 
     /**
      * 안정 파일 라우트 — 첨부 원본을 클릭 시점에 presign 해 302 redirect.

@@ -36,7 +36,8 @@ data class PublishmentListItemResponse(
     val publishedAt: LocalDateTime,
     val updatedAt: LocalDateTime,
     val publicUrl: String,
-    val markdownUrl: String,
+    /** Markdown 내보내기 링크 — 기능 미출시로 현재 항상 null("도입 예정"). [PublishmentResponse.markdownUrl] 참고. */
+    val markdownUrl: String?,
     val pdfUrl: String,
 ) {
     companion object {
@@ -61,7 +62,7 @@ data class PublishmentListItemResponse(
                 publishedAt = p.publishedAt,
                 updatedAt = p.updatedAt,
                 publicUrl = "$publicBaseUrl/p/${p.slug}",
-                markdownUrl = "$publicBaseUrl/api/v1/publishments/by-slug/${p.slug}/export.md",
+                markdownUrl = null, // 도입 예정 — export.md 핸들러 비활성
                 pdfUrl = "$publicBaseUrl/api/v1/publishments/by-slug/${p.slug}/export.pdf",
             )
         }

@@ -12,9 +12,20 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
     @Query("SELECT e.ownerUserId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findOwnerUserIdById(@Param("id") id: Long): Long?
 
-    /** workspace 없는(개인) 케이스 id — 데모 게스트 개인 케이스 정리(purge)용. id ASC, limit = pageable.size. */
-    @Query("SELECT e.id FROM ErrorCaseEntity e WHERE e.meta.workspaceId IS NULL ORDER BY e.id ASC")
-    fun findIdsWithNullWorkspace(pageable: Pageable): List<Long>
+    /**
+     * 데모 게스트 개인 케이스 id — 개인(workspaceId null) **AND 지정 데모 태그 보유분만**. id ASC.
+     *
+     * ⚠️ 2026-10-19 인시던트: 과거 `findIdsWithNullWorkspace` 는 소유자/태그 무관 "모든 개인 케이스"를
+     *    반환해, 야간 데모 purge 가 실사용자 개인 케이스까지 하드 삭제했다. 반드시 데모 태그로 스코프한다.
+     *    실사용자 개인 케이스는 이 태그가 없으므로 절대 선택되지 않는다.
+     */
+    @Query(
+        "SELECT e.id FROM ErrorCaseEntity e " +
+            "WHERE e.meta.workspaceId IS NULL " +
+            "AND e.id IN (SELECT t.errorCaseId FROM ErrorCaseTagEntity t WHERE t.tag = :tag) " +
+            "ORDER BY e.id ASC",
+    )
+    fun findDemoPersonalCaseIds(@Param("tag") tag: String, pageable: Pageable): List<Long>
 
     fun findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
         ownerUserId: Long,

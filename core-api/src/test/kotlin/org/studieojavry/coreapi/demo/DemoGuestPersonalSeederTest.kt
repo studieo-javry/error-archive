@@ -67,11 +67,18 @@ class DemoGuestPersonalSeederTest {
     }
 
     @Test
-    fun `정리 쿼리가 게스트 개인 케이스를 찾는다`() {
+    fun `정리 쿼리는 데모 태그가 붙은 게스트 개인 케이스만 찾는다`() {
         val guestId = 770002L
         seeder.ensureSeededForGuest(guestId)
-        val personalIds = errorCaseRepository.findPersonalCaseIds(200)
         val mine = ownedByGuest(guestId).map { it.id }
-        assertThat(personalIds).containsAll(mine)
+
+        // 데모 태그로 조회하면 게스트 개인 케이스가 잡힌다.
+        val demoIds = errorCaseRepository.findDemoGuestPersonalCaseIds(DemoGuestPersonalSeeder.GUEST_PERSONAL_TAG, 200)
+        assertThat(demoIds).containsAll(mine)
+
+        // ⚠️ 회귀 가드(2026-10-19 인시던트): 데모 태그가 없으면 어떤 개인 케이스도 선택되지 않는다
+        //    → 실사용자 개인 케이스(태그 없음)는 purge 대상에서 절대 제외된다.
+        val nonDemo = errorCaseRepository.findDemoGuestPersonalCaseIds("not-a-demo-tag", 200)
+        assertThat(nonDemo).doesNotContainAnyElementsOf(mine)
     }
 }

@@ -93,11 +93,17 @@ class DemoResetService(
         return total
     }
 
-    /** workspace 없는(개인) 케이스 전량 purge(cascade). 게스트 지연 생성분 정리. */
+    /**
+     * 데모 게스트 개인 케이스만 purge(cascade) — **반드시 데모 태그 스코프**.
+     * ⚠️ 2026-10-19 인시던트: 과거엔 workspaceId=null 전체(실사용자 개인 포함)를 지워 데이터가 유실됐다.
+     *    이제 DemoGuestPersonalSeeder 가 붙인 태그(GUEST_PERSONAL_TAG)가 있는 개인 케이스만 지운다.
+     */
     private fun wipePersonalCases(): Int {
         var total = 0
         repeat(MAX_WIPE_BATCHES) {
-            val ids = errorCaseRepository.findPersonalCaseIds(WIPE_BATCH)
+            val ids = errorCaseRepository.findDemoGuestPersonalCaseIds(
+                DemoGuestPersonalSeeder.GUEST_PERSONAL_TAG, WIPE_BATCH,
+            )
             if (ids.isEmpty()) return total
             ids.forEach { deleteErrorCaseUseCase.purge(it); total++ }
         }

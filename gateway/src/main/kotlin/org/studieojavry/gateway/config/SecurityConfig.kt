@@ -61,6 +61,9 @@ class SecurityConfig {
                     "/avatars/**",
                     // 공개 publish 페이지 + 공개 export (인증 X — 누구나 열람/다운로드)
                     "/p/**", "/api/v1/publishments/by-slug/**",
+                    // 공개 Explore 목록(쇼케이스) — 로그아웃도 조회(랜딩/SEO/데모). publish-api 는 GET 만 permitAll,
+                    //  RouteConfig 의 publish-public-list 가 per-IP rate limit 적용. (게이트웨이 JWT 필터 skip 필수)
+                    "/api/v1/publishments/public",
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 로그아웃 상태에서도 열람 가능해야 함.
                     //  숫자 userId 변형만 공개(타인 잔디 열람). `me` 는 위에서 authenticated 로 카브아웃했다.
                     "/api/v1/users/*/activity-grass",

@@ -144,11 +144,12 @@ object HtmlRenderer {
         sb.appendLine("<div class=\"meta\"><b>${KDATE_FMT.format(p.publishedAt)}</b> · ${readingMinutes(snap)}분 읽기</div>")
         sb.appendLine("</div>")
         if (!forPdf) {
+            // 공유 버튼: 호버 시 커스텀 툴팁(data-tip). 네이티브 title 중복 방지로 title 은 제거하고 aria-label 로 접근성 유지.
             sb.appendLine("<div class=\"share\">")
-            sb.appendLine("<button type=\"button\" title=\"링크 복사\" onclick=\"navigator.clipboard&amp;&amp;navigator.clipboard.writeText(location.href)\">$ICON_LINK</button>")
-            sb.appendLine("<a href=\"/p/${esc(p.slug)}.pdf\" title=\"PDF 다운로드\">$ICON_PDF</a>")
+            sb.appendLine("<button type=\"button\" class=\"tip\" data-tip=\"링크 복사\" aria-label=\"링크 복사\" onclick=\"navigator.clipboard&amp;&amp;navigator.clipboard.writeText(location.href)\">$ICON_LINK</button>")
+            sb.appendLine("<a href=\"/p/${esc(p.slug)}.pdf\" class=\"tip\" data-tip=\"PDF 다운로드\" aria-label=\"PDF 다운로드\">$ICON_PDF</a>")
             // Markdown 내보내기 — 도입 예정. 비활성 버튼으로 자리만 노출(클릭 불가·앰버 점).
-            sb.appendLine("<span class=\"soon\" role=\"button\" aria-disabled=\"true\" title=\"Markdown · 도입 예정\"><span class=\"dot\"></span>$ICON_MD</span>")
+            sb.appendLine("<span class=\"soon tip\" role=\"button\" aria-disabled=\"true\" data-tip=\"Markdown · 도입 예정\" aria-label=\"Markdown 다운로드 (도입 예정)\"><span class=\"dot\"></span>$ICON_MD</span>")
             sb.appendLine("</div>")
         }
         sb.appendLine("</div>")
@@ -585,6 +586,12 @@ object HtmlRenderer {
         .share .soon{width:34px;height:34px;border-radius:50%;border:1px dashed #e4bd7a;background:#fff;color:#9aa1ad;display:grid;place-items:center;cursor:default;position:relative}
         .share .soon:hover{color:#b45309;border-color:#d8a85f}
         .share .soon .dot{position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:#f59e0b;border:2px solid #fff}
+        /* 공유 버튼 호버 툴팁 — md-coming-soon 목업과 동일(다크 말풍선 + 화살표). */
+        .share .tip{position:relative}
+        .share .tip::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(4px);background:#1f2430;color:#fff;font-size:11px;font-weight:500;white-space:nowrap;padding:5px 9px;border-radius:7px;opacity:0;pointer-events:none;transition:.15s;z-index:5}
+        .share .tip::before{content:"";position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1f2430;opacity:0;transition:.15s;pointer-events:none}
+        .share .tip:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+        .share .tip:hover::before{opacity:1}
 
         /* 본문 */
         article{font-family:var(--body);font-size:16px;line-height:1.75;color:#26221d;padding:38px 0 0}

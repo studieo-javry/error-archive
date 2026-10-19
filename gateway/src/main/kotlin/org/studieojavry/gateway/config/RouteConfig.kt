@@ -169,6 +169,19 @@ class RouteConfig(
             .filter(retry(2))
             .build()
 
+    // 공개 Explore 목록(GET /api/v1/publishments/public) — 무인증(로그아웃도 접근: 랜딩/SEO/데모).
+    // 관리 라우트(publishApiRoute)가 잡는 publishments 와일드카드의 서브셋이라, 그보다 먼저 선언해야 매칭됨.
+    // 익명 접근이므로 per-IP rate limit 로 스크래핑/DoS 억제(슬림 카드라 넉넉히: 버스트 60, 초당 5).
+    @Bean
+    fun publishPublicListRoute(): RouterFunction<ServerResponse> =
+        route("publish-public-list")
+            .GET("/api/v1/publishments/public", http())
+            .before(uri(downstream.publishApi))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-public-list", capacity = 60.0, refillPerSec = 5.0))
+            .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
+            .filter(retry(2))
+            .build()
+
     @Bean
     fun publishApiRoute(): RouterFunction<ServerResponse> =
         route("publish-api")

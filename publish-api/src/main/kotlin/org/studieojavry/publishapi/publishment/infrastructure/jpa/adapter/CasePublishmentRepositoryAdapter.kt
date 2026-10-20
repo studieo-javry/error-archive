@@ -87,6 +87,18 @@ class CasePublishmentRepositoryAdapter(
         jpa.findAllByVisibilityAndStatusOrderByPublishedAtDesc(Visibility.PUBLIC, PublishmentStatus.LIVE)
             .map { it.toDomain() }
 
+    override fun pagePublicDiscoverable(cursorValue: String?, cursorId: Long?, limit: Int): List<CasePublishment> {
+        val hasCursor = cursorValue != null && cursorId != null
+        return jpa.pagePublic(
+            visibility = Visibility.PUBLIC,
+            status = PublishmentStatus.LIVE,
+            hasCursor = hasCursor,
+            cursorTs = cursorValue?.let(java.time.LocalDateTime::parse),
+            cursorId = cursorId,
+            pageable = PageRequest.of(0, limit),
+        ).map { it.toDomain() }
+    }
+
     override fun incrementViewCount(slug: String) {
         jpa.incrementViewCount(slug)
     }

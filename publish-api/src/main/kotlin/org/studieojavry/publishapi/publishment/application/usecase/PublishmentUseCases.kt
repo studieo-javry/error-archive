@@ -454,9 +454,36 @@ class DeletePublishmentUseCase(
 class ListPublicPublishmentsUseCase(
     private val repository: CasePublishmentRepositoryPort,
 ) {
+    data class Result(
+        val items: List<CasePublishment>,
+        val nextCursor: String?,
+        val hasNext: Boolean,
+    )
+
+    /**
+     * 공개 Explore 목록 — PUBLIC+LIVE, publishedAt desc, keyset 커서 페이징(소유자 목록과 동일 방식).
+     * `limit+1` 로 조회해 hasNext 판정하고, 다음 커서는 마지막 항목(publishedAt|id)로 인코딩.
+     */
     @Transactional(readOnly = true)
-    fun invoke(limit: Int = 500): List<CasePublishment> =
-        repository.listPublicDiscoverable().take(limit)
+    fun invoke(cursor: String? = null, limit: Int = DEFAULT_LIMIT): Result {
+        val pageSize = limit.coerceIn(1, MAX_LIMIT)
+        val decoded = cursor?.let { PublishmentCursor.decode(it) }
+        val fetched = repository.pagePublicDiscoverable(decoded?.value, decoded?.id, pageSize + 1)
+        val hasNext = fetched.size > pageSize
+        val page = fetched.take(pageSize)
+        val nextCursor = if (hasNext && page.isNotEmpty()) {
+            val last = page.last()
+            PublishmentCursor.encode(last.publishedAt.toString(), last.id!!)
+        } else {
+            null
+        }
+        return Result(items = page, nextCursor = nextCursor, hasNext = hasNext)
+    }
+
+    companion object {
+        private const val DEFAULT_LIMIT = 20
+        private const val MAX_LIMIT = 100
+    }
 }
 
 @Service

@@ -111,3 +111,13 @@ data class PublicPublishmentItemResponse(
             )
     }
 }
+
+/**
+ * 공개 Explore 목록(keyset 커서 페이징) 봉투. 첫 페이지는 `cursor` 생략, 이후 `nextCursor` 전달.
+ * `hasNext=false` 면 끝. (소유자 목록 `PublishmentListResponse` 와 동일 페이징 방식.)
+ */
+data class PublicPublishmentListResponse(
+    val items: List<PublicPublishmentItemResponse>,
+    val nextCursor: String?,
+    val hasNext: Boolean,
+)

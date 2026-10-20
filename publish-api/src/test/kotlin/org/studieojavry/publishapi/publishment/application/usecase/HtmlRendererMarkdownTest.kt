@@ -61,4 +61,28 @@ class HtmlRendererMarkdownTest {
         assertThat(body).doesNotContain("## ")
         assertThat(body).doesNotContain("**")
     }
+
+    @Test
+    fun `마크다운 리스트가 ul ol 로 렌더되고 br 로 뭉치지 않는다`() {
+        val p = publishmentWith(
+            "원인은 두 가지였다.\n\n" +
+                "- 커넥션 누수\n- 풀 사이즈 과소\n\n" +
+                "조치 순서:\n\n" +
+                "1. 트랜잭션 경계 수정\n2. 풀 사이즈 상향",
+        )
+        val html = HtmlRenderer.render(p)
+        val body = html.substringAfter("<article>").substringBefore("</article>")
+
+        // 순서 없는/있는 리스트가 실제 <ul>/<ol><li> 로.
+        assertThat(body).contains("<ul class=\"pl\">")
+        assertThat(body).contains("<li>커넥션 누수</li>")
+        assertThat(body).contains("<li>풀 사이즈 과소</li>")
+        assertThat(body).contains("<ol class=\"pl\">")
+        assertThat(body).contains("<li>트랜잭션 경계 수정</li>")
+        assertThat(body).contains("<li>풀 사이즈 상향</li>")
+        // 리스트 항목이 한 문단에 <br> 로 뭉치거나 마커가 리터럴로 남지 않음.
+        assertThat(body).doesNotContain("- 커넥션")
+        assertThat(body).doesNotContain("1. 트랜잭션")
+        assertThat(body).doesNotContain("커넥션 누수<br")
+    }
 }

@@ -27,6 +27,11 @@ object HtmlRenderer {
     private val STEP_DATE_FMT_Y = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")
     private val SNIPPET_MARKER = Regex("@snippet\\([A-Za-z0-9_-]+\\)")
     private val ATTACH_MARKER = Regex("@attach\\([A-Za-z0-9_-]+\\)")
+    // 마크다운 리스트 항목: `- `/`* `/`+ ` (순서 없음), `1. `/`1) ` (순서 있음).
+    private val UL_ITEM = Regex("^\\s*[-*+]\\s+\\S.*")
+    private val OL_ITEM = Regex("^\\s*\\d+[.)]\\s+\\S.*")
+    private val UL_PREFIX = Regex("^\\s*[-*+]\\s+")
+    private val OL_PREFIX = Regex("^\\s*\\d+[.)]\\s+")
 
     // 저자 바 공유 버튼 아이콘 (목업 그대로) — 링크 복사 / PDF 다운로드
     private const val ICON_LINK =
@@ -214,7 +219,11 @@ object HtmlRenderer {
                 sb.appendLine("<div class=\"solution-copy\">")
                 sb.appendLine("<div class=\"solution-kicker\"><span class=\"solution-label\">Final resolution</span><span class=\"solution-status\">Verified</span></div>")
                 sb.appendLine("<h3 class=\"solution-title\">${esc(name)}</h3>")
-                if (sol.body.isNotBlank()) sb.appendLine("<p class=\"solution-body\">${inlineMd(sol.body)}</p>")
+                if (sol.body.isNotBlank()) {
+                    sb.appendLine("<div class=\"solution-body\">")
+                    renderProse(sb, sol.body, opts, forPdf) // 문단·리스트·코드 일관 렌더
+                    sb.appendLine("</div>")
+                }
                 sb.appendLine("</div>")
                 sb.appendLine("</div>")
                 sol.snippets.forEach { renderSnippet(sb, it, opts, forPdf) }
@@ -520,6 +529,20 @@ object HtmlRenderer {
                     sb.appendLine("<$tag class=\"ph\">${inlineMd(text)}</$tag>")
                     i++
                 }
+                // 리스트: 연속된 `- `/`1.` 항목을 <ul>/<ol> 로. (없으면 `- a<br>- b` 처럼 뭉쳐 보였음)
+                line.matches(UL_ITEM) || line.matches(OL_ITEM) -> {
+                    flushPara()
+                    val ordered = line.matches(OL_ITEM) && !line.matches(UL_ITEM)
+                    val prefix = if (ordered) OL_PREFIX else UL_PREFIX
+                    sb.appendLine(if (ordered) "<ol class=\"pl\">" else "<ul class=\"pl\">")
+                    while (i < lines.size &&
+                        (if (ordered) lines[i].matches(OL_ITEM) else (lines[i].matches(UL_ITEM) && !lines[i].matches(OL_ITEM)))
+                    ) {
+                        sb.appendLine("<li>${inlineMd(lines[i].replaceFirst(prefix, ""))}</li>")
+                        i++
+                    }
+                    sb.appendLine(if (ordered) "</ol>" else "</ul>")
+                }
                 line.isBlank() -> { flushPara(); i++ }
                 else -> { if (para.isNotEmpty()) para.append("\n"); para.append(line); i++ }
             }
@@ -596,6 +619,15 @@ object HtmlRenderer {
         /* 본문 */
         article{font-family:var(--body);font-size:16px;line-height:1.75;color:#26221d;padding:38px 0 0}
         article p,p{margin:0 0 26px;font-size:16px;line-height:1.75;color:#26221d}
+        /* 마크다운 리스트(renderProse) */
+        .pl{margin:0 0 24px;padding-left:22px}
+        ul.pl{list-style:disc}
+        ol.pl{list-style:decimal}
+        .pl li{margin:0 0 7px;font-size:16px;line-height:1.72;color:#26221d}
+        .pl li:last-child{margin-bottom:0}
+        .pl li code{font-family:var(--mono);font-size:.84em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 5px;border-radius:5px;color:#9a3412}
+        .st .pl{margin:0 0 12px}
+        .st .pl li{font-size:15px}
         article a,a{color:var(--accent-ink);text-underline-offset:3px}
         strong,b{font-weight:600;color:var(--ink)}
         code{font-family:var(--mono);font-size:.82em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 6px;border-radius:5px;color:#9a3412}
@@ -692,7 +724,11 @@ object HtmlRenderer {
                background:var(--accent-soft);color:var(--accent-ink);font-size:9px;letter-spacing:.06em}
         .solution-status::before{content:"";width:5px;height:5px;border-radius:50%;background:#10b981${if (forPdf) "" else ";box-shadow:0 0 7px rgba(16,185,129,.45)"}}
         .solution-title{margin:0;color:var(--ink);font:600 21px/1.4 var(--body);letter-spacing:-.018em;text-wrap:balance}
-        .solution-copy .solution-body{margin:10px 0 0;color:var(--sub);font:400 15px/1.68 var(--body)}
+        .solution-copy .solution-body{margin:10px 0 0;color:var(--sub)}
+        .solution-copy .solution-body>:last-child{margin-bottom:0}
+        .solution-copy .solution-body p{font:400 15px/1.68 var(--body);color:var(--sub);margin:0 0 12px}
+        .solution-copy .solution-body .pl{margin:0 0 12px}
+        .solution-copy .solution-body .pl li{font:400 15px/1.68 var(--body);color:var(--sub)}
         .solution-copy .solution-body code{font-family:var(--mono);font-size:.84em;background:var(--hair-2);border:1px solid var(--hair);padding:1px 5px;border-radius:5px;color:#9a3412}
 
         /* 푸터 */

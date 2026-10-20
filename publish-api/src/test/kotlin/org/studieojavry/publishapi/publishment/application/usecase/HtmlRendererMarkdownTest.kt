@@ -85,4 +85,28 @@ class HtmlRendererMarkdownTest {
         assertThat(body).doesNotContain("1. 트랜잭션")
         assertThat(body).doesNotContain("커넥션 누수<br")
     }
+
+    @Test
+    fun `문단 안 소프트 줄바꿈은 공백으로 흐르고 br 로 끊지 않는다`() {
+        // 글쓴이가 한 문단을 수동 줄바꿈(소프트 랩)으로 쓴 경우 — 문장 중간이 <br> 로 끊기면 안 된다.
+        val p = publishmentWith(
+            "`@ControllerAdvice` 의 포괄\n" +
+                "`handle(Exception)` 가 구체 핸들러를 가로챈 게 문제였다.",
+        )
+        val html = HtmlRenderer.render(p)
+        val body = html.substringAfter("<article>").substringBefore("</article>")
+
+        // 한 <p> 안에서 공백으로 이어진다 — "포괄" 뒤에 <br/> 가 생기지 않는다.
+        assertThat(body).contains("<code>@ControllerAdvice</code> 의 포괄 <code>handle(Exception)</code>")
+        assertThat(body).doesNotContain("포괄<br")
+    }
+
+    @Test
+    fun `줄 끝 공백 2칸 또는 백슬래시는 의도적 하드 브레이크로 br 가 된다`() {
+        val p = publishmentWith("첫째 줄입니다.  \n둘째 줄입니다.\\\n셋째 줄입니다.")
+        val html = HtmlRenderer.render(p)
+        val body = html.substringAfter("<article>").substringBefore("</article>")
+
+        assertThat(body).contains("첫째 줄입니다.<br/>둘째 줄입니다.<br/>셋째 줄입니다.")
+    }
 }

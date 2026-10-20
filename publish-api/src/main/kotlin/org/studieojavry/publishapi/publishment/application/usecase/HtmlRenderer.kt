@@ -470,14 +470,25 @@ object HtmlRenderer {
         .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
 
     /**
-     * 인라인: esc → `code` → `**bold**` → 개행 <br/>. 블록 요소 없음(<p>/<div> 내부 전용).
+     * 인라인: esc → `code` → `**bold**` → 개행 처리. 블록 요소 없음(<p>/<div> 내부 전용).
      * 볼드는 코드 치환 뒤에 적용(코드 안의 `**` 는 보존). `.+?` 라 줄바꿈은 안 넘는다(인라인 한정).
      */
-    private fun inlineMd(s: String): String =
-        esc(s)
+    private fun inlineMd(s: String): String {
+        val html = esc(s)
             .replace(Regex("`([^`\\n]+)`")) { "<code>${it.groupValues[1]}</code>" }
             .replace(Regex("\\*\\*(.+?)\\*\\*")) { "<strong>${it.groupValues[1]}</strong>" }
-            .replace("\n", "<br/>")
+        return applyLineBreaks(html)
+    }
+
+    /**
+     * CommonMark 소프트/하드 브레이크 구분. 문단 안 단순 개행은 공백(소프트 랩 = 한 문장)으로 흐르고,
+     * 줄 끝 공백 2칸↑ 또는 백슬래시로 끝난 줄만 <br/>(의도적 하드 브레이크).
+     * 과거엔 모든 개행을 <br/> 로 바꿔, 수동 줄바꿈으로 쓴 문단이 문장 중간에서 끊겼다.
+     */
+    private fun applyLineBreaks(s: String): String =
+        s.replace(Regex(" {2,}\\n"), "<br/>")        // 하드: 줄 끝 공백 2칸↑
+            .replace(Regex("\\\\\\n"), "<br/>")       // 하드: 줄 끝 백슬래시
+            .replace(Regex("[ \\t]*\\n[ \\t]*"), " ") // 소프트: 공백 한 칸으로
 
     /**
      * 블록 프로즈 렌더. 빈 줄로 문단 분리, ```` ``` ```` 펜스는 다크 코드박스로,

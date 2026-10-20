@@ -67,7 +67,7 @@ class DemoWorkspacePublishmentSeederTest {
     @Test
     fun `Explore 공개 목록에 워크스페이스 10건이 노출된다`() {
         seeder.seed()
-        val public = listPublic.invoke(100)
+        val public = listPublic.invoke(limit = 100).items
         // 전부 PUBLIC + 워크스페이스 10건 포함
         assertThat(public).hasSizeGreaterThanOrEqualTo(10)
         assertThat(public.all { it.visibility == Visibility.PUBLIC }).isTrue()

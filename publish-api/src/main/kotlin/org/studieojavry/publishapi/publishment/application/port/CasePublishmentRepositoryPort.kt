@@ -74,6 +74,9 @@ interface CasePublishmentRepositoryPort {
 
     /** discovery(sitemap/공개 목록) — PUBLIC 이고 status=LIVE 인 것만. UNPUBLISHED 자동 제외. */
     fun listPublicDiscoverable(): List<CasePublishment>
+
+    /** 공개 Explore keyset 페이지 — PUBLIC+LIVE, publishedAt desc. cursor(값/id) 없으면 첫 페이지. `limit` 만큼 반환. */
+    fun pagePublicDiscoverable(cursorValue: String?, cursorId: Long?, limit: Int): List<CasePublishment>
     fun incrementViewCount(slug: String)
     fun incrementDownloadCount(slug: String)
     fun existsBySlug(slug: String): Boolean

@@ -61,6 +61,7 @@ import org.studieojavry.publishapi.publishment.presentation.dto.PublishRequest
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentListItemResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentListResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublicPublishmentItemResponse
+import org.studieojavry.publishapi.publishment.presentation.dto.PublicPublishmentListResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.PublishmentSummaryResponse
 import org.studieojavry.publishapi.publishment.presentation.dto.UpdateMetadataRequest
@@ -258,19 +259,24 @@ class PublishmentController(
         description = """
             누구나 볼 수 있는 **PUBLIC + LIVE** 발행물을 최신순으로 반환(소유자 무관). Explore/둘러보기 공개 목록의 소스.
             카드용 slim 응답(본문 content 제외, 미리보기/카운트만). 각 항목은 공개 페이지 `/p/{slug}` 로 연결.
-            UNLISTED/내려진(UNPUBLISHED) 발행물은 제외. `limit` 기본 50(최대 100).
+            UNLISTED/내려진(UNPUBLISHED) 발행물은 제외. keyset 커서 페이징 — 첫 페이지는 `cursor` 생략,
+            이후 응답의 `nextCursor` 를 그대로 전달. `hasNext=false` 면 끝. `limit` 기본 20(최대 100).
         """
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "성공 — 공개 발행물 카드 목록"),
+        ApiResponse(responseCode = "200", description = "성공 — 공개 발행물 카드 목록(커서 페이징 봉투)"),
     )
     @GetMapping("/public")
     fun listPublic(
-        @Parameter(description = "최대 개수(기본 50, 최대 100)") @RequestParam(required = false, defaultValue = "50") limit: Int,
-    ): List<PublicPublishmentItemResponse> {
-        val capped = limit.coerceIn(1, 100)
-        return listPublicUseCase.invoke(capped)
-            .map { PublicPublishmentItemResponse.from(it, pageProps.publicBaseUrl) }
+        @Parameter(description = "keyset 커서(이전 응답의 nextCursor). 첫 페이지는 생략") @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): PublicPublishmentListResponse {
+        val result = listPublicUseCase.invoke(cursor, limit)
+        return PublicPublishmentListResponse(
+            items = result.items.map { PublicPublishmentItemResponse.from(it, pageProps.publicBaseUrl) },
+            nextCursor = result.nextCursor,
+            hasNext = result.hasNext,
+        )
     }
 
     @Operation(summary = "발행 내리기 (soft unpublish — 공개 라우트 410, 재공개 가능)")

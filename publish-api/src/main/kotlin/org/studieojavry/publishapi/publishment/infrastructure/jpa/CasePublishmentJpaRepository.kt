@@ -53,6 +53,25 @@ interface CasePublishmentJpaRepository : JpaRepository<CasePublishmentEntity, Lo
         @Param("status") status: PublishmentStatus,
     ): List<CasePublishmentEntity>
 
+    /** 공개 Explore 목록 — PUBLIC+LIVE, publishedAt desc keyset 페이징(소유자 목록과 동일 방식). */
+    @Query(
+        """
+        select p from CasePublishmentEntity p
+        where p.visibility = :vis and p.status = :status
+          and (:hasCursor = false or p.publishedAt < :cursorTs
+               or (p.publishedAt = :cursorTs and p.id < :cursorId))
+        order by p.publishedAt desc, p.id desc
+        """
+    )
+    fun pagePublic(
+        @Param("vis") visibility: Visibility,
+        @Param("status") status: PublishmentStatus,
+        @Param("hasCursor") hasCursor: Boolean,
+        @Param("cursorTs") cursorTs: LocalDateTime?,
+        @Param("cursorId") cursorId: Long?,
+        pageable: Pageable,
+    ): List<CasePublishmentEntity>
+
     @Modifying
     @Query("update CasePublishmentEntity p set p.viewCount = p.viewCount + 1 where p.slug = :slug")
     fun incrementViewCount(@Param("slug") slug: String): Int

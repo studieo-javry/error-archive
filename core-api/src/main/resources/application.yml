@@ -80,6 +80,8 @@ noti:
 demo:
   enabled: ${DEMO_ENABLED:false}
   reset-cron: ${DEMO_RESET_CRON:0 10 4 * * *}
+  # FE 사용 가이드 4단계 아티클 slug — publish-api 와 같은 env 를 공유.
+  guide-article-slug: ${DEMO_GUIDE_ARTICLE_SLUG:demo-hikaricp-503}
 
 management:
   endpoints:

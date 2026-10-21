@@ -3,6 +3,7 @@ package org.studieojavry.publishapi.demo.application
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.publishapi.demo.config.DemoPublishmentProperties
 import org.studieojavry.publishapi.publishment.application.port.CasePublishmentRepositoryPort
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
 import org.studieojavry.publishapi.publishment.domain.ContentSnapshot
@@ -21,11 +22,14 @@ import java.time.LocalDateTime
  *  - originalCaseId = 예약 범위 [WS_ORIGIN_BASE]+n (core 에 없는 합성 id — 공개 페이지는 원본 조회 안 함).
  *  - `is_demo = true`. 야간 purge 는 게스트분(owner != 예약상수)만 지우므로 이 10건은 보존.
  *  - 멱등: originalCaseId 로 기존 발행물 있으면 skip → 재부팅/재호출 시 slug 안정.
+ *  - 첫 건([GUIDE_SEED_INDEX], HikariCP 503)은 FE 사용 가이드가 여는 아티클이라 고정 slug
+ *    ([DemoPublishmentProperties.guideArticleSlug]). 기존에 랜덤 slug 로 시드돼 있으면 그 행의 slug 만 교체한다.
  */
 @Service
 class DemoWorkspacePublishmentSeeder(
     private val repository: CasePublishmentRepositoryPort,
     private val slugProperties: SlugProperties,
+    private val props: DemoPublishmentProperties,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -35,7 +39,15 @@ class DemoWorkspacePublishmentSeeder(
         var created = 0
         WORKSPACE_PUBLISHMENT_SEED.forEachIndexed { idx, case ->
             val originalCaseId = WS_ORIGIN_BASE + (idx + 1)
-            if (repository.findByOriginalCaseId(originalCaseId) != null) return@forEachIndexed
+            val existing = repository.findByOriginalCaseId(originalCaseId)
+            if (existing != null) {
+                // 가이드 아티클이 예전 랜덤 slug 로 남아 있으면 고정 slug 로 교체(그 외엔 그대로 skip).
+                if (idx == GUIDE_SEED_INDEX && existing.slug != props.guideArticleSlug && !repository.existsBySlug(props.guideArticleSlug)) {
+                    repository.changeSlug(existing.id!!, props.guideArticleSlug)
+                    log.info { "demo guide article slug fixed: ${existing.slug} -> ${props.guideArticleSlug}" }
+                }
+                return@forEachIndexed
+            }
             repository.save(buildPublishment(idx, originalCaseId, case))
             created++
         }
@@ -92,7 +104,7 @@ class DemoWorkspacePublishmentSeeder(
         )
 
         return CasePublishment.create(
-            slug = uniqueSlug(),
+            slug = if (idx == GUIDE_SEED_INDEX) guideSlug() else uniqueSlug(),
             ownerUserId = DEMO_WORKSPACE_OWNER_ID,
             originalCaseId = originalCaseId,
             title = case.title,
@@ -118,6 +130,14 @@ class DemoWorkspacePublishmentSeeder(
         caption = caption,
     )
 
+    /** 고정 가이드 slug — 다른 발행물이 이미 쓰고 있으면(사실상 없음) 랜덤으로 대체하고 경고. */
+    private fun guideSlug(): String {
+        val s = props.guideArticleSlug
+        if (!repository.existsBySlug(s)) return s
+        log.warn { "demo guide slug '$s' is taken by another publishment — falling back to a random slug" }
+        return uniqueSlug()
+    }
+
     private fun uniqueSlug(): String {
         repeat(3) {
             val s = SlugGenerator.generate(slugProperties.length)
@@ -133,6 +153,9 @@ class DemoWorkspacePublishmentSeeder(
         /** 합성 originalCaseId 예약 베이스 — core 에 없는 id(공개 페이지는 원본 비조회). */
         const val WS_ORIGIN_BASE = 9_000_000L
         private const val WS_SOLUTION_ID_BASE = 9_900_000L
+
+        /** 사용 가이드 아티클 = 시드 첫 건(HikariCP 503). core 데모 시드의 같은 주제 케이스와 짝. */
+        const val GUIDE_SEED_INDEX = 0
 
         /**
          * 렌더러(HtmlRenderer)가 `**굵게**` 를 지원하지 않아 리터럴 별표가 보이는 것을 막기 위해

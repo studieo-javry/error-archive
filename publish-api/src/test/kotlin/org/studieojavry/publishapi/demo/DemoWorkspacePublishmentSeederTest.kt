@@ -1,5 +1,6 @@
 package org.studieojavry.publishapi.demo
 
+import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -10,6 +11,7 @@ import org.studieojavry.publishapi.demo.application.DemoWorkspacePublishmentSeed
 import org.studieojavry.publishapi.demo.application.DemoWorkspacePublishmentSeeder.Companion.DEMO_WORKSPACE_OWNER_ID
 import org.studieojavry.publishapi.demo.application.DemoWorkspacePublishmentSeeder.Companion.WS_ORIGIN_BASE
 import org.studieojavry.publishapi.demo.application.WORKSPACE_PUBLISHMENT_SEED
+import org.studieojavry.publishapi.demo.config.DemoPublishmentProperties
 import org.studieojavry.publishapi.publishment.application.port.CasePublishmentRepositoryPort
 import org.studieojavry.publishapi.publishment.application.usecase.ListPublicPublishmentsUseCase
 import org.studieojavry.publishapi.publishment.domain.CasePublishment
@@ -32,6 +34,7 @@ class DemoWorkspacePublishmentSeederTest {
     @Autowired private lateinit var seeder: DemoWorkspacePublishmentSeeder
     @Autowired private lateinit var repository: CasePublishmentRepositoryPort
     @Autowired private lateinit var listPublic: ListPublicPublishmentsUseCase
+    @Autowired private lateinit var em: EntityManager
 
     @Test
     fun `워크스페이스 발행물 10건을 멱등 시드한다`() {
@@ -89,6 +92,36 @@ class DemoWorkspacePublishmentSeederTest {
         assertThat(repository.existsDemoByOwner(guestId)).isFalse()  // 게스트분 삭제
         assertThat(repository.existsDemoByOwner(DEMO_WORKSPACE_OWNER_ID)).isTrue()  // 워크스페이스 보존
         assertThat(repository.findByOriginalCaseId(WS_ORIGIN_BASE + 1)).isNotNull
+    }
+
+    @Test
+    fun `가이드 아티클(첫 건)은 고정 slug 로 시드된다`() {
+        seeder.seed()
+        val guide = repository.findByOriginalCaseId(WS_ORIGIN_BASE + 1)!!
+        assertThat(guide.slug).isEqualTo(DemoPublishmentProperties.DEFAULT_GUIDE_ARTICLE_SLUG)
+        assertThat(repository.findBySlug(DemoPublishmentProperties.DEFAULT_GUIDE_ARTICLE_SLUG)?.title)
+            .isEqualTo(WORKSPACE_PUBLISHMENT_SEED[0].title)
+        // 나머지는 랜덤 slug 그대로
+        assertThat(repository.findByOriginalCaseId(WS_ORIGIN_BASE + 2)!!.slug)
+            .isNotEqualTo(DemoPublishmentProperties.DEFAULT_GUIDE_ARTICLE_SLUG)
+    }
+
+    @Test
+    fun `예전 랜덤 slug 로 시드된 가이드 아티클은 고정 slug 로 교체된다`() {
+        seeder.seed()
+        val guide = repository.findByOriginalCaseId(WS_ORIGIN_BASE + 1)!!
+        val other = repository.findByOriginalCaseId(WS_ORIGIN_BASE + 2)!!
+        // 고정 slug 도입 전 상태 모사
+        repository.changeSlug(guide.id!!, "legacy1x")
+        em.flush(); em.clear()
+
+        assertThat(seeder.seed()).isZero()   // 새로 만들진 않는다
+        em.flush(); em.clear()
+
+        val fixed = repository.findByOriginalCaseId(WS_ORIGIN_BASE + 1)!!
+        assertThat(fixed.id).isEqualTo(guide.id)
+        assertThat(fixed.slug).isEqualTo(DemoPublishmentProperties.DEFAULT_GUIDE_ARTICLE_SLUG)
+        assertThat(repository.findByOriginalCaseId(WS_ORIGIN_BASE + 2)!!.slug).isEqualTo(other.slug)
     }
 
     private fun minimalGuestDemo(ownerId: Long, originalCaseId: Long): CasePublishment =

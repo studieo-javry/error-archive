@@ -113,6 +113,10 @@ class CasePublishmentRepositoryAdapter(
         jpa.markSourceDeleted(id)
     }
 
+    override fun changeSlug(id: Long, slug: String) {
+        jpa.changeSlug(id, slug)
+    }
+
     override fun pageByOwner(query: MyPublishmentQuery): List<CasePublishment> {
         val pageable = PageRequest.of(0, query.limit)
         val hasCursor = query.cursorValue != null && query.cursorId != null

@@ -218,7 +218,9 @@ class RouteConfig(
                 path("/api/v1/error-cases/**")
                     .or(path("/api/v1/error-attachments/**"))
                     .or(path("/api/v1/error-snippets/**"))
-                    .or(path("/api/v1/step-attempt-types/**")),
+                    .or(path("/api/v1/step-attempt-types/**"))
+                    // 게스트 데모 — 사용 가이드 대상 조회(GET /api/v1/demo/guide)
+                    .or(path("/api/v1/demo/**")),
                 http()
             )
             .before(uri(downstream.coreApi))

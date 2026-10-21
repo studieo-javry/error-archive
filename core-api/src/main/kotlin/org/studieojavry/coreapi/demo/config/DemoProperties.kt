@@ -26,4 +26,11 @@ data class DemoProperties(
      * 스토리지 미가용 환경(테스트 등)에선 false 로 꺼서 불필요한 S3 호출을 피한다.
      */
     val seedAttachments: Boolean = true,
+
+    /**
+     * FE 사용 가이드 4단계가 여는 공개 아티클 slug. publish-api `demo.guide-article-slug` 와 **같은 값**이어야 한다
+     * (publish 가 이 slug 로 가이드 아티클을 시드). 공용 env `DEMO_GUIDE_ARTICLE_SLUG`.
+     */
+    @field:NotBlank
+    val guideArticleSlug: String = "demo-hikaricp-503",
 )

@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *  - `enabled` = false 면 모든 데모 시드/정리 진입점이 no-op (실서비스 기본).
  *  - 워크스페이스 데모 발행물은 부팅 시 정적·멱등 시드.
  *  - 게스트 개인 발행물은 `/me` 지연 시드 → `purge-cron` 으로 야간 수거.
+ *  - 워크스페이스 첫 발행물(HikariCP 503)은 FE 사용 가이드 4단계가 여는 아티클이라 **고정 slug**([guideArticleSlug]).
  *
  * core-api 데모 리셋(04:10 KST) 이후에 purge 가 돌도록 기본 04:30 으로 둔다.
  */
@@ -16,4 +17,13 @@ data class DemoPublishmentProperties(
     val enabled: Boolean = false,
     /** 게스트 데모 발행물 야간 정리 cron (Asia/Seoul). core 리셋(04:10) 이후. */
     val purgeCron: String = "0 30 4 * * *",
-)
+    /**
+     * 가이드 아티클 고정 slug. core-api `demo.guide-article-slug` 와 **같은 값**이어야 한다
+     * (core 의 `GET /api/v1/demo/guide` 가 이 slug 를 FE 에 내려준다). 공용 env `DEMO_GUIDE_ARTICLE_SLUG`.
+     */
+    val guideArticleSlug: String = DEFAULT_GUIDE_ARTICLE_SLUG,
+) {
+    companion object {
+        const val DEFAULT_GUIDE_ARTICLE_SLUG = "demo-hikaricp-503"
+    }
+}

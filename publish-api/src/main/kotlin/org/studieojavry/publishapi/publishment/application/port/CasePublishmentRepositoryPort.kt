@@ -82,6 +82,8 @@ interface CasePublishmentRepositoryPort {
     fun existsBySlug(slug: String): Boolean
     /** 원본 case 삭제 감지 시 해당 발행물을 SOURCE_DELETED 로 표시(발행물 자체는 유지). */
     fun markSourceDeleted(id: Long)
+    /** slug 교체(데모 가이드 아티클을 고정 slug 로 맞출 때만 사용). 삭제→재삽입은 원본 UNIQUE 와 flush 순서가 충돌해 UPDATE 로. */
+    fun changeSlug(id: Long, slug: String)
 
     /** 내 발행물 keyset 페이지 (검색/필터/정렬). `limit` 만큼 반환(정렬 순). */
     fun pageByOwner(query: MyPublishmentQuery): List<CasePublishment>

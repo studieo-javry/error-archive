@@ -249,6 +249,12 @@ class DemoSeeder(
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
         private const val SEED_VERSION = 8
+
+        /**
+         * FE 사용 가이드가 따라가는 샘플 케이스. publish-api 데모 시드 첫 건(같은 주제의 공개 아티클)과 짝을 이룬다.
+         * 리셋마다 케이스 ID 가 바뀌므로 [DemoGuideService] 가 이 제목으로 매번 찾는다.
+         */
+        const val GUIDE_CASE_TITLE = "피크 시간마다 터지는 503 — HikariCP 커넥션 풀 고갈"
         private val VERSION_TAG = "seed-v$SEED_VERSION"
 
         /** me-too 시드용 가짜 사용자 id 기준값(실 사용자와 충돌 없게 큼). 프로필 resolve 안 됨. */
@@ -410,7 +416,7 @@ iam 응답 샘플(첨부 `iam-profile-response.json`)에서 `avatarUrl` 이 `nul
                 ),
             ))
             add(RichSeed(
-                title = "피크 시간마다 터지는 503 — HikariCP 커넥션 풀 고갈",
+                title = GUIDE_CASE_TITLE,
                 project = "core-api", status = ErrorCaseStatus.RESOLVED, severityCode = 1, daysAgo = 4, hoursAgo = 2,
                 tags = listOf("hikaricp", "connection-pool", "jpa", "performance"),
                 exceptionClass = "org.springframework.dao.DataAccessResourceFailureException",

@@ -81,6 +81,10 @@ interface CasePublishmentJpaRepository : JpaRepository<CasePublishmentEntity, Lo
     fun incrementDownloadCount(@Param("slug") slug: String): Int
 
     @Modifying
+    @Query("update CasePublishmentEntity p set p.slug = :slug where p.id = :id")
+    fun changeSlug(@Param("id") id: Long, @Param("slug") slug: String): Int
+
+    @Modifying
     @Query("update CasePublishmentEntity p set p.sourceState = org.studieojavry.publishapi.publishment.domain.SourceState.SOURCE_DELETED where p.id = :id")
     fun markSourceDeleted(@Param("id") id: Long): Int
 

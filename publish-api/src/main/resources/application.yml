@@ -33,6 +33,8 @@ management:
 demo:
   enabled: ${DEMO_ENABLED:false}
   purge-cron: ${DEMO_PUBLISHMENT_PURGE_CRON:0 30 4 * * *}
+  # FE 사용 가이드 4단계가 여는 아티클(시드 첫 건)의 고정 slug. core-api 와 같은 env 를 공유.
+  guide-article-slug: ${DEMO_GUIDE_ARTICLE_SLUG:demo-hikaricp-503}
 
 publish:
   core-api:

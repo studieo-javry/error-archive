@@ -33,7 +33,28 @@ class DemoWorkspaceProvisioner(
         if (memberRepository.findByWorkspaceIdAndUserId(wsId, botId) == null) {
             memberRepository.save(WorkspaceMember.join(wsId, botId, WorkspaceRole.ADMIN))
         }
-        return DemoIdentity(workspaceId = wsId, botUserId = botId)
+        val personaIds = ensurePersonas(wsId)
+        return DemoIdentity(workspaceId = wsId, botUserId = botId, personaUserIds = personaIds)
+    }
+
+    /**
+     * 데모 시드 콘텐츠의 "여러 작성자" — 봇 하나로 몰면 목록 작성자 칩이 전부 같아 밋밋하다.
+     * displayName 을 가진 실제 User 로 멱등 생성해 데모 WS 에 WRITE 멤버로 둔다(봇처럼 리셋에서 보존).
+     * core-api 가 이 id 들을 시드 케이스 소유자로 분산한다.
+     */
+    private fun ensurePersonas(wsId: Long): List<Long> = PERSONAS.map { (handle, displayName) ->
+        val id = userRepository.findByHandle(handle)?.id ?: run {
+            try {
+                userRepository.save(User.create(email = null, handle = handle, displayName = displayName, avatarUrl = null)).id!!
+            } catch (ex: DataIntegrityViolationException) {
+                userRepository.findByHandle(handle)?.id
+                    ?: throw IllegalStateException("demo persona provisioning race not resolved ($handle)", ex)
+            }
+        }
+        if (memberRepository.findByWorkspaceIdAndUserId(wsId, id) == null) {
+            memberRepository.save(WorkspaceMember.join(wsId, id, WorkspaceRole.WRITE))
+        }
+        id
     }
 
     private fun ensureBot(): Long {
@@ -70,5 +91,20 @@ class DemoWorkspaceProvisioner(
         }
     }
 
-    data class DemoIdentity(val workspaceId: Long, val botUserId: Long)
+    data class DemoIdentity(
+        val workspaceId: Long,
+        val botUserId: Long,
+        val personaUserIds: List<Long> = emptyList(),
+    )
+
+    private companion object {
+        /** 데모 시드 작성자 persona (handle → displayName). 봇과 별개로 리셋에서 보존되는 고정 계정. */
+        val PERSONAS: List<Pair<String, String>> = listOf(
+            "demo-jiyeon" to "박지연",
+            "demo-dohyun" to "한도윤",
+            "demo-john" to "John Doe",
+            "demo-mira" to "Mira K.",
+            "demo-junho" to "이준호",
+        )
+    }
 }

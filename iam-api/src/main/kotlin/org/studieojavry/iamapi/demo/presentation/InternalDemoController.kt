@@ -28,7 +28,12 @@ class InternalDemoController(
     fun identity(): DemoIdentityResponse {
         if (!props.enabled) return DemoIdentityResponse(enabled = false, workspaceId = null, botUserId = null)
         val d = provisioner.ensureProvisioned()
-        return DemoIdentityResponse(enabled = true, workspaceId = d.workspaceId, botUserId = d.botUserId)
+        return DemoIdentityResponse(
+            enabled = true,
+            workspaceId = d.workspaceId,
+            botUserId = d.botUserId,
+            personaUserIds = d.personaUserIds,
+        )
     }
 
     @Operation(summary = "[internal] 게스트 사용자 수동 리셋 — 임시 계정+멤버십 삭제")
@@ -39,5 +44,7 @@ class InternalDemoController(
         val enabled: Boolean,
         val workspaceId: Long?,
         val botUserId: Long?,
+        /** 시드 작성자 persona id 들(없거나 비활성이면 빈 목록). core-api 가 시드 소유자 분산에 사용. */
+        val personaUserIds: List<Long> = emptyList(),
     )
 }

@@ -2,6 +2,8 @@ package org.studieojavry.coreapi.errorcase.case.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
+import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
@@ -24,7 +26,8 @@ import java.util.Base64
 @Service
 class ListErrorCasesUseCase(
     private val errorCaseRepository: ErrorCaseRepositoryPort,
-    private val workspaceQuery: WorkspaceQueryPort
+    private val workspaceQuery: WorkspaceQueryPort,
+    private val authorSummaryReader: AuthorSummaryReaderPort,
 ) {
     @Transactional(readOnly = true)
     fun invoke(input: Input): Result {
@@ -67,7 +70,15 @@ class ListErrorCasesUseCase(
                 encodeCursor(sortAt, last.id)
             }
 
-        return Result(items = items, nextCursor = nextCursor, hasNext = hasNext)
+        // 응답 hydration — 작성자(이름/아바타) 를 iam-api batch 로 1회 조회(N+1 회피).
+        // 워크스페이스 목록은 여러 멤버의 케이스가 섞이므로 작성자 표시가 필요하다.
+        // (전역 iam 프로필 — 워크스페이스별 프로필은 없음. /error-cases/search 와 동일 패턴.)
+        val authorIds = items.map { it.ownerUserId }.toSet()
+        val authors: Map<Long, AuthorSummary> =
+            if (authorIds.isEmpty()) emptyMap()
+            else authorSummaryReader.read(authorIds, input.requesterUserId)
+
+        return Result(items = items, authors = authors, nextCursor = nextCursor, hasNext = hasNext)
     }
 
     private fun encodeCursor(sortAt: LocalDateTime, id: Long): String =
@@ -103,6 +114,8 @@ class ListErrorCasesUseCase(
 
     data class Result(
         val items: List<ErrorCaseSummary>,
+        /** 작성자 표시정보 — key: ownerUserId. 삭제/비활성 사용자는 부재(칩 미표시). */
+        val authors: Map<Long, AuthorSummary>,
         val nextCursor: String?,
         val hasNext: Boolean
     )

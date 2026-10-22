@@ -238,7 +238,7 @@ class ErrorCaseController(
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
         }
         return ErrorCaseListResponse(
-            items = result.items.map { ErrorCaseSummaryResponse.from(it) },
+            items = result.items.map { ErrorCaseSummaryResponse.from(it, result.authors[it.ownerUserId]) },
             nextCursor = result.nextCursor,
             hasNext = result.hasNext
         )

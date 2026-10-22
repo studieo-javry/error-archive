@@ -60,5 +60,5 @@ class UserRepositoryAdapter(
 
     override fun deleteById(id: Long) = jpa.deleteById(id)
 
-    override fun deleteAllGuests(): Int = jpa.deleteAllGuests()
+    override fun deleteGuestsExcept(keepHandle: String): Int = jpa.deleteGuestsExcept(keepHandle)
 }

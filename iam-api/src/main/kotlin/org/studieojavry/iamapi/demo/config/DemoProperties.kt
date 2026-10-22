@@ -32,6 +32,14 @@ data class DemoProperties(
     @field:NotBlank
     val botDisplayName: String = "Demo Bot",
 
+    /** 공유 게스트 핸들 — 방문자마다 새로 만들지 않고 이 고정 계정 하나를 재사용. 야간 삭제에서 제외. */
+    @field:NotBlank
+    val guestHandle: String = "demo-guest",
+
+    /** 공유 게스트 표시 이름. */
+    @field:NotBlank
+    val guestDisplayName: String = "게스트",
+
     /** 게스트 토큰 TTL(초). refresh 없음 — 만료 시 버튼 재클릭. */
     @field:Min(300)
     val guestTokenTtlSeconds: Long = 3600,

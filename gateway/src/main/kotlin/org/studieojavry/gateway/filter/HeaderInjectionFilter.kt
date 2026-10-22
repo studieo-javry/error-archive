@@ -66,6 +66,9 @@ class HeaderInjectionFilter(
             uri.startsWith("/api/v1/error-attachments") ||
             uri.startsWith("/api/v1/error-snippets") ||
             uri.startsWith("/api/v1/step-attempt-types") ||
+            // 게스트 데모 — 사용 가이드 대상 조회(GET /api/v1/demo/guide). DemoGuideController 가 core-api 소속.
+            // RouteConfig 의 coreApiRoute 에 /api/v1/demo/** 가 추가됐으나 여기 누락되면 aud=iam-api 로 발급돼 401.
+            uri.startsWith("/api/v1/demo") ||
             // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
             // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
             uri.startsWith("/api/v1/users/me/recent-active-cases") ||

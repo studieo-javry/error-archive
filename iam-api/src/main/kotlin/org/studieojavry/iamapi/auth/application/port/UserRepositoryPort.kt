@@ -43,6 +43,6 @@ interface UserRepositoryPort {
     /** 사용자 삭제 — 게스트 정리 전용(실제 사용자 삭제 경로 아님). */
     fun deleteById(id: Long)
 
-    /** 게스트 사용자 일괄 삭제 — 야간 리셋. 삭제된 행 수 반환. */
-    fun deleteAllGuests(): Int
+    /** 게스트 사용자 일괄 삭제 — 야간 리셋. [keepHandle](공유 게스트)은 제외. 삭제된 행 수 반환. */
+    fun deleteGuestsExcept(keepHandle: String): Int
 }

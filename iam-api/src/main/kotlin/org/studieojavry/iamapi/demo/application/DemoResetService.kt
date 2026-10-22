@@ -26,11 +26,13 @@ class DemoResetService(
     fun resetGuests(): Int {
         if (!props.enabled) return 0
         val demo = provisioner.ensureProvisioned()
-        // 1) 게스트 멤버십 제거(데모 WS). 2) 게스트 사용자 벌크 삭제(단일 DELETE).
-        userRepository.findGuests(props.maxGuestsPerReset).forEach { g ->
-            g.id?.let { memberRepository.delete(demo.workspaceId, it) }
-        }
-        return userRepository.deleteAllGuests()
+        // 공유 게스트(guestHandle)는 고정 계정이라 보존 — 멤버십 제거/삭제 모두에서 제외.
+        // (레거시 per-visitor 게스트는 그대로 정리 → 전환 후엔 공유 게스트 하나만 남아 no-op 수렴.)
+        // 1) 게스트 멤버십 제거(데모 WS). 2) 게스트 사용자 벌크 삭제(공유 게스트 제외 단일 DELETE).
+        userRepository.findGuests(props.maxGuestsPerReset)
+            .filter { it.handle != props.guestHandle }
+            .forEach { g -> g.id?.let { memberRepository.delete(demo.workspaceId, it) } }
+        return userRepository.deleteGuestsExcept(props.guestHandle)
     }
 
     @Scheduled(cron = "\${demo.reset-cron}", zone = "Asia/Seoul")

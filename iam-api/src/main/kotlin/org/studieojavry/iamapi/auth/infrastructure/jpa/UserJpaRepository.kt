@@ -4,6 +4,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.studieojavry.iamapi.auth.domain.model.vo.UserStatus
 import org.studieojavry.iamapi.auth.infrastructure.jpa.entity.UserEntity
 import java.time.Instant
@@ -25,8 +26,8 @@ interface UserJpaRepository : JpaRepository<UserEntity, Long> {
      * `clearAutomatically` 로 영속성 컨텍스트를 비워 이후 조회가 DB 를 반영하게 한다.
      */
     @Modifying(clearAutomatically = true)
-    @Query("delete from UserEntity u where u.isGuest = true")
-    fun deleteAllGuests(): Int
+    @Query("delete from UserEntity u where u.isGuest = true and u.handle <> :keepHandle")
+    fun deleteGuestsExcept(@Param("keepHandle") keepHandle: String): Int
 
     /** handle prefix 검색 (대소문자 무시), ACTIVE 만. — 멘션 자동완성에서 handle 매칭용. */
     fun findByStatusAndHandleStartingWithIgnoreCaseOrderByHandleAsc(

@@ -16,6 +16,8 @@ interface MemberSummaryReaderPort {
         val userId: Long,
         val displayName: String,
         val avatarUrl: String?,
-        val email: String?
+        val email: String?,
+        /** 게스트("로그인 없이 둘러보기") 계정 여부 — 멤버 목록에서 임시 방문자 제외용. */
+        val isGuest: Boolean = false
     )
 }

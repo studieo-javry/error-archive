@@ -36,6 +36,8 @@ class ListWorkspaceMembersUseCase(
                     role = m.role,
                     joinedAt = m.joinedAt
                 )
+                // 게스트("로그인 없이 둘러보기")는 팀 멤버가 아니라 임시 방문자 → 멤버 목록에서 제외.
+                if (s.isGuest) return@mapNotNull null
                 Item(
                     userId = m.userId,
                     displayName = s.displayName,

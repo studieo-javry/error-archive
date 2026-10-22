@@ -21,7 +21,8 @@ class MemberSummaryReaderAdapter(
                 userId = it.id!!,
                 displayName = it.displayName,
                 avatarUrl = it.avatarUrl,
-                email = it.email
+                email = it.email,
+                isGuest = it.isGuest
             )
         }
     }
@@ -29,6 +30,6 @@ class MemberSummaryReaderAdapter(
     override fun findActiveByEmail(email: String): MemberSummary? {
         val entity = userJpa.findFirstByEmailIgnoreCase(email) ?: return null
         if (entity.status != UserStatus.ACTIVE) return null
-        return MemberSummary(entity.id!!, entity.displayName, entity.avatarUrl, entity.email)
+        return MemberSummary(entity.id!!, entity.displayName, entity.avatarUrl, entity.email, entity.isGuest)
     }
 }

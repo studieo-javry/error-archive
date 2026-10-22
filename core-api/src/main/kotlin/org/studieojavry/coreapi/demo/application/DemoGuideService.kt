@@ -23,11 +23,12 @@ class DemoGuideService(
     fun find(): Guide? {
         if (!props.enabled) return null
         val id = identityClient.fetchIdentity() ?: return null
-        if (!id.enabled || id.workspaceId == null || id.botUserId == null) return null
+        if (!id.enabled || id.workspaceId == null) return null
 
+        // 시드 소유자가 persona 로 분산되므로 owner 무관으로 데모 WS 를 제목 매칭 조회(봇 전제 제거).
         val caseId = errorCaseRepository.search(
             ErrorCaseSearchCriteria(
-                workspaceId = id.workspaceId, ownerUserId = id.botUserId, status = null, fingerprint = null,
+                workspaceId = id.workspaceId, ownerUserId = null, status = null, fingerprint = null,
                 visibility = null, cursorCreatedAt = null, cursorId = null, limit = SEARCH_LIMIT,
             ),
         ).firstOrNull { it.title == DemoSeeder.GUIDE_CASE_TITLE }?.id ?: return null

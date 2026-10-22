@@ -54,6 +54,8 @@ class DemoIamIdentityClient(
         val enabled: Boolean = false,
         val workspaceId: Long? = null,
         val botUserId: Long? = null,
+        /** 시드 작성자 persona id 들. 구 iam(미제공) 호환 위해 기본 빈 목록 — 이 경우 봇으로 폴백. */
+        val personaUserIds: List<Long> = emptyList(),
     )
 
     companion object {

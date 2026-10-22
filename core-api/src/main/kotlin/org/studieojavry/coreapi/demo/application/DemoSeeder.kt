@@ -34,7 +34,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 
 /**
- * 데모 워크스페이스 시드 — **데모 봇 소유**의 "실제 같은" 에러 케이스.
+ * 데모 워크스페이스 시드 — **여러 persona 작성자**로 분산한 "실제 같은" 에러 케이스(작성자 칩이 다양하게).
  * 각 케이스가 스택트레이스(스냅샷) + 코드블록이 담긴 재현/조사 스텝 + 솔루션 + 첨부(스크린샷 SVG·JSON·로그)를
  * 갖춰, 둘러보기 방문자가 제품 사용감을 바로 체감하도록 한다. 스텝/설명 본문은 마크다운(코드펜스 하이라이팅).
  *
@@ -62,21 +62,30 @@ class DemoSeeder(
     val versionTag: String get() = VERSION_TAG
 
     @Transactional
-    fun ensureSeeded(workspaceId: Long, botUserId: Long): Int {
+    fun ensureSeeded(workspaceId: Long, authorIds: List<Long>): Int {
         if (errorCaseRepository.search(criteria(workspaceId, 1)).isNotEmpty()) return 0
-        return seedFresh(workspaceId, botUserId)
+        return seedFresh(workspaceId, authorIds)
     }
 
+    /**
+     * [authorIds] 는 시드 작성자 persona 들(iam 이 미리 provision). 각 케이스를 라운드로빈으로 서로 다른
+     * persona 에 소유시키고, 댓글은 또 다른 persona 가 달아 "여러 사람이 쌓은 아카이브"처럼 보이게 한다.
+     */
     @Transactional
-    fun seedFresh(workspaceId: Long, botUserId: Long): Int {
-        SEED.forEach { seedOne(it, workspaceId, botUserId) }
+    fun seedFresh(workspaceId: Long, authorIds: List<Long>): Int {
+        require(authorIds.isNotEmpty()) { "demo seed needs at least one author" }
+        SEED.forEachIndexed { i, s ->
+            val ownerId = authorIds[i % authorIds.size]
+            val commenterId = authorIds[(i + 1) % authorIds.size]
+            seedOne(s, workspaceId, ownerId, commenterId)
+        }
         return SEED.size
     }
 
-    private fun seedOne(s: RichSeed, workspaceId: Long, botUserId: Long) {
+    private fun seedOne(s: RichSeed, workspaceId: Long, ownerId: Long, commenterId: Long) {
         // 스니펫(DB 전용) + 첨부(S3). 둘 다 markerId 로 먼저 저장돼야 case.save 가 링크할 수 있다.
-        val snippets = s.snippets.mapNotNull { buildSnippet(it, botUserId) }
-        val attachments = if (props.seedAttachments) s.attachments.mapNotNull { buildAttachment(it, botUserId) } else emptyList()
+        val snippets = s.snippets.mapNotNull { buildSnippet(it, ownerId) }
+        val attachments = if (props.seedAttachments) s.attachments.mapNotNull { buildAttachment(it, ownerId) } else emptyList()
 
         val snapshot = buildSnapshot(s)
         val meta = Meta.create(workspaceId = workspaceId, severityCode = s.severityCode)
@@ -89,7 +98,7 @@ class DemoSeeder(
         }
 
         val case = ErrorCase.create(
-            ownerUserId = botUserId,
+            ownerUserId = ownerId,
             title = s.title,
             project = s.project,
             snapshot = snapshot,
@@ -101,7 +110,7 @@ class DemoSeeder(
             tags = emptyList(), // 태그는 case.save 가 아니라 tagRepository 로 별도 저장(아래)
             occurredAt = occurredAt,
         )
-        applyStatus(case, s.status, botUserId)
+        applyStatus(case, s.status, ownerId)
         val caseId = errorCaseRepository.save(case).id!!
 
         // 태그는 별도 테이블 — 콘텐츠 태그 + 버전 태그를 정규화해 저장(버전 태그로 재시드 감지).
@@ -110,7 +119,7 @@ class DemoSeeder(
         val stepIds = s.steps.mapIndexed { i, st ->
             stepRepository.save(
                 Step.create(
-                    errorCaseId = caseId, authorUserId = botUserId, orderIndex = i,
+                    errorCaseId = caseId, authorUserId = ownerId, orderIndex = i,
                     title = st.title, status = st.status, attemptType = st.attemptType,
                     body = st.body, insight = st.insight,
                 ),
@@ -124,18 +133,18 @@ class DemoSeeder(
                 .map { it.second }
                 .ifEmpty { stepIds }
             if (solutionStepIds.isNotEmpty()) {
-                solutionRepository.save(Solution.create(caseId, botUserId, s.solutionTitle, solutionStepIds))
+                solutionRepository.save(Solution.create(caseId, ownerId, s.solutionTitle, solutionStepIds))
             }
         }
 
-        // 댓글(봇 작성 — 작성자 resolve 보장). 일부는 대댓글 포함.
+        // 댓글: 최상위는 다른 persona(commenterId)가 묻고, 대댓글(답변)은 케이스 작성자(ownerId)가 단다.
         s.comments.forEach { c ->
             val top = commentRepository.save(
-                Comment.create(caseId, botUserId, null, c.body, QuoteSourceKind.NONE, null, null),
+                Comment.create(caseId, commenterId, null, c.body, QuoteSourceKind.NONE, null, null),
             )
             c.reply?.let {
                 commentRepository.save(
-                    Comment.create(caseId, botUserId, top.id, it, QuoteSourceKind.NONE, null, null),
+                    Comment.create(caseId, ownerId, top.id, it, QuoteSourceKind.NONE, null, null),
                 )
             }
         }
@@ -147,12 +156,12 @@ class DemoSeeder(
         val resolved = s.status == ErrorCaseStatus.RESOLVED
         errorCaseRepository.update(
             ErrorCase.reconstitute(
-                id = caseId, ownerUserId = botUserId, title = s.title, project = s.project,
+                id = caseId, ownerUserId = ownerId, title = s.title, project = s.project,
                 snapshot = snapshot, description = description, meta = meta, visibility = Visibility.PUBLIC,
                 snippets = emptyList(), attachments = emptyList(), tags = emptyList(),
                 status = s.status, occurredAt = occurredAt, createdAt = occurredAt, updatedAt = occurredAt,
                 resolvedAt = if (resolved) occurredAt else null,
-                resolvedByUserId = if (resolved) botUserId else null,
+                resolvedByUserId = if (resolved) ownerId else null,
             ),
         )
     }
@@ -248,7 +257,7 @@ class DemoSeeder(
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 8
+        private const val SEED_VERSION = 9   // v9: 작성자를 persona 로 분산(봇 단일 → 다인). 배포 시 자동 재시드.
 
         /**
          * FE 사용 가이드가 따라가는 샘플 케이스. publish-api 데모 시드 첫 건(같은 주제의 공개 아티클)과 짝을 이룬다.

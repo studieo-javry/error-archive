@@ -39,7 +39,9 @@ class DemoResetService(
         // 게스트가 지연 생성한 개인(workspaceId=null) 케이스도 정리 — 데모 환경에선 개인 케이스=게스트 산물.
         // (iam 의 야간 deleteAllGuests 와 짝. 워크스페이스 wipe 로는 안 지워지므로 별도 purge.)
         val wipedPersonal = wipePersonalCases()
-        val seeded = seeder.seedFresh(id.workspaceId, id.botUserId)
+        // 시드 작성자 = persona 들(iam 미제공 시 봇으로 폴백). 케이스를 여러 작성자로 분산.
+        val authorIds = id.personaUserIds.ifEmpty { listOfNotNull(id.botUserId) }
+        val seeded = seeder.seedFresh(id.workspaceId, authorIds)
         log.info { "demo reset: wiped=$wiped wipedPersonal=$wipedPersonal seeded=$seeded (ws=${id.workspaceId})" }
         return ResetResult(ran = true, wiped = wiped + wipedPersonal, seeded = seeded)
     }
@@ -56,9 +58,11 @@ class DemoResetService(
         val id = identityClient.fetchIdentity() ?: return
         if (!id.enabled || id.workspaceId == null || id.botUserId == null) return
 
+        // 시드 소유자가 persona 로 분산되므로, 샘플은 첫 작성자 소유 케이스로 조회(버전 태그 확인용).
+        val sampleOwner = id.personaUserIds.ifEmpty { listOfNotNull(id.botUserId) }.first()
         val sampleId = errorCaseRepository.search(
             ErrorCaseSearchCriteria(
-                workspaceId = id.workspaceId, ownerUserId = id.botUserId, status = null, fingerprint = null,
+                workspaceId = id.workspaceId, ownerUserId = sampleOwner, status = null, fingerprint = null,
                 visibility = null, cursorCreatedAt = null, cursorId = null, limit = 1,
             ),
         ).firstOrNull()?.id

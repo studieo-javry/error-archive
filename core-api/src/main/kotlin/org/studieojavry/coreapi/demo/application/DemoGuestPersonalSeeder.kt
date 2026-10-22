@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.demo.config.DemoProperties
+import org.studieojavry.coreapi.demo.infrastructure.DemoIamIdentityClient
 import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
@@ -36,16 +37,18 @@ import java.time.LocalDateTime
 /**
  * 게스트("로그인 없이 둘러보기") 전용 **개인(personal) 케이스** 지연 시더.
  *
- * 왜 지연(lazy)인가: 개인 케이스는 `workspaceId=null` + `PRIVATE` 라 **소유자 본인에게만** 보인다.
- * 데모봇이 미리 깔아둬도 다른 유저인 게스트에겐 안 보이므로, **각 게스트가 '개인/Public 홈' 피드를
- * 처음 조회하는 순간 그 게스트 소유로 생성**한다(로그인 시점 아님 → 홈을 안 보는 방문자에겐 생성 비용 0).
+ * 왜 지연(lazy)인가: 각 게스트가 '개인/Public 홈' 피드를 **처음 조회하는 순간 그 게스트 소유로 생성**한다
+ * (로그인 시점 아님 → 홈을 안 보는 방문자에겐 생성 비용 0). 공용 시드와 달리 접속한 게스트별로 다르다.
+ *
+ * 가시성: **데모 WS 소속(WORKSPACE)** 로 2개 생성 → Library(워크스페이스 목록)에 "내 케이스"로 노출되어
+ * persona 들이 올린 팀 케이스 사이에 섞인다(데모 WS id 는 iam identity 로 조회·캐시).
  *
  * 콘텐츠는 워크스페이스 데모([DemoSeeder])와 동급 — 섹션 가득한 인시던트 리포트 본문 + 코드펜스 스텝 +
  * 인라인 코드 스니펫(@snippet) + SVG 이미지/로그 첨부(@attach) + 솔루션 + 댓글.
  *
  * 효과: 생성 직후 recent-active-cases(소유자 기준)에 뜨고, 자동 watch 로 watchlist-feed 에도 즉시 노출.
- * 정리: 게스트는 1회용이라 개인 케이스가 쌓인다 → [DemoResetService] 야간 리셋이 `workspaceId IS NULL`
- * 케이스를 함께 purge(데모 환경에선 개인 케이스=게스트 산물).
+ * 정리: 게스트는 1회용이라 케이스가 쌓인다 → [DemoResetService] 야간 리셋의 **데모 WS wipe** 가 함께 지운다
+ * (데모 WS 전체 wipe 대상). 레거시 ws=null 개인 케이스는 태그 스코프 purge 가 별도로 정리.
  */
 @Service
 class DemoGuestPersonalSeeder(
@@ -60,9 +63,14 @@ class DemoGuestPersonalSeeder(
     private val markerIdGenerator: MarkerIdGeneratorPort,
     private val addCaseToWatchlistUseCase: AddCaseToWatchlistUseCase,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
+    private val identityClient: DemoIamIdentityClient,
     private val props: DemoProperties,
 ) {
     private val log = KotlinLogging.logger {}
+
+    /** 데모 WS id 캐시 — 안정적이라 최초 1회만 iam identity 조회. */
+    @Volatile
+    private var cachedWorkspaceId: Long? = null
 
     /**
      * 게스트가 홈 피드를 열 때 호출(컨트롤러에서 guest 일 때만 + `runCatching` 으로 감싸 실패해도 피드 조회를
@@ -74,22 +82,31 @@ class DemoGuestPersonalSeeder(
     @Transactional
     fun ensureSeededForGuest(userId: Long) {
         if (!props.enabled) return
+        val workspaceId = demoWorkspaceId() ?: return   // identity 조회 실패 시 skip(best-effort).
         val already = errorCaseRepository.search(
             ErrorCaseSearchCriteria(
-                workspaceId = null, ownerUserId = userId, status = null, fingerprint = null,
+                workspaceId = workspaceId, ownerUserId = userId, status = null, fingerprint = null,
                 visibility = null, cursorCreatedAt = null, cursorId = null, limit = 1,
             ),
         ).isNotEmpty()
         if (already) return
 
-        SEED.forEach { seedOne(it, userId) }
+        SEED.take(GUEST_SEED_COUNT).forEach { seedOne(it, userId, workspaceId) }
         // 생성 전에 빈 결과가 캐시됐을 수 있으니 두 홈 위젯 캐시를 무효화해 즉시 반영.
         // (DashboardCacheInvalidator 는 내부에서 예외를 삼키므로 tx 를 오염시키지 않는다.)
         cacheInvalidator.evictBoth(userId)
-        log.info { "guest personal cases seeded (userId=$userId, n=${SEED.size})" }
+        log.info { "guest personal cases seeded (userId=$userId, n=$GUEST_SEED_COUNT, ws=$workspaceId)" }
     }
 
-    private fun seedOne(s: PersonalSeed, ownerUserId: Long) {
+    /** 데모 WS id — 캐시 우선, 없으면 iam identity 1회 조회. 데모 비활성/조회 실패면 null. */
+    private fun demoWorkspaceId(): Long? {
+        cachedWorkspaceId?.let { return it }
+        val id = identityClient.fetchIdentity()?.takeIf { it.enabled }?.workspaceId ?: return null
+        cachedWorkspaceId = id
+        return id
+    }
+
+    private fun seedOne(s: PersonalSeed, ownerUserId: Long, workspaceId: Long) {
         val snippets = s.snippets.mapNotNull { buildSnippet(it, ownerUserId) }
         val attachments = if (props.seedAttachments) s.attachments.mapNotNull { buildAttachment(it, ownerUserId) } else emptyList()
 
@@ -101,7 +118,7 @@ class DemoGuestPersonalSeeder(
             rawStackTrace = raw,
             fingeprint = FingerprintGenerator.generate(s.exceptionClass, raw),
         )
-        val meta = Meta.create(workspaceId = null, severityCode = s.severityCode)
+        val meta = Meta.create(workspaceId = workspaceId, severityCode = s.severityCode)
         val occurredAt = LocalDateTime.now().minusDays(s.daysAgo).minusHours(s.hoursAgo)
 
         // 본문에 스니펫/첨부 인라인 임베드(@snippet/@attach) — 렌더러가 해당 위치에 코드/이미지/파일을 끼워 넣는다.
@@ -117,7 +134,7 @@ class DemoGuestPersonalSeeder(
             snapshot = snapshot,
             description = description,
             meta = meta,
-            visibility = Visibility.PRIVATE, // 개인 케이스 — 소유자 본인만 read.
+            visibility = Visibility.WORKSPACE, // 데모 WS 소속 — Library(워크스페이스 목록)에 '내 케이스'로 노출.
             snippets = snippets,
             attachments = attachments,
             tags = emptyList(),
@@ -164,7 +181,7 @@ class DemoGuestPersonalSeeder(
         errorCaseRepository.update(
             ErrorCase.reconstitute(
                 id = caseId, ownerUserId = ownerUserId, title = s.title, project = s.project,
-                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.PRIVATE,
+                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.WORKSPACE,
                 snippets = emptyList(), attachments = emptyList(), tags = emptyList(),
                 status = s.status, occurredAt = occurredAt, createdAt = occurredAt, updatedAt = occurredAt,
                 resolvedAt = if (resolved) occurredAt else null,
@@ -239,6 +256,9 @@ class DemoGuestPersonalSeeder(
     companion object {
         /** 게스트 개인 케이스 식별 태그 — 야간 리셋/정리에서 이 산물을 구분하는 용도. */
         const val GUEST_PERSONAL_TAG = "demo-guest-personal"
+
+        /** 게스트당 시드할 케이스 수(데모 WS 소속). SEED 정의는 더 많아도 앞에서 이만큼만 사용. */
+        private const val GUEST_SEED_COUNT = 2
 
         private fun svgChart(title: String, unit: String, values: List<Int>, accent: String = "#6366f1"): String {
             val w = 720; val h = 360; val padL = 56; val padB = 44; val padT = 56; val padR = 24

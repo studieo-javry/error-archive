@@ -67,6 +67,10 @@ class SecurityConfig {
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 로그아웃 상태에서도 열람 가능해야 함.
                     //  숫자 userId 변형만 공개(타인 잔디 열람). `me` 는 위에서 authenticated 로 카브아웃했다.
                     "/api/v1/users/*/activity-grass",
+                    // 초대 미리보기 — 토큰만으로 "누가·어떤 워크스페이스로 초대했는지" 로그인/가입 전 열람.
+                    //  핸들러는 principal 없이 token 만 받는 익명 설계(수락 /accept 은 인증 필요). preview 만
+                    //  정확히 공개하고, 워크스페이스 스코프 초대 CRUD(ADMIN)·/accept 는 authenticated 로 유지.
+                    "/api/v1/invitations/preview",
                     // Swagger UI(aggregator) + 게이트웨이 자체 docs + 다운스트림 docs 프록시 경로
                     "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/api-docs/**"
                 ).permitAll()

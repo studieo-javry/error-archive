@@ -160,7 +160,10 @@ class RouteConfig(
     fun publishPublicRoute(): RouterFunction<ServerResponse> =
         route("publish-public")
             .route(
-                path("/p/**"),
+                // 공개 페이지 + 검색엔진 discovery(sitemap/robots) — 전부 publish-api 공개 라우트.
+                path("/p/**")
+                    .or(path("/sitemap.xml"))
+                    .or(path("/robots.txt")),
                 http()
             )
             .before(uri(downstream.publishApi))

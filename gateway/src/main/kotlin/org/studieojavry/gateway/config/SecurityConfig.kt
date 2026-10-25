@@ -61,6 +61,8 @@ class SecurityConfig {
                     "/avatars/**",
                     // 공개 publish 페이지 + 공개 export (인증 X — 누구나 열람/다운로드)
                     "/p/**", "/api/v1/publishments/by-slug/**",
+                    // 검색엔진 discovery — sitemap/robots 는 크롤러가 로그인 없이 읽어야 함(공개).
+                    "/sitemap.xml", "/robots.txt",
                     // 공개 Explore 목록(쇼케이스) — 로그아웃도 조회(랜딩/SEO/데모). publish-api 는 GET 만 permitAll,
                     //  RouteConfig 의 publish-public-list 가 per-IP rate limit 적용. (게이트웨이 JWT 필터 skip 필수)
                     "/api/v1/publishments/public",

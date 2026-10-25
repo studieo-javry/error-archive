@@ -99,3 +99,11 @@ server:
     include-message: never
     include-stacktrace: never
     include-binding-errors: never
+
+# prod 에서는 OpenAPI 문서 비노출. 게이트웨이 `/api-docs/noti-api` 프록시(permitAll)가 다운스트림
+# `/v3/api-docs` 를 그대로 전달해 내부 API 전체 스펙이 무인증 공개되던 것을 차단 — core/publish 와 동일.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

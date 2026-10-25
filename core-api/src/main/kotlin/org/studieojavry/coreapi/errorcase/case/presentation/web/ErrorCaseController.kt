@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -209,8 +211,8 @@ class ErrorCaseController(
         @Parameter(description = "정렬 · `created` (default, createdAt DESC) / `updated` (updatedAt DESC — 최근 활동 순).")
         @RequestParam(required = false, defaultValue = "created") sort: String,
         @Parameter(description = "다음 페이지 커서(이전 응답의 nextCursor)") @RequestParam(required = false) cursor: String?,
-        @Parameter(description = "페이지 크기(기본 20, 최대 100). `size` 는 deprecated 별칭.") @RequestParam(required = false) limit: Int?,
-        @Parameter(description = "[deprecated] `limit` 사용. 하위호환 유지.", deprecated = true) @RequestParam(required = false, defaultValue = "20") size: Int,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100). `size` 는 deprecated 별칭.") @RequestParam(required = false) @Min(1) @Max(100) limit: Int?,
+        @Parameter(description = "[deprecated] `limit` 사용. 하위호환 유지.", deprecated = true) @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) size: Int,
     ): ErrorCaseListResponse {
         val parsedStatus = status?.takeIf { it.isNotBlank() }?.let {
             runCatching { ErrorCaseStatus.valueOf(it.uppercase()) }
@@ -307,7 +309,7 @@ class ErrorCaseController(
         @Parameter(description = "케이스 상태 (OPEN/IN_PROGRESS/RESOLVED 등)", example = "OPEN") @RequestParam(required = false) status: String?,
         @Parameter(description = "fingerprint(SHA-256 hex)") @RequestParam(required = false) fingerprint: String?,
         @Parameter(description = "다음 페이지 커서") @RequestParam(required = false) cursor: String?,
-        @Parameter(description = "페이지 크기(기본 20, 최대 100)", example = "20") @RequestParam(required = false, defaultValue = "20") size: Int,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)", example = "20") @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) size: Int,
     ): ErrorCaseListResponse {
         val parsedStatus = status?.takeIf { it.isNotBlank() }?.let {
             runCatching { ErrorCaseStatus.valueOf(it.uppercase()) }

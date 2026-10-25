@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -225,7 +227,7 @@ class PublishmentController(
         @Parameter(description = "PUBLIC/UNLISTED") @RequestParam(required = false) visibility: String?,
         @Parameter(description = "정렬 · published(default)/views") @RequestParam(required = false, defaultValue = "published") sort: String,
         @Parameter(description = "다음 페이지 커서(이전 응답 nextCursor)") @RequestParam(required = false) cursor: String?,
-        @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") limit: Int,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) limit: Int,
     ): PublishmentListResponse {
         val uid = userId ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing principal")
         // 데모 게스트가 발행물 라이브러리를 처음 열면, 본인 개인 케이스를 발행물로 지연 시드(best-effort).
@@ -269,7 +271,7 @@ class PublishmentController(
     @GetMapping("/public")
     fun listPublic(
         @Parameter(description = "keyset 커서(이전 응답의 nextCursor). 첫 페이지는 생략") @RequestParam(required = false) cursor: String?,
-        @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") limit: Int,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)") @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) limit: Int,
     ): PublicPublishmentListResponse {
         val result = listPublicUseCase.invoke(cursor, limit)
         return PublicPublishmentListResponse(

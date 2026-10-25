@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -58,7 +60,7 @@ class MyNotificationsController(
         @Parameter(description = "안 읽은 것만", example = "false")
         @RequestParam(required = false, defaultValue = "false") unreadOnly: Boolean,
         @Parameter(description = "1..100", example = "20")
-        @RequestParam(required = false, defaultValue = "20") limit: Int,
+        @RequestParam(required = false, defaultValue = "20") @Min(1) @Max(100) limit: Int,
         @Parameter(description = "≥0 (since 와 함께 쓰면 무시)", example = "0")
         @RequestParam(required = false, defaultValue = "0") offset: Int,
         @Parameter(description = "SSE catchup — id > since 인 row 만", example = "42")

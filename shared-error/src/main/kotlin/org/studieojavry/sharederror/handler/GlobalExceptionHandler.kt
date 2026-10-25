@@ -3,6 +3,7 @@ package org.studieojavry.sharederror.handler
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import jakarta.validation.ConstraintViolationException
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -15,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.resource.NoResourceFoundException
@@ -111,6 +113,46 @@ open class GlobalExceptionHandler(
             status = HttpStatus.BAD_REQUEST,
             detail = "Required parameter '${ex.parameterName}' is missing",
             code = "MISSING_PARAMETER",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * `@RequestParam`/`@PathVariable` 등 메서드 파라미터 제약(@Min/@Max/@Size 등) 위반 — 400 (500 아님).
+     * `@Validated` 컨트롤러의 파라미터 검증 실패는 Spring 6.1+/Boot 3.2+ 에서
+     * `HandlerMethodValidationException` 으로 올라온다. 미처리 시 Throwable fallback→500→gateway
+     * 서킷브레이커 오염(타입불일치·NoResourceFound 와 동일 class)이므로 4xx 로 매핑.
+     */
+    @ExceptionHandler(HandlerMethodValidationException::class)
+    open fun handleParamValidation(ex: HandlerMethodValidationException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=VALIDATION_FAILED] method param constraint(s) failed" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Request parameter validation failed",
+            code = "VALIDATION_FAILED",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 구형 메서드 파라미터 제약 위반 경로(`ConstraintViolationException`) — 400. 위와 동일 이유.
+     * (버전/구성에 따라 이 타입으로 올라오는 경우 대비한 belt-and-suspenders.)
+     */
+    @ExceptionHandler(ConstraintViolationException::class)
+    open fun handleConstraintViolation(ex: ConstraintViolationException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=VALIDATION_FAILED] ${ex.constraintViolations.size} constraint(s) failed" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Request parameter validation failed",
+            code = "VALIDATION_FAILED",
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

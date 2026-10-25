@@ -12,8 +12,10 @@ import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 import org.studieojavry.sharederror.exception.BaseAppException
@@ -72,6 +74,46 @@ open class GlobalExceptionHandler(
             retryable = false,
             instance = req.requestURI,
             extra = mapOf("errors" to errors),
+        )
+    }
+
+    /**
+     * 경로/쿼리 변수 타입 불일치(예: `Long` 자리에 `abc`·`1.5`) — 400 (500 아님).
+     * `@PathVariable` 과 `@RequestParam` 바인딩 실패 둘 다 이 예외로 들어온다.
+     * 과거엔 Throwable fallback 으로 떨어져 500 → gateway 서킷브레이커 오염 → 전 라우트 503 을 유발했다
+     * (NoResourceFound·ResponseStatusException 과 동일 class 의 버그). 클라이언트 실수이므로 4xx 로 매핑.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    open fun handleTypeMismatch(ex: MethodArgumentTypeMismatchException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        val required = ex.requiredType?.simpleName ?: "the expected type"
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=TYPE_MISMATCH] param '${ex.name}' not $required" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Parameter '${ex.name}' must be $required",
+            code = "TYPE_MISMATCH",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 필수 쿼리 파라미터 누락 — 400 (500 아님). 위와 동일 이유(서킷브레이커 오염 방지)로 4xx.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    open fun handleMissingParam(ex: MissingServletRequestParameterException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=MISSING_PARAMETER] param '${ex.parameterName}' missing" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Required parameter '${ex.parameterName}' is missing",
+            code = "MISSING_PARAMETER",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
         )
     }
 

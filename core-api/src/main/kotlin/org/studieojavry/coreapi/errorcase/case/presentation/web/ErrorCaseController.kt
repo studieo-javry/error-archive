@@ -37,6 +37,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseAcce
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
+import org.studieojavry.coreapi.errorcase.case.application.usecase.FindSimilarCasesUseCase
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetCaseMeTooUseCase
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetErrorCaseUseCase
@@ -57,6 +58,8 @@ import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.Cre
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.ErrorCaseDetailResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.ErrorCaseListResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.ErrorCaseSummaryResponse
+import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.SimilarCaseListResponse
+import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.SimilarCaseResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.MeTooResponse
 
 @Tag(
@@ -84,6 +87,7 @@ class ErrorCaseController(
     private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
     private val attachmentPresigner: AttachmentPresigner,
     private val presignTtl: PresignTtlProperties,
+    private val findSimilarCasesUseCase: FindSimilarCasesUseCase,
 ) {
 
     /**
@@ -329,6 +333,36 @@ class ErrorCaseController(
             nextCursor = result.nextCursor,
             hasNext = result.hasNext,
         )
+    }
+
+    @Operation(
+        summary = "유사 에러 추천 (작성 중 실시간)",
+        description = """
+            새 에러 케이스 **제목을 입력하는 동안** 비슷한 기존 사례를 유사도와 함께 반환(중복 방지 + 해결책 재사용).
+            - 스코프: `workspaceId` 지정 시 그 워크스페이스(멤버만), 미지정 시 **본인 소유 케이스**. 남의 PRIVATE 은 노출 안 됨.
+            - `q` 2자 미만이면 빈 목록. 유사도 내림차순, 기본 6건(최대 10).
+            - `score`(0~1)/`matchedTerms` 만 주고 밴드/게이지 색·중복 임계값은 FE 가 결정.
+            - 엔진: Postgres `pg_trgm` word_similarity (후속 임베딩 교체 가능 — 포트 분리).
+        """
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "워크스페이스 비멤버", content = [Content()]),
+    )
+    @GetMapping("/similar")
+    fun similar(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "입력 중인 제목(2자↑)") @RequestParam q: String,
+        @Parameter(description = "워크스페이스 ID — 미지정 시 본인 케이스") @RequestParam(required = false) workspaceId: Long?,
+        @Parameter(description = "최대 건수(기본 6, 1~10)") @RequestParam(required = false, defaultValue = "6") @Min(1) @Max(10) limit: Int,
+    ): SimilarCaseListResponse {
+        val views = try {
+            findSimilarCasesUseCase.invoke(q = q, requesterUserId = userId, workspaceId = workspaceId, limit = limit)
+        } catch (e: ErrorCaseAccessDeniedException) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        }
+        return SimilarCaseListResponse(items = views.map { SimilarCaseResponse.from(it) })
     }
 
     @Operation(

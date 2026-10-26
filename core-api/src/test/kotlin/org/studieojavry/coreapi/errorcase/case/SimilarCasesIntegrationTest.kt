@@ -96,6 +96,16 @@ class SimilarCasesIntegrationTest {
             .andExpect(jsonPath("$.items").isArray)
             .andExpect(jsonPath("$.items[0].title").value(org.hamcrest.Matchers.containsString("HikariCP")))
             .andExpect(jsonPath("$.items[0].score").isNumber)
+            .andExpect(jsonPath("$.items[0].likelyDuplicate").isBoolean)
+    }
+
+    @Test
+    fun `예외 클래스 동일 + 고유사 입력은 likelyDuplicate 를 켠다`() {
+        seedMine() // "NullPointerException in OrderService.calculateTotal" 포함
+        mvc.perform(get("/api/v1/error-cases/similar").param("q", "NullPointerException in OrderService.calculateTotal").with(asUser(me)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].title").value(org.hamcrest.Matchers.containsString("NullPointerException")))
+            .andExpect(jsonPath("$.items[0].likelyDuplicate").value(true))
     }
 
     @Test

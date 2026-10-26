@@ -4,8 +4,9 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.DescriptionPr
 import org.studieojavry.coreapi.errorcase.case.application.usecase.FindSimilarCasesUseCase
 
 /**
- * 유사 에러 추천 항목. 목록 요약과 같은 표시 필드 + `score`(0~1) + `matchedTerms`(하이라이트용).
- * 밴드/게이지 색/임계값은 FE 가 `score` 로 결정한다.
+ * 유사 에러 추천 항목. 목록 요약과 같은 표시 필드 + `score`(0~1) + `matchedTerms`(하이라이트용)
+ * + `likelyDuplicate`(서버 판정 "중복 가능성 높음": score ≥ 0.85 AND 예외 클래스 동일).
+ * 게이지 색/소프트 밴드는 FE 가 `score` 로, 강한 중복 경고는 `likelyDuplicate` 로 결정한다.
  */
 data class SimilarCaseResponse(
     val id: Long,
@@ -18,6 +19,7 @@ data class SimilarCaseResponse(
     val descriptionPreview: String?,
     val score: Double,
     val matchedTerms: List<String>,
+    val likelyDuplicate: Boolean,
 ) {
     companion object {
         fun from(v: FindSimilarCasesUseCase.View): SimilarCaseResponse {
@@ -33,6 +35,7 @@ data class SimilarCaseResponse(
                 descriptionPreview = DescriptionPreview.of(s.descriptionRaw),
                 score = v.score,
                 matchedTerms = v.matchedTerms,
+                likelyDuplicate = v.likelyDuplicate,
             )
         }
     }

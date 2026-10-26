@@ -8,3 +8,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE INDEX IF NOT EXISTS idx_error_case_title_trgm
     ON error_case USING gin (title gin_trgm_ops);
+
+-- 본인 스코프(workspaceId 미지정) 유사 검색 보험. 싼 owner 필터로 word_similarity 계산 대상을
+-- 본인 케이스로 먼저 좁혀, 본인 케이스가 많은 사용자에서도 지연을 안정화(실측 10.6ms→6.7ms).
+CREATE INDEX IF NOT EXISTS idx_error_case_owner
+    ON error_case (owner_user_id);

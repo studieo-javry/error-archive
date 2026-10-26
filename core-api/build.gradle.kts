@@ -90,6 +90,11 @@ dependencies {
   testImplementation("org.springframework.security:spring-security-test")
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  // 유사 에러(pg_trgm) 는 H2 가 지원 안 함 → 실 Postgres(Testcontainers)로만 검증.
+  testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.6"))
+  testImplementation("org.springframework.boot:spring-boot-testcontainers")
+  testImplementation("org.testcontainers:junit-jupiter")
+  testImplementation("org.testcontainers:postgresql")
 }
 
 configure<KotlinJvmProjectExtension> {

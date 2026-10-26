@@ -1,286 +1,228 @@
 # Error Archive
-> 문제 해결 과정을 구조화하여 개인 · 팀 · 커뮤니티의 지식 자산으로 축적하는 플랫폼 <Br>
-> 단순 "에러 저장"이 아니라, 시도 / 실패 / 가설 / 해결의 흐름을 타임라인으로 남기고, 상황에 따라 워크스페이스 · 팔로워 · 외부 링크에 공유할 수 있습니다.
+> 문제 해결 과정을 구조화하여 개인 · 팀 · 커뮤니티의 지식 자산으로 축적하는 플랫폼
+> 단순 "에러 저장"이 아니라, 해결에 이르는 **시도 / 상태(진행·실패·해결) / 솔루션**의 흐름을 타임라인으로 남기고, 상황에 따라 워크스페이스 · 팔로워 · 공개 페이지로 공유합니다.
 
-<Br>
+---
 
 ## Why?
-*문제 정의:* <Br>
 개발자가 장애/에러를 경험할 때 반복되는 고통은 "원인"이 아니라 "과정"이 사라지는 데서 시작합니다.
 - 같은 에러를 몇 달 뒤 다시 겪는다.
 - 해결을 했는데, **왜 해결됐는지** 문서화가 부족하다.
 - 팀원이 해결한 경험이 **팀의 자산으로 축적되지 않는다**.
 - 블로그 / 위키 / 이슈 트래커는 "기록"은 가능하지만, **해결 과정의 구조화**가 어렵다.
 
-<Br>
-
 이 프로젝트는 다음을 목표로 합니다:
-- **개인**: "내가 해결했던 문제를 다시 빠르게 재사용"
-- **팀**: "팀 단위로 해결 경험을 축적하고 중복 삽질을 줄임"
-- **공유**: "필요하면 외부로 제출 가능한 `Artifact` 로 전환"
+- **개인**: 내가 해결했던 문제를 다시 빠르게 재사용
+- **팀**: 팀 단위로 해결 경험을 축적하고 중복 삽질을 줄임
+- **공유**: 필요하면 공개 페이지(Published Snapshot)로 전환
 
-<Br>
+---
 
 ## Key Concepts (핵심 용어)
-**Case** / **Timeline**
-- Case: 에러 사건의 "헤더 (요약 + 상태 + 분류)"
-- Timeline: 해결 과정의 "기록 (Attempt / Failure / Hypothesis / Solution)"
 
-<Br>
+**Case / Step / Solution**
+- **Case**: 에러 사건의 헤더 (제목 + 상태 + 태그/분류)
+- **Step**: 해결 과정의 한 기록 카드 — 상태(`RESOLVED` / `IN_PROGRESS` / `FAILED`)와 시도 유형(`CODE_CHANGE` / `CONFIG` / `DEPENDENCY` / `ENV` / `ROLLBACK` / `INVESTIGATION` / `OTHER`, 커스텀 추가 가능)을 가진다
+- **Solution**: 여러 Step을 묶어 "최종 해결"로 명명한 별도 집합 (케이스당 N개 가능)
 
 **Workspace**
 - 팀 단위 협업 / 권한 경계
-- 멤버십 / 역할 / 초대 / 설정의 SoT
+- 멤버십 / 역할 / 초대 / 설정의 SoT(Source of Truth)
 
-<Br>
+**Visibility (누가 볼 수 있나)**
+두 지점에서 각각의 가시성 모델을 둡니다.
+- **에러 케이스(core-api)**: `PRIVATE`(본인) / `WORKSPACE`(멤버) / `PUBLIC`(공개)
+- **발행물(publish-api)**: `PUBLIC`(sitemap·검색 노출) / `UNLISTED`(noindex, 링크로만 접근)
 
-**Visibility** = '누가 볼 수 있나' (Access)
-> 팀 기능이 들어오면 private 하나로는 모호해져서 Scope 기반으로 정의합니다.
-
-- `PRIVATE`: 본인만
-- `WORKSPACE`: 워크스페이스 멤버
-- `LINK-ONLY`: share 링크가 있어야만 접근 가능 (포트폴리오/제출용에 적합)
-- `DISCOVERABLE`: 누구나. 노출/검색/추천에 포함
-
-<Br>
+---
 
 ## User Scenarios
-1) 개인 기록
-- 홈에서 빠르게 `케이스 생성` -> `스텝 추가` -> `솔루션 등록`
-- 나중에 동일 문제 발생 시 검색/회고로 재사용
-- 기존 케이스들을 바탕으로 유사도 기반 자동 추천
 
-<Br>
+1) **개인 기록** — 홈에서 `케이스 생성` → `스텝 추가` → `솔루션 등록`. 나중에 동일 문제 발생 시 검색/회고로 재사용.
+2) **팀 협업 (Workspace)** — 가시성을 `WORKSPACE`로 생성/전환, 팀이 케이스를 함께 관리하고 해결 과정이 팀 자산으로 축적.
+3) **팔로우 / 워치 구독** — 사용자를 FOLLOW하면 팔로잉 피드/알림에 노출, 특정 케이스를 WATCH하면 변경이 워치 피드/알림에 노출. `PRIVATE`은 노출되지 않도록 설계.
+4) **외부 공유 (포트폴리오)** — 발행하면 랜덤 slug의 공개 페이지(`/p/{slug}`)가 생성되고, 원본과 분리된 **Published Snapshot** 기반으로 렌더링(원본·코어 장애와 독립). `UNLISTED`는 검색 비노출 + 링크 보유자만 접근.
 
-2) 팀 협업 (Workspace)
-- scope를 WORKSPACE로 생성/전환
-- 팀 보드에서 케이스를 함께 관리하고 해결 과정이 팀 자산으로 축적
-
-<Br>
-
-3) 팔로워 공유/watch 구독 
-- 사용자를 FOLLOW하면 팔로워 피드/알림에 노출
-- 특정 에러를 WATCH하면 변경사항이 피드/알림에 노출
-- 단, PRIVATE은 팔로워에게 노출되지 않도록 설계
-
-<Br>
-
-4) 외부 공유 (포트폴리오)
-- LINK-ONLY로 Publish -> 공유 링크 (share) 생성
-- 공개 페이지는 Published Snapshot 기반으로 제공 (원본과 분리)
-
-<Br>
+---
 
 ## Architecture Overview
-이 프로젝트는 다음 원칙에 따라 아키텍처를 설계했습니다:
-- Edge에서 최대한 필터링 및 보호 (WAF/CDN)
-- Kubernetes 기반 멀티 서비스 구조
-- 서비스 간 장애 전파 차단 (Circuit Breaker)
-- 관측 가능성 (Observability) 를 1급 설계 요소로 고려
-- 서비스별 데이터 소유권 분리 (DB per Serivce)
+설계 원칙:
+- Edge(Cloudflare)에서 CDN/WAF/봇·레이트 필터링
+- Kubernetes(k3s) 기반 멀티 서비스
+- 서비스 간 장애 전파 차단 (Resilience4j Circuit Breaker + Bulkhead)
+- 서비스별 데이터 소유권 분리 (Database per Service)
+- 비동기 통합은 Kafka + Transactional Outbox
 
-<Br>
-
-### Infrastructure Layered View
-```kotlin
-                  ┌──────────────────────────────────────────────────────────────────────────────┐
-                  │                                   Internet                                   │
-                  └──────────────────────────────────────────────────────────────────────────────┘
-                                                         │
-                                                         │ HTTPS (TLS)
-                                                         v
-                  ┌──────────────────────────────────────────────────────────────────────────────┐
-                  │  EDGE                                                                        │
-                  │  ┌────────────────┐     ┌────────────────┐     ┌──────────────────────────┐  │
-                  │  │ CDN            │ --> │ WAF            │ --> │ TLS Termination          │  │
-                  │  │ - cache static │     │ - L7 filtering │     │ (at CDN/ELB/Ingress)     │  │
-                  │  │ - ddos absorb  │     │ - bot/rate     │     │ - cert rotation          │  │
-                  │  └────────────────┘     └────────────────┘     └──────────────────────────┘  │
-                  └──────────────────────────────────────────────────────────────────────────────┘
-                                                        │
-                                                        │ HTTP/HTTPS
-                                                        v
-                  ┌──────────────────────────────────────────────────────────────────────────────┐
-                  │ Kubernetes Cluster                                                           │
-                  │                                                                              │
-                  │  Namespace: platform                                                         │
-                  │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-                  │  │ API Gateway / Ingress Controller                                        │ │
-                  │  │ - host/path routing                                                     │ │
-                  │  │ - JWT verification or auth delegation                                   │ │
-                  │  │ - external rate limit / quota                                           │ │
-                  │  │ - trace header propagation                                              │ │
-                  │  └─────────────────────────────────────────────────────────────────────────┘ │
-                  │                                                                              │
-                  │  Namespace: apps                                                             │
-                  │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-                  │  │  core-api        iam-api        publishing-api                          │ │
-                  │  │  notification-api insight-api                                           │ │
-                  │  │                                                                         │ │
-                  │  │  - REST/gRPC endpoints                                                  │ │
-                  │  │  - Resilience4j (timeout/retry/circuit breaker/bulkhead)                │ │
-                  │  │  - OpenTelemetry SDK                                                    │ │
-                  │  │                                                                         │ │
-                  │  │  S2S Discovery: Kubernetes Service + CoreDNS                            │ │
-                  │  │  http://service-name.apps.svc.cluster.local                             │ │
-                  │  └─────────────────────────────────────────────────────────────────────────┘ │
-                  │                                                                              │
-                  │  Namespace: observability                                                    │
-                  │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-                  │  │ Prometheus  ──> Grafana   (metrics)                                     │ │
-                  │  │ Loki/ELK     <─ log agent  (logs)                                       │ │
-                  │  │ Jaeger/Tempo <─ OTel Collector (traces)                                 │ │
-                  │  └─────────────────────────────────────────────────────────────────────────┘ │
-                  │                                                                              │
-                  └──────────────────────────────────────────────────────────────────────────────┘
-                                                      │
-                                                      │ private network
-                                                      v
-                  ┌──────────────────────────────────────────────────────────────────────────────┐
-                  │ DATA                                                                         │
-                  │  - DB per service (schema separation at least)                               │
-                  │  - Redis (cache / lock / rate-limit backing)                                 │
-                  │  - Kafka (events / async / outbox pattern)                                   │
-                  └──────────────────────────────────────────────────────────────────────────────┘
+### Infrastructure (실제 배포 기준)
+```
+                         Internet
+                            │  HTTPS
+                            ▼
+      ┌─────────────────────────────────────────────┐
+      │ EDGE — Cloudflare (CDN / WAF / bot·rate)      │
+      │   TLS: OCI LB 또는 gateway pod(:8443, CF       │
+      │        Origin Cert)에서 종료                   │
+      └─────────────────────────────────────────────┘
+                            │
+                            ▼
+      ┌─────────────────────────────────────────────┐
+      │ Kubernetes Cluster (k3s, OCI arm64 2노드)      │
+      │                                               │
+      │  ns: platform    → gateway, redis             │
+      │  ┌─────────────────────────────────────────┐  │
+      │  │ API Gateway (Spring Cloud Gateway MVC)    │  │
+      │  │ - host/path 라우팅                        │  │
+      │  │ - JWT 검증 / 내부 인증토큰 주입            │  │
+      │  │ - 분산 rate limit (Redis), CORS 소유      │  │
+      │  │ - Circuit Breaker (다운스트림 격리)        │  │
+      │  └─────────────────────────────────────────┘  │
+      │                                               │
+      │  ns: apps        → 5개 백엔드 + redis          │
+      │  ┌─────────────────────────────────────────┐  │
+      │  │ core-api  iam-api  publish-api            │  │
+      │  │ noti-api  insight-api                     │  │
+      │  │ - REST (Spring Boot 4 / Kotlin)           │  │
+      │  │ - Resilience4j (timeout/CB/bulkhead)      │  │
+      │  │ - S2S: 같은 ns 내 bare name               │  │
+      │  │   (http://iam-api:8080)                   │  │
+      │  └─────────────────────────────────────────┘  │
+      │                                               │
+      │  ns: observability → Grafana Alloy(수집기),    │
+      │        kube-state-metrics, node-exporter      │
+      │  GitOps: argocd ns (ArgoCD)                    │
+      └─────────────────────────────────────────────┘
+                            │ private network
+                            ▼
+      ┌─────────────────────────────────────────────┐
+      │ DATA — 외부 VM (docker-compose)                │
+      │  - PostgreSQL 16 (단일 인스턴스, DB-per-service │
+      │    = iam_db/core_db/noti_db/insight_db/        │
+      │      publish_db + 전용 유저)                   │
+      │  - Kafka (단일 브로커, KRaft)                   │
+      │  - Observability 백엔드: Prometheus / Grafana / │
+      │    Loki (Alloy가 메트릭·로그 remote_write/push) │
+      │  (Redis는 현재 in-cluster로 이동)              │
+      └─────────────────────────────────────────────┘
 ```
 
-<Br>
-
-### Service-Level View (Logical Context Map)
+### Service-Level View (실제 흐름)
 ```mermaid
 flowchart TB
-  U[User/Client] --> EDGE[CDN + WAF + TLS] --> GW[API Gateway / Ingress]
+  U[User/Client] --> EDGE[Cloudflare CDN/WAF] --> GW[API Gateway]
 
   GW --> CORE[core-api]
   GW --> IAM[iam-api]
-  GW --> PUB[publishing-api]
-  GW --> NOTI[notification-api]
+  GW --> PUB[publish-api]
+  GW --> NOTI[noti-api]
   GW --> INS[insight-api]
 
-  CORE -->|Sync: AuthZ / Membership check| IAM
-  PUB -->|"Sync: Fetch for publish (initial)"| CORE
+  CORE -->|Sync REST: AuthZ / Membership| IAM
+  PUB  -->|"Sync REST: 발행 시 원본 fetch"| CORE
+  CORE -->|Sync REST: 알림 트리거| NOTI
 
-  BUS[(Event Bus)]
-  CORE -->|Case/Step/Solution events| BUS
-  IAM -->|Member/Follow events| BUS
-  PUB -->|Publish/Link events| BUS
+  BUS[(Kafka)]
+  CORE -->|"user-activity.v1 (Case/Step/Solution/Comment)"| BUS
+  CORE -->|"notification-events.*.v1 (mention/reply/comment/resolved)"| BUS
+  IAM  -->|"user-activity.v1 (Follow)"| BUS
+  IAM  -->|"notification-events.{follows,invitations}.v1"| BUS
+  PUB  -->|"user-activity.v1 (Publishment)"| BUS
 
-  BUS --> NOTI
-  BUS --> INS
-  BUS --> PUB
+  BUS -->|user-activity.v1| INS
+  BUS -->|notification-events.*.v1| NOTI
 
-  CORE --- DB1[(core_schema)]
-  IAM --- DB2[(iam_schema)]
-  PUB --- DB3[(publishing_schema)]
-  NOTI --- DB4[(notification_schema)]
-  INS --- DB5[(insight_schema)]
+  CORE --- DB1[(core_db)]
+  IAM  --- DB2[(iam_db)]
+  PUB  --- DB3[(publish_db)]
+  NOTI --- DB4[(noti_db)]
+  INS  --- DB5[(insight_db)]
 ```
+> 참고: 발행(publish-api)은 **이벤트 생산자**이며, 이벤트 버스의 소비자는 **noti-api와 insight-api**입니다.
 
-<Br>
+---
 
-## DDD & Bounded Context 경계 설정 과정
+## DDD & Bounded Context
+
 ### 논리적 Bounded Context
-처음 설계 단계에서는 다음 9개의 BC로 구성:
-| Domain Area | Bounded Context | 주요 책임 |
-|-------------|----------------|-----------|
-| 🔐 Identity | **Identity & Access BC** | - Github OAuth 연동<br>- JWT 발급/검증<br>- 사용자 식별자 관리<br>- 인증 정책 |
-| 🔐 Identity | **Profile & Social BC** | - 사용자 프로필 관리<br>- 팔로우/팔로워 관계<br>- 활동 기반 노출 정책 |
-| 👥 Collaboration | **Workspace BC** | - 워크스페이스 생성/삭제<br>- 멤버십/역할 관리<br>- 초대 토큰 관리<br>- 팀 단위 권한 정책 |
-| 🧠 Core Problem-Solving | **Case Management BC** | - 에러 케이스 생성/수정<br>- 상태 관리 (OPEN / RESOLVED 등)<br>- 태그/분류<br>- Case의 SoT |
-| 🧠 Core Problem-Solving | **Resolution Timeline BC** | - Attempt / Failure / Hypothesis / Solution<br>- Root Cause 정의<br>- 타임라인 정렬/버전 관리 |
-| 🧠 Core Problem-Solving | **Solution Template BC** | - 해결 패턴 템플릿화<br>- Fork / Save<br>- 재사용 구조 |
-| 🌍 Publishing | **Sharing & Publishing BC** | - Visibility 정책 관리<br>- Share Link 생성<br>- Published Snapshot 관리<br>- Public Page 렌더링 |
-| 🔔 Event & Interaction | **Notification BC** | - 알림 생성 규칙<br>- Watch / Subscription 관리<br>- 읽음/안읽음 상태 |
-| 📊 Insight & Analytics | **Insight & Analytics BC** | - bomb grass (활동 시각화)<br>- MTTR 계산<br>- 반복 에러 분석<br>- 유사도 기반 추천 시스템 |
+| Domain Area | Bounded Context | 주요 책임 | 구현 상태 |
+|---|---|---|---|
+| 🔐 Identity | **Identity & Access** | GitHub OAuth, JWT 발급/검증, 사용자 식별 | ✅ |
+| 🔐 Identity | **Profile & Social** | 프로필, 팔로우/팔로워 | ✅ |
+| 👥 Collaboration | **Workspace** | WS 생성/멤버십/역할/초대 토큰 | ✅ |
+| 🧠 Core | **Case Management** | 케이스 생성/상태/태그, Case의 SoT | ✅ |
+| 🧠 Core | **Resolution Timeline** | Step(상태·시도유형) / Solution(스텝 묶음) | ✅ |
+| 🌍 Publishing | **Sharing & Publishing** | 발행 스냅샷, slug 공개 페이지, 가시성 | ✅ |
+| 🔔 Event | **Notification** | 알림 생성, Watch 구독, 읽음 상태, 실시간(SSE) | ✅ |
+| 📊 Insight | **Activity Analytics** | 활동 그래프(잔디), KPI(해결률·발행률·스트릭·레벨) | ✅ |
 
-<Br>
+> 상세 설계상 존재했던 **Solution Template(패턴 템플릿/Fork/Save)**, **MTTR·반복에러 분석**, **유사도 추천**은 아래 [Roadmap](#roadmap)으로 분리합니다.
 
 ### 현실적인 배포 단위
-> 논리적 BC와 물리적 배포 단위는 반드시 1:1일 필요가 없다. <Br>
-> BC는 유지하되, 배포 단위는 합친다.
+> 논리적 BC와 물리적 배포 단위는 1:1일 필요가 없다 — BC는 유지하되 배포 단위는 합친다.
 
-BC를 "코드 폴더"로 나누지 않고, 다음 신호로 경계를 검증하고, 초기 운영을 위해 4~6개 배포 단위로 합쳤습니다:
-- **Ubiquitous Language 충돌**: 같은 단어가 다른 의미/정책을 가질 때 분리
-- **정책/규칙의 차이**: 공개 정책 vs 해결 기록 정책 vs 멤버십 정책
-- **SoT**: 멤버십은 Workspace, 케이스 내용은 Core, 공개 스냅샷은 Publishing
-- **변경 주기/장애 격리**: 알림/인사이트는 장애가 나도 코어 기능이 멈추면 안 됨
+| Deployment Unit | 포함 BC | 통합 이유 |
+|---|---|---|
+| **core-api** | Case Management · Resolution Timeline | 문제 해결 핵심 도메인, 트랜잭션 경계 밀접 |
+| **iam-api** | Identity & Access · Profile & Social · Workspace | 사용자/멤버십/팔로우/권한 판단의 중심 |
+| **publish-api** | Sharing & Publishing | 공개 정책·스냅샷 독립, 코어와 장애 격리 |
+| **noti-api** | Notification | 이벤트 기반 비동기, 코어 영향 없어야 함 |
+| **insight-api** | Activity Analytics | 집계/읽기 모델 중심, 코어 트랜잭션과 분리 |
 
-<Br>
-
-| Deployment Unit | 포함 Bounded Context | 통합 이유 (설계 의도) |
-|-----------------|----------------------|------------------------|
-| **core-api** | Case Management<br>Resolution Timeline<br>Solution Template | • 모두 “문제 해결 핵심 도메인”<br>• 트랜잭션 경계가 밀접<br>• 강한 응집도 유지 필요 |
-| **iam-api** | Identity & Access<br>Profile & Social<br>Workspace | • 사용자/멤버십/팔로우 정책이 밀접<br>• 권한/접근 판단의 중심<br>• 인증/인가 흐름 통합 관리 |
-| **publishing-api** | Sharing & Publishing | • 공개 정책 및 스냅샷은 독립적 성격<br>• 코어 도메인과 장애 격리 필요<br>• 외부 공개 페이지 별도 관리 |
-| **notification-api** | Notification | • 이벤트 기반 비동기 처리<br>• 실패해도 코어 기능에 영향 없어야 함<br>• 알림 정책 독립성 유지 |
-| **insight-api** | Insight & Analytics | • 집계/유사도/통계는 읽기 모델 중심<br>• 무거운 계산/검색 인덱싱 가능성<br>• 코어 트랜잭션과 분리 필요 |
-
-<Br>
-
-**간략 Context Map**
 ```mermaid
 flowchart LR
   IAM[iam-api] --> CORE[core-api]
-  CORE --> PUB[publishing-api]
-  CORE --> NOTI[notification-api]
-  CORE --> INS[insight-api]
-  PUB --> NOTI
+  CORE --> PUB[publish-api]
+  CORE --> NOTI[noti-api]
+  CORE --> BUS[(Kafka)] --> NOTI
+  BUS --> INS[insight-api]
 ```
 
-<Br>
+---
+
+## Tech Stack (실측 기준)
+- **Language/Framework**: Kotlin, Spring Boot 4.0, Spring Cloud Gateway (Server MVC)
+- **데이터 접근**: Spring Data JPA (QueryDSL 미사용), Flyway 마이그레이션
+- **서비스 간 호출**: 동기 `RestClient` (Feign/WebClient/gRPC 미사용 — 전부 REST)
+- **비동기**: Kafka + **Transactional Outbox**(core/iam/publish가 생산, 폴링 릴레이어) → noti/insight 소비
+- **캐시/상태**: Redis (분산 캐시, 게이트웨이 rate limit, SSE fan-out)
+- **회복탄력성**: Resilience4j (Circuit Breaker, Bulkhead)
+- **배포**: k3s(OCI arm64) + ArgoCD GitOps, stg CI(alpha push → GitHub Actions → ghcr → ArgoCD sync)
+- **관측**: Grafana Alloy → Prometheus(메트릭) + Loki(로그) + Grafana. *(분산 트레이싱 백엔드는 미구성 — [Roadmap](#roadmap))*
+
+---
 
 ## Project Structure
-이 프로젝트는 "전통 레이어드"의 단점을 피하기 위해 **개선된 레이어드 (DDD-friendly layered)**를 기본으로 합니다.
+"전통 레이어드"의 단점을 피한 **DDD-friendly 헥사고날 레이어드**. 서비스는 **기능 모듈(feature module)** 단위로 나뉘고, 레이어 폴더는 각 모듈 내부에 둡니다.
 
-**Why not "fat controller/service"?**
-- useCase/policy가 service에 뭉치면 변경에 취약
-- 도메인 규칙이 분산되어 테스트가 어려움
+**실제 패키지 루트**: `org.studieojavry.<service>` (예: `coreapi`, `iamapi`, `insightapi`, `publishapi`, `notiapi`, `gateway`; 공유 모듈 `sharederror`, `internalauth`)
 
-<Br>
-
-**Template (각 서비스 공통)**
-```kotlin
-<service>
-└─ src/main/kotlin/com/org/errorarchive/<service>
-   ├─ shared
-   │  ├─ config            // Spring 설정, 공통 빈
-   │  ├─ error             // ErrorCode, Exception, ErrorResponse
-   │  ├─ observability     // logging/tracing/metric 공통
-   │  ├─ security          // AuthContext, Filter/Resolver 등 서비스 범위 보안
-   │  └─ util
-   ├─ <bc1>
-   ├─ <bc2>
-   └─ <bc3>
 ```
-<Br>
-
-**Inner Template (각 BC 내부 공통)**
-- `domain` 은 프레임워크 의존을 최소화
-- `infra` 는 JPA/Redis/Kafka 등 상세 구현
-- `application` 은 트랜잭션 경계와 유스케이스 조합
-
-<Br>
-
-```kotlin
-<bc>
-├─ presentation
-│  ├─ web                 // Controller, Request/Response DTO
-│  └─ message             // EventConsumer/Listener, inbound handler
-├─ application
-│  ├─ usecase             // 동사형 유스케이스 클래스
-│  ├─ command             // 입력 Command
-│  ├─ query               // 조회 Query
-│  ├─ port                // 인터페이스: RepoPort/ClientPort/PublisherPort
-│  └─ tx                  // 필요 시 트랜잭션 유틸
-├─ domain
-│  ├─ model               // Aggregate/Entity/VO
-│  ├─ policy              // 도메인 규칙
-│  ├─ event               // Domain Event
-│  └─ service             // 도메인 서비스: “순수 규칙”만
-└─ infra
-   ├─ persistence         // JPA Entity, SpringDataRepo, Mapper, QueryDSL
-   ├─ client              // Feign/WebClient 등 외부 호출 + ACL
-   └─ messaging           // producer, consumer config, serde, retry/DLQ
+<service>/src/main/kotlin/org/studieojavry/<service>
+├─ shared                      // config, 공통 보안, 외부 호출 공통
+└─ <feature-module>            // 예: core-api → errorcase/{case, step, solution, comment, attachment}
+   ├─ presentation
+   │  ├─ web                   // Controller, Request/Response DTO
+   │  └─ message               // Kafka Consumer/Listener (소비 서비스만)
+   ├─ application
+   │  ├─ usecase               // 동사형 유스케이스
+   │  ├─ command / query       // 입력/조회
+   │  └─ port                  // RepoPort / ClientPort / PublisherPort
+   ├─ domain
+   │  ├─ model                 // Aggregate / Entity / VO
+   │  ├─ policy / service      // 순수 도메인 규칙
+   │  └─ event                 // Domain Event
+   └─ infrastructure
+      ├─ jpa                   // JPA Entity, SpringDataRepo, Adapter
+      ├─ <client>              // 외부 호출 어댑터 (예: iam, noti, core) — RestClient
+      ├─ kafka / dlq           // producer, outbox relayer, consumer config, DLQ
+      └─ ...                   // jwt, oauth, storage(S3) 등 기능별
 ```
 
+---
 
+## Roadmap
+설계 단계에서 정의했으나 아직 구현되지 않은(또는 진행 중인) 항목:
+
+- **유사도 기반 추천** — 케이스 작성 중 비슷한 기존 사례를 유사도와 함께 제시. `pg_trgm` 기반을 **core-api**에 구현 중(`feat/similar-cases`, 미병합). 현재 배포본은 제목/태그 **키워드 검색(ILIKE)** 만 제공. 2단계로 임베딩(pgvector) 교체 가능하도록 포트 분리.
+- **Solution Template / Fork / Save** — 해결 패턴을 템플릿화해 다른 케이스로 재사용.
+- **Insight 고도화** — MTTR(평균 해결 시간) 계산, 반복 에러 분석. *(현재는 활동 그래프 + 해결률/발행률 KPI까지)*
+- **분산 트레이싱** — 현재 Micrometer + Brave로 span은 생성하나 exporter/백엔드(Tempo 등) 미구성. 수집기(Alloy)에 trace source 추가 예정.

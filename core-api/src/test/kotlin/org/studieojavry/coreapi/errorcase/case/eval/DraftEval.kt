@@ -31,9 +31,11 @@ object DraftEval {
 
         for (s in DraftExtractionDataset.samples) {
             val r = uc.suggest(SuggestErrorDraftUseCase.Command(s.paste))
-            val exMatch = simpleName(r.exceptionClass) == simpleName(s.expectedExceptionClass)
+            val actualSimple = simpleName(r.exceptionClass)
+            val exMatch = if (s.acceptableExceptionClasses.isEmpty()) actualSimple == null
+                else actualSimple != null && actualSimple in s.acceptableExceptionClasses
             if (exMatch) exOk++
-            s.titleMustContain?.let { kw -> titleTot++; if (r.title.contains(kw, ignoreCase = true)) titleOk++ }
+            if (s.titleAnyOf.isNotEmpty()) { titleTot++; if (s.titleAnyOf.any { r.title.contains(it, ignoreCase = true) }) titleOk++ }
             s.expectedSeverity?.let { exp -> sevTot++; if (r.severity == exp) sevOk++ }
             for (t in r.tags) { tagTot++; if (t in s.acceptableTags) tagOk++ }
             lines += "  [${if (exMatch) "O" else "X"}] ${s.id.padEnd(20)} ex=${r.exceptionClass ?: "-"}  sev=${r.severity ?: "-"}  tags=${r.tags}  degraded=${r.degraded}"

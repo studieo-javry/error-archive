@@ -39,11 +39,14 @@ class LlmDraftExtractionAdapter(
                 "title" to mapOf("type" to "string", "description" to "에러 한 줄 제목(한국어, ≤120자)"),
                 "exceptionClass" to mapOf("type" to listOf("string", "null")),
                 "summary" to mapOf("type" to listOf("string", "null"), "description" to "한 줄 요약(한국어, ≤200자)"),
-                "tags" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "소문자 태그 최대 5개"),
-                "severity" to mapOf("type" to listOf("string", "null"), "enum" to listOf("S1", "S2", "S3", "S4", null)),
+                "tags" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "소문자 태그 최대 5개(예외 유형·기술·도메인)"),
+                "severity" to mapOf(
+                    "type" to "string", "enum" to listOf("S1", "S2", "S3", "S4"),
+                    "description" to "영향도 판단(반드시 하나): S1=서비스 중단/장애(OOM·커넥션 풀 고갈 등), S2=기능 저하/부분 실패(NPE·타임아웃 등), S3=경미(검증·상태 오류), S4=정보/경고",
+                ),
                 "confidence" to mapOf("type" to "number"),
             ),
-            "required" to listOf("title", "summary", "tags", "confidence"),
+            "required" to listOf("title", "summary", "tags", "severity", "confidence"),
         )
         val userText = buildString {
             append("다음 에러 로그를 구조화해줘. 로그에 없는 내용은 추측하지 말고 null/빈 배열로 둬.\n")
@@ -54,7 +57,10 @@ class LlmDraftExtractionAdapter(
             // temperature 는 Haiku 5.5 등 신모델에서 deprecated → 보내지 않는다(모델 기본값). tool use 가 이미 출력을 구조로 가둬 결정성은 충분.
             "model" to props.model,
             "max_tokens" to props.maxTokens,
-            "system" to "너는 에러 로그를 구조화하는 보조자다. 반드시 extract_error_draft 툴만 호출해 답한다. summary 는 로그 범위 안에서만.",
+            "system" to "너는 에러 로그를 구조화하는 보조자다. 반드시 extract_error_draft 툴만 호출해 답한다. " +
+                "exceptionClass·summary 는 로그에 있는 사실만(없으면 null). " +
+                "severity 는 에러의 영향도를 판단해 S1~S4 중 반드시 하나를 고른다(장애성=S1, 기능저하=S2, 경미=S3, 정보=S4). " +
+                "tags 는 소문자 최대 5개.",
             "messages" to listOf(mapOf("role" to "user", "content" to userText)),
             "tools" to listOf(
                 mapOf("name" to TOOL_NAME, "description" to "에러 로그에서 제목·예외·요약·태그·심각도를 추출", "input_schema" to schema),

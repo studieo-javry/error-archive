@@ -68,6 +68,18 @@ core:
   # prod 는 kafka 발행이라 이 RestClient 는 미사용이지만, 프로퍼티 자체는 존재해야 함.
   noti-api:
     base-url: ${CORE_NOTI_API_BASE_URL:http://localhost:8082}
+  # GitHub App 연동(Case 근거 수집). 기본 off — 끄면 연동 빈 미등록이라 시크릿 없이 부팅.
+  # 켜면(CORE_GITHUB_ENABLED=true) 아래 시크릿이 비었거나 미해소면 GithubAppProperties 검증으로 부팅 중단(fail-fast).
+  # 빈 문자열 폴백(`:`)은 "꺼져 있을 때 placeholder 해소 실패로 부팅이 막히지 않게" 하려는 것 — 기본값 역할 아님.
+  github:
+    enabled: ${CORE_GITHUB_ENABLED:false}
+    app-id: ${CORE_GITHUB_APP_ID:}
+    app-slug: ${CORE_GITHUB_APP_SLUG:}
+    client-id: ${CORE_GITHUB_CLIENT_ID:}
+    client-secret: ${CORE_GITHUB_CLIENT_SECRET:}
+    private-key-pem: ${CORE_GITHUB_PRIVATE_KEY_PEM:}
+    webhook-secret: ${CORE_GITHUB_WEBHOOK_SECRET:}
+    state-secret: ${CORE_GITHUB_STATE_SECRET:}
 
 # 알림 publisher 기본값 — 명시 안 하면 `http` (직접 RestClient). local 은 yml override 로 kafka.
 # default 가 없으면 어느 adapter 도 활성화되지 않아 createCommentUseCase 가 깨진다.

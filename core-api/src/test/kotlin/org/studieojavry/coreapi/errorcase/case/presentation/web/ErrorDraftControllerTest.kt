@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.security.core.GrantedAuthority
+import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.ActiveProfiles
@@ -60,6 +61,16 @@ class ErrorDraftControllerTest {
                 .contentType(MediaType.APPLICATION_JSON).content("""{"paste":"  "}"""),
         )
             .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `게스트(ROLE_GUEST)는 403 — LLM 비용 보호(로그인 사용자 전용)`() {
+        mvc().perform(
+            post("/api/v1/error-cases/draft-suggestion")
+                .with(authentication(InternalAuthentication(5000L, listOf<GrantedAuthority>(SimpleGrantedAuthority("ROLE_GUEST")), "gateway")))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"paste":"java.lang.NullPointerException"}"""),
+        )
+            .andExpect(status().isForbidden)
     }
 
     // 미인증(401)은 전역 보안설정(anyRequest().authenticated())이 보장하는 부분이라

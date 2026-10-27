@@ -57,6 +57,9 @@ class SecurityConfig {
                     // (멘션 초대/공개 승격은 워크스페이스 ADMIN 전용이라 게스트 WRITE 역할만으로 이미 차단됨.)
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-attachments")
                     .access(denyGuests())
+                    // 게스트는 AI 초안 제안 금지 — 외부 LLM 호출 비용/남용 방어(로그인 사용자 전용).
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-cases/draft-suggestion")
+                    .access(denyGuests())
                     .anyRequest().authenticated()
             }
             .exceptionHandling {

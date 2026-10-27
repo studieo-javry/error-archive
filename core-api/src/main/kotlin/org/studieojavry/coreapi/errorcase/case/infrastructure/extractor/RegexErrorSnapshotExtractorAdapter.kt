@@ -18,6 +18,9 @@ class RegexErrorSnapshotExtractorAdapter : ErrorSnaphostExtractorPort {
     private val fqnRegex = Regex("""([a-zA-Z_$][\w$]*\.)+[A-Z][\w$]*""")
     private val atLineRegex = Regex("""^\s*at\s+.+""", RegexOption.MULTILINE)
 
+    /** 예외 헤더 접두(`Caused by:` / `Suppressed:` / `Exception in thread "..."`) — 떼어내 FQN 이 줄 선두에 오게 한다. */
+    private val throwablePrefixRegex = Regex("""^(Caused by:\s*|Suppressed:\s*|Exception in thread\s+"[^"]*"\s+)""")
+
     override fun extract(source: String): ErrorSnaphostExtractorPort.ExtractedSnapshot {
         val trimmed = source.trim()
         if (trimmed.isEmpty()) return empty()
@@ -40,25 +43,36 @@ class RegexErrorSnapshotExtractorAdapter : ErrorSnaphostExtractorPort {
     }
 
     /**
-     * header 의 첫 줄에서 FQN 과 message 를 분리.
+     * header 에서 **예외 선언 형태의 줄**만 골라 FQN·message 를 분리한다.
      * 흔한 패턴:
      *   `java.lang.IllegalStateException: foo bar`
      *   `Exception in thread "main" java.lang.IllegalStateException: foo`
      *   `Caused by: java.net.SocketTimeoutException: read timed out`
+     *
+     * 과대추출 방지: FQN 이 (접두 제거 후) 줄 **선두**에 오고 그 뒤가 줄 끝이거나 `:` 여야 예외로 본다.
+     * → 문장 중간의 일반 타입명(`... to java.lang.String:`), 함수 호출(`debug.Stack()`),
+     *   로거명(`c.e.OrderService - ...`) 은 예외로 잡지 않는다(null → UseCase 가 LLM/폴백으로 처리).
+     * 여러 예외 줄이 있으면 뒤쪽(= Caused by 루트원인)을 우선한다.
      */
     private fun parseHeader(header: String): Pair<String?, String?> {
         if (header.isBlank()) return null to null
-
-        // 의미 있는 첫 줄을 찾는다 (Caused by / Exception in thread 라인은 우선순위 낮음).
         val lines = header.lines().map { it.trim() }.filter { it.isNotBlank() }
-        val target = lines.lastOrNull { fqnRegex.containsMatchIn(it) } ?: lines.firstOrNull()
-        target ?: return null to null
+        for (line in lines.asReversed()) {
+            parseExceptionLine(line)?.let { return it }
+        }
+        return null to null
+    }
 
-        val match = fqnRegex.find(target) ?: return null to target
-        val fqn = match.value
-        val tail = target.substring(match.range.last + 1).trim()
-        val message = tail.removePrefix(":").trim().takeIf { it.isNotBlank() }
-        return fqn to message
+    /** 한 줄이 `<FQN>` 또는 `<FQN>: <message>` 형태의 예외 선언이면 (class, message), 아니면 null. */
+    private fun parseExceptionLine(line: String): Pair<String, String?>? {
+        val stripped = line.replaceFirst(throwablePrefixRegex, "").trim()
+        val match = fqnRegex.find(stripped) ?: return null
+        if (match.range.first != 0) return null // FQN 이 줄 선두가 아님(문장 중간 타입명 등) → 예외 아님
+        val after = stripped.substring(match.range.last + 1)
+        // 줄 끝이거나 ':'(메시지) 만 허용. '(' 함수호출·' - ' 로거줄 등은 거부.
+        if (after.isNotEmpty() && !after.startsWith(":")) return null
+        val message = after.removePrefix(":").trim().takeIf { it.isNotBlank() }
+        return match.value to message
     }
 
     private fun empty() = ErrorSnaphostExtractorPort.ExtractedSnapshot(null, null, null)

@@ -49,6 +49,7 @@ class LlmDraftExtractionAdapter(
             "required" to listOf("title", "summary", "tags", "severity", "confidence"),
         )
         val userText = buildString {
+            if (props.fewShot) append(FEW_SHOT_PREFIX)
             append("다음 에러 로그를 구조화해줘. 로그에 없는 내용은 추측하지 말고 null/빈 배열로 둬.\n")
             input.exceptionClassHint?.let { append("정규식이 추출한 예외 클래스 후보: ").append(it).append('\n') }
             append("---\n").append(input.maskedPaste)
@@ -91,5 +92,28 @@ class LlmDraftExtractionAdapter(
 
     companion object {
         private const val TOOL_NAME = "extract_error_draft"
+
+        /**
+         * few-shot 예시 — **eval 데이터셋과 겹치지 않는** 샘플로, severity 양 끝(S1·S4)과
+         * null exceptionClass(스택트레이스 아닌 WARN 로그) 처리 기준을 보여준다.
+         * 형식·판단 기준만 전달하고 내용 복붙은 금지시킨다(과적합 방지).
+         */
+        private val FEW_SHOT_PREFIX = """
+            아래는 올바른 구조화 예시 2개다. 형식과 판단 기준만 참고하고, 내용을 그대로 복사하지 마라.
+
+            [예시1 입력]
+            redis.clients.jedis.exceptions.JedisConnectionException: Failed connecting to host redis:6379
+            ${"\t"}at redis.clients.jedis.Connection.connect(Connection.java:204)
+            ${"\t"}at com.shop.session.SessionStore.load(SessionStore.java:33)
+            [예시1 출력]
+            {"title":"Redis 연결 실패로 세션 로드 불가","exceptionClass":"redis.clients.jedis.exceptions.JedisConnectionException","summary":"SessionStore 가 redis:6379 연결에 실패해 세션을 불러오지 못함","tags":["redis","connection-refused","session","jedis","infra"],"severity":"S1","confidence":0.9}
+
+            [예시2 입력]
+            2026-10-20 09:15:00 WARN  c.shop.config.LegacyApiFilter : 'X-Legacy-Token' header is deprecated and will be removed in v2; use Authorization instead
+            [예시2 출력]
+            {"title":"X-Legacy-Token 헤더 deprecated 경고","exceptionClass":null,"summary":"LegacyApiFilter 가 곧 제거될 X-Legacy-Token 사용을 경고","tags":["deprecation","warning","config","auth","legacy"],"severity":"S4","confidence":0.8}
+
+            ---
+        """.trimIndent() + "\n"
     }
 }

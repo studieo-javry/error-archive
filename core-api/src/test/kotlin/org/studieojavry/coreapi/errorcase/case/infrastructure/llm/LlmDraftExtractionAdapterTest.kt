@@ -61,6 +61,22 @@ class LlmDraftExtractionAdapterTest {
     }
 
     @Test
+    fun `few-shot off 면 예시를 넣지 않고, on 이면 예시를 선주입한다`() {
+        var plainSent = ""
+        adapter { req -> plainSent = req; toolUseResponse }.extract(input)
+        val plainUser = om.readTree(plainSent).path("messages").path(0).path("content").asText()
+        assertTrue(!plainUser.contains("예시1 입력"), "few-shot off 인데 예시가 들어감")
+
+        var fsSent = ""
+        val fsProps = props.copy(fewShot = true)
+        LlmDraftExtractionAdapter(fsProps, { req -> fsSent = req; toolUseResponse }, om).extract(input)
+        val fsUser = om.readTree(fsSent).path("messages").path(0).path("content").asText()
+        assertTrue(fsUser.contains("예시1 입력") && fsUser.contains("예시2 입력"), "few-shot on 인데 예시가 없음")
+        assertTrue(fsUser.contains("\"severity\":\"S1\"") && fsUser.contains("\"severity\":\"S4\""), "예시가 S1·S4 기준을 보여주지 않음")
+        assertTrue(fsUser.indexOf("예시1 입력") < fsUser.indexOf(input.maskedPaste), "예시가 실제 로그보다 뒤에 옴")
+    }
+
+    @Test
     fun `tool_use 블록이 없으면 null (폴백 유도)`() {
         val resp = """{"content":[{"type":"text","text":"잘 모르겠어요"}]}"""
         assertNull(adapter { resp }.extract(input))

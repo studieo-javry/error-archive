@@ -15,4 +15,6 @@ data class LlmProperties(
     val anthropicVersion: String = "2023-06-01",
     val maxTokens: Int = 512,
     val timeoutMs: Long = 8000,
+    /** few-shot(모범 예시 선주입) 사용 여부. 기본 off — on 이면 요청 user 메시지 앞에 예시를 붙여 severity/태그 기준을 정렬. */
+    val fewShot: Boolean = false,
 )

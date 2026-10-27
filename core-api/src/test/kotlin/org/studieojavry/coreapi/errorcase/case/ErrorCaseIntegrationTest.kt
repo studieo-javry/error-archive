@@ -80,14 +80,14 @@ class ErrorCaseIntegrationTest {
     }
 
     @Test
-    fun `severity 를 지정해 생성하면 응답 echo 와 저장(meta) 둘 다 반영된다`() {
+    fun `severity 코드를 지정해 생성하면 응답 echo 와 저장(meta) 둘 다 반영된다`() {
         val json = mvc.perform(
             post("/api/v1/error-cases").with(asUser(ownerId))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"title":"OOM in PdfExporter","visibility":"PUBLIC","severity":"S2"}"""),
+                .content("""{"title":"OOM in PdfExporter","visibility":"PUBLIC","severity":2}"""),
         )
             .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.severity").value("S2"))
+            .andExpect(jsonPath("$.severity").value(2))
             .andReturn().response.contentAsString
         val id = om.readTree(json).get("id").asLong()
 

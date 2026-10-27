@@ -51,9 +51,9 @@ class LlmDraftExtractionAdapter(
             append("---\n").append(input.maskedPaste)
         }
         val body = mapOf(
+            // temperature 는 Haiku 5.5 등 신모델에서 deprecated → 보내지 않는다(모델 기본값). tool use 가 이미 출력을 구조로 가둬 결정성은 충분.
             "model" to props.model,
             "max_tokens" to props.maxTokens,
-            "temperature" to 0,
             "system" to "너는 에러 로그를 구조화하는 보조자다. 반드시 extract_error_draft 툴만 호출해 답한다. summary 는 로그 범위 안에서만.",
             "messages" to listOf(mapOf("role" to "user", "content" to userText)),
             "tools" to listOf(

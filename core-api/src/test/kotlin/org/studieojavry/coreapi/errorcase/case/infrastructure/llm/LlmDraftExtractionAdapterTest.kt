@@ -51,7 +51,7 @@ class LlmDraftExtractionAdapterTest {
         val root = om.readTree(sent)
 
         assertEquals("claude-haiku-5-5", root.path("model").asText())
-        assertEquals(0, root.path("temperature").asInt())
+        assertTrue(root.path("temperature").isMissingNode, "temperature 는 신모델 deprecated → 보내지 않아야 함")
         assertEquals("extract_error_draft", root.path("tool_choice").path("name").asText())
         val severityEnum = root.path("tools").path(0).path("input_schema").path("properties").path("severity").path("enum")
         assertTrue(severityEnum.toString().contains("S2"), "severity enum 이 스키마에 없음: $severityEnum")

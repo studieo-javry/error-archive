@@ -44,4 +44,10 @@ data class CreateErrorCaseRequest(
         example = "PUBLIC"
     )
     val visibility: Visibility = Visibility.PUBLIC,
+
+    @field:Schema(
+        description = "심각도. **선택**(미입력 시 미지정). AI 초안(`POST /error-cases/draft-suggestion`)이 제안한 값을 사용자가 검수해 함께 저장한다. S1=장애/중단, S2=기능저하, S3=경미, S4=정보.",
+        example = "S2"
+    )
+    val severity: Severity? = null,
 )

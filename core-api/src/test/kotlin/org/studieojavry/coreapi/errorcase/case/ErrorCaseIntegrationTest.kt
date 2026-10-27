@@ -1,6 +1,8 @@
 package org.studieojavry.coreapi.errorcase.case
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -43,6 +45,8 @@ class ErrorCaseIntegrationTest {
     @MockitoBean private lateinit var workspaceMemberReader: WorkspaceMemberReaderPort
     @MockitoBean private lateinit var followedUserReader: FollowedUserReaderPort
 
+    @Autowired private lateinit var errorCaseRepository: org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+
     private lateinit var mvc: MockMvc
     private val ownerId = 7L
 
@@ -73,6 +77,29 @@ class ErrorCaseIntegrationTest {
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").isNumber)
             .andExpect(jsonPath("$.status").value("OPEN"))
+    }
+
+    @Test
+    fun `severity 를 지정해 생성하면 응답 echo 와 저장(meta) 둘 다 반영된다`() {
+        val json = mvc.perform(
+            post("/api/v1/error-cases").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"title":"OOM in PdfExporter","visibility":"PUBLIC","severity":"S2"}"""),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.severity").value("S2"))
+            .andReturn().response.contentAsString
+        val id = om.readTree(json).get("id").asLong()
+
+        // 실제 영속 검증 — 도메인을 다시 읽어 meta.severity 확인(응답 echo 가 아니라 저장값)
+        val saved = errorCaseRepository.findById(id)!!
+        assertEquals(org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity.S2, saved.meta.severity)
+    }
+
+    @Test
+    fun `severity 미지정 생성은 null 로 저장된다`() {
+        val id = createCase(ownerId, "심각도 미지정")
+        assertNull(errorCaseRepository.findById(id)!!.meta.severity)
     }
 
     @Test

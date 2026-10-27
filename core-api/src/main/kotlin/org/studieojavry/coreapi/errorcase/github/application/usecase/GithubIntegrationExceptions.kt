@@ -11,3 +11,18 @@ class GithubInstallationAlreadyBoundException(message: String) : RuntimeExceptio
 
 /** 웹훅 서명 불일치/누락. */
 class GithubWebhookSignatureException(message: String) : RuntimeException(message)
+
+/** 지원하지 않는 GitHub 주소 (github.com 의 issues/pull 주소만 허용). */
+class GithubUrlInvalidException(message: String) : RuntimeException(message)
+
+/** 주소의 레포가 활성 GitHub 연결(설치)에 포함되어 있지 않음. */
+class GithubRepositoryNotConnectedException(message: String) : RuntimeException(message)
+
+/** 레포의 연결 범위(개인/워크스페이스)가 Case 범위와 다름 — 다른 곳의 비공개 정보가 섞이지 않게 거부. */
+class GithubScopeMismatchException(message: String) : RuntimeException(message)
+
+/** GitHub 에 그 Issue/PR 이 없거나 App 이 볼 수 없음. */
+class GithubItemNotFoundException(message: String) : RuntimeException(message)
+
+/** 이 Case 의 연결이 아님 / 없는 연결. */
+class CaseGithubLinkNotFoundException(message: String) : RuntimeException(message)

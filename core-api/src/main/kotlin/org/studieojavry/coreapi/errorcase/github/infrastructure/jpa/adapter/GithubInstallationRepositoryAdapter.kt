@@ -28,6 +28,15 @@ class GithubInstallationRepositoryAdapter(
     override fun findRepository(repoId: Long): GithubRepository? =
         repositories.findById(repoId).orElse(null)?.toDomain()
 
+    override fun findActiveRepositoryByFullName(fullName: String): GithubRepository? =
+        repositories.findFirstByFullNameIgnoreCaseAndRemovedAtIsNull(fullName)?.toDomain()
+
+    override fun findRepositoriesByIds(repoIds: Collection<Long>): List<GithubRepository> =
+        if (repoIds.isEmpty()) emptyList() else repositories.findAllById(repoIds).map { it.toDomain() }
+
+    override fun findByIds(installationIds: Collection<Long>): List<GithubInstallation> =
+        if (installationIds.isEmpty()) emptyList() else installations.findAllById(installationIds).map { it.toDomain() }
+
     override fun findRepositories(installationIds: Collection<Long>): List<GithubRepository> =
         if (installationIds.isEmpty()) emptyList()
         else repositories.findAllByInstallationIdInOrderByFullName(installationIds).map { it.toDomain() }

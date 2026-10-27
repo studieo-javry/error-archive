@@ -13,6 +13,8 @@ data class ErrorCaseDetailResponse(
     val project: String?,
     val status: String,
     val visibility: String,
+    /** 심각도 코드(1=S1 … 4=S4) — 미지정이면 null. list/create 와 동일한 숫자 코드. FE edit 폼 프리필·표시용. */
+    val severity: Int?,
     val description: String?,
     val workspaceId: Long?,
     val tags: List<String>,
@@ -92,6 +94,7 @@ data class ErrorCaseDetailResponse(
             project = c.project,
             status = c.status.name,
             visibility = c.visibility.name,
+            severity = c.meta.severity?.code,
             description = c.description,
             workspaceId = c.meta.workspaceId,
             tags = c.tags.toList(),

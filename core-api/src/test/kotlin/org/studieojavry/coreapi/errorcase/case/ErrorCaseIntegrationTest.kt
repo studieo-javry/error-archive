@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.case
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.FollowedUserReaderPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceMemberReaderPort
 import org.studieojavry.internalauth.InternalAuthentication
@@ -42,6 +44,8 @@ class ErrorCaseIntegrationTest {
     @MockitoBean private lateinit var authorSummaryReader: AuthorSummaryReaderPort
     @MockitoBean private lateinit var workspaceMemberReader: WorkspaceMemberReaderPort
     @MockitoBean private lateinit var followedUserReader: FollowedUserReaderPort
+
+    @Autowired private lateinit var errorCaseRepository: ErrorCaseRepositoryPort
 
     private lateinit var mvc: MockMvc
     private val ownerId = 7L
@@ -73,6 +77,45 @@ class ErrorCaseIntegrationTest {
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").isNumber)
             .andExpect(jsonPath("$.status").value("OPEN"))
+    }
+
+    @Test
+    fun `PATCH 로 severity 를 변경하면 응답 echo 와 저장(meta) 둘 다 반영된다`() {
+        // 생성(미지정) → PATCH 로 S3 지정. create 의 severity 저장과 무관하게 update 경로만 검증.
+        val id = createCase(ownerId, "심각도 수정 대상")
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"severity":3}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.severity").value(3))
+
+        assertEquals(
+            org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity.S3,
+            errorCaseRepository.findById(id)!!.meta.severity,
+        )
+    }
+
+    @Test
+    fun `PATCH 에 severity 미포함이면 기존 severity 를 유지한다`() {
+        // 생성 → PATCH 로 S2 지정(초기값) → 제목만 수정 → severity 는 S2 유지
+        val id = createCase(ownerId, "심각도 유지 대상")
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"severity":2}"""),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.severity").value(2))
+
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"title":"제목만 변경"}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.severity").value(2))
+
+        assertEquals(
+            org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity.S2,
+            errorCaseRepository.findById(id)!!.meta.severity,
+        )
     }
 
     @Test

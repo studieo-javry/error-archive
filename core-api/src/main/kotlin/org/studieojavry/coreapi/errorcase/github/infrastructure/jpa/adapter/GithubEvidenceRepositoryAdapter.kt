@@ -4,21 +4,25 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.github.application.port.CaseGithubCleanupPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.StepGithubCleanupPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort.ClosingRefSource
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
+import org.studieojavry.coreapi.errorcase.github.domain.model.StepGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubLinkJpaRepository
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseStepGithubLinkJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubIssueJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPrIssueRefJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPullRequestJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseGithubEventEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseGithubLinkEntity
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseStepGithubLinkEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubIssueEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubPrIssueRefEntity
@@ -34,8 +38,9 @@ class GithubEvidenceRepositoryAdapter(
     private val prIssueRefs: GithubPrIssueRefJpaRepository,
     private val links: CaseGithubLinkJpaRepository,
     private val events: CaseGithubEventJpaRepository,
+    private val stepLinks: CaseStepGithubLinkJpaRepository,
     private val objectMapper: ObjectMapper,
-) : GithubEvidenceRepositoryPort, CaseGithubCleanupPort {
+) : GithubEvidenceRepositoryPort, CaseGithubCleanupPort, StepGithubCleanupPort {
 
     // ── 스냅샷 ────────────────────────────────────────────────
     override fun findIssue(ref: GithubItemRef): GithubIssueSnapshot? =
@@ -123,8 +128,35 @@ class GithubEvidenceRepositoryAdapter(
             )
         }
 
+    // ── Step ↔ 근거 꼬리표 ──────────────────────────────────────
+    override fun findStepLinks(caseId: Long): List<StepGithubLink> =
+        stepLinks.findAllByCaseIdOrderByCreatedAt(caseId).map {
+            StepGithubLink(it.stepId, it.linkId, it.caseId, StepGithubLink.Source.valueOf(it.source), it.createdByUserId, it.createdAt)
+        }
+
+    override fun replaceStepLinks(caseId: Long, stepId: Long, linkIds: Collection<Long>, userId: Long, now: Instant) {
+        val current = stepLinks.findAllByStepId(stepId)
+        val next = linkIds.toSet()
+        val gone = current.filter { it.linkId !in next }
+        if (gone.isNotEmpty()) stepLinks.deleteAll(gone)
+        val known = current.map { it.linkId }.toSet()
+        val added = next.filter { it !in known }
+            .map { CaseStepGithubLinkEntity(stepId, it, caseId, StepGithubLink.Source.MANUAL.name, userId, now) }
+        if (added.isNotEmpty()) stepLinks.saveAll(added)
+    }
+
+    override fun deleteStepLinksByLinkId(linkId: Long) {
+        stepLinks.deleteAllByLinkId(linkId)
+    }
+
+    @Transactional
+    override fun deleteAllByStepId(stepId: Long) {
+        stepLinks.deleteAllByStepId(stepId)
+    }
+
     @Transactional
     override fun deleteAllByCaseId(caseId: Long) {
+        stepLinks.deleteAllByCaseId(caseId)
         events.deleteAllByCaseId(caseId)
         links.deleteAllByCaseId(caseId)
     }

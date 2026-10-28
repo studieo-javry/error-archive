@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -32,6 +33,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubLinkJpaRepository
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseStepGithubLinkJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPrIssueRefJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPullRequestJpaRepository
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
@@ -86,6 +88,7 @@ class GithubCaseEvidenceIntegrationTest {
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var prRepo: GithubPullRequestJpaRepository
     @Autowired private lateinit var ledgerRepo: GithubPrIssueRefJpaRepository
+    @Autowired private lateinit var stepLinkRepo: CaseStepGithubLinkJpaRepository
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -160,6 +163,23 @@ class GithubCaseEvidenceIntegrationTest {
 
     private fun evidence(uid: Long, caseId: Long) =
         mvc.perform(get("/api/v1/error-cases/$caseId/github").with(asUser(uid)))
+
+    private fun createStep(uid: Long, caseId: Long, title: String): Long {
+        val res = mvc.perform(
+            post("/api/v1/error-cases/$caseId/steps").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(mapOf("title" to title, "status" to "IN_PROGRESS"))),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        return om.readTree(res)["step"]["id"].asLong()
+    }
+
+    private fun setStepLinks(uid: Long, caseId: Long, stepId: Long, vararg linkIds: Long) = mvc.perform(
+        put("/api/v1/error-cases/$caseId/github/steps/$stepId/links").with(asUser(uid))
+            .contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(mapOf("linkIds" to linkIds.toList()))),
+    )
+
+    private fun linkIdOf(uid: Long, caseId: Long, field: String, number: Int): Long =
+        om.readTree(evidence(uid, caseId).andReturn().response.contentAsString)[field]
+            .first { it["number"].asInt() == number }["linkId"].asLong()
 
     // ── 연결 ─────────────────────────────────────────────────
     @Test
@@ -338,6 +358,104 @@ class GithubCaseEvidenceIntegrationTest {
         evidence(110L, caseId)
             .andExpect(jsonPath("$.pullRequests[0].masked").value(false))
             .andExpect(jsonPath("$.pullRequests[0].title").value("fix: close ResultSet"))
+    }
+
+    // ── Step 꼬리표 ───────────────────────────────────────────
+    @Test
+    fun `Step 꼬리표 - 근거 하나를 여러 Step 에, 통째로 맞추기, 다른 Case 근거·다른 Case Step·쓰기 권한 없음 거부`() {
+        val me = 121L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        val otherCase = createCase(me, "PRIVATE")
+        stubItem(s, 400, prItem(s, 400, closes = null))
+        stubItem(s, 401, issueItem(s, 401))
+        stubItem(s, 402, prItem(s, 402, closes = null, title = "other case pr"))
+        stubChecks(s, "sha-400")
+        stubChecks(s, "sha-402")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/400").andExpect(status().isCreated)
+        link(me, caseId, "https://github.com/${s.fullName}/issues/401").andExpect(status().isCreated)
+        link(me, otherCase, "https://github.com/${s.fullName}/pull/402").andExpect(status().isCreated)
+        val pr = linkIdOf(me, caseId, "pullRequests", 400)
+        val issue = linkIdOf(me, caseId, "issues", 401)
+        val foreign = linkIdOf(me, otherCase, "pullRequests", 402)
+        val step1 = createStep(me, caseId, "풀 크기 올림")
+        val step2 = createStep(me, caseId, "재시도 경로 검증")
+        val foreignStep = createStep(me, otherCase, "다른 Case 의 Step")
+
+        setStepLinks(me, caseId, step1, pr, issue)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.stepId").value(step1))
+            .andExpect(jsonPath("$.linkIds.length()").value(2))
+        setStepLinks(me, caseId, step2, pr).andExpect(status().isOk)
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.pullRequests[0].stepIds").value(org.hamcrest.Matchers.contains(step1.toInt(), step2.toInt())))
+            .andExpect(jsonPath("$.issues[0].stepIds").value(org.hamcrest.Matchers.contains(step1.toInt())))
+
+        // 통째로 맞춤: step1 에서 PR 빠짐, Issue 유지
+        setStepLinks(me, caseId, step1, issue).andExpect(status().isOk)
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.pullRequests[0].stepIds").value(org.hamcrest.Matchers.contains(step2.toInt())))
+            .andExpect(jsonPath("$.issues[0].stepIds").value(org.hamcrest.Matchers.contains(step1.toInt())))
+
+        setStepLinks(me, caseId, step1, foreign).andExpect(status().isBadRequest)
+        setStepLinks(me, caseId, foreignStep, pr).andExpect(status().isNotFound)
+        setStepLinks(me, caseId, 987654L, pr).andExpect(status().isNotFound)
+        setStepLinks(122L, caseId, step1, pr).andExpect(status().isForbidden)
+
+        // 빈 목록 = 모두 해제
+        setStepLinks(me, caseId, step1).andExpect(status().isOk).andExpect(jsonPath("$.linkIds").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.issues[0].stepIds").isEmpty)
+    }
+
+    @Test
+    fun `Step 꼬리표 - 근거를 떼면 사라지고 다시 붙여도 복구 안 됨, Step 삭제·Case 삭제 시 정리`() {
+        val me = 123L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        stubItem(s, 410, prItem(s, 410, closes = null))
+        stubItem(s, 411, prItem(s, 411, closes = null))
+        stubChecks(s, "sha-410")
+        stubChecks(s, "sha-411")
+        val url410 = "https://github.com/${s.fullName}/pull/410"
+        link(me, caseId, url410).andExpect(status().isCreated)
+        link(me, caseId, "https://github.com/${s.fullName}/pull/411").andExpect(status().isCreated)
+        val pr410 = linkIdOf(me, caseId, "pullRequests", 410)
+        val pr411 = linkIdOf(me, caseId, "pullRequests", 411)
+        val step1 = createStep(me, caseId, "시도 1")
+        val step2 = createStep(me, caseId, "시도 2")
+        setStepLinks(me, caseId, step1, pr410, pr411).andExpect(status().isOk)
+        setStepLinks(me, caseId, step2, pr411).andExpect(status().isOk)
+
+        mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$pr410").with(asUser(me))).andExpect(status().isNoContent)
+        assertTrue(stepLinkRepo.findAllByCaseIdOrderByCreatedAt(caseId).none { it.linkId == pr410 })
+        link(me, caseId, url410).andExpect(status().isCreated)
+        assertEquals(pr410, linkIdOf(me, caseId, "pullRequests", 410), "다시 붙이면 같은 연결 행 복구")
+        evidence(me, caseId).andExpect(jsonPath("$.pullRequests[?(@.number==410)].stepIds[0]").doesNotExist())
+
+        mvc.perform(delete("/api/v1/error-cases/$caseId/steps/$step2").with(asUser(me))).andExpect(status().is2xxSuccessful)
+        assertEquals(listOf(step1), stepLinkRepo.findAllByCaseIdOrderByCreatedAt(caseId).map { it.stepId })
+
+        mvc.perform(delete("/api/v1/error-cases/$caseId").with(asUser(me))).andExpect(status().is2xxSuccessful)
+        assertTrue(stepLinkRepo.findAllByCaseIdOrderByCreatedAt(caseId).isEmpty())
+    }
+
+    @Test
+    fun `Step 꼬리표 - 비공개 근거가 가려져도 stepIds 는 내려감(제목 없음)`() {
+        val me = 124L
+        val s = seedRepo(me, null, isPrivate = true)
+        val caseId = createCase(me, "PUBLIC")
+        stubItem(s, 420, prItem(s, 420, closes = null, title = "PRIVATE-STEP-title"))
+        stubChecks(s, "sha-420")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/420").andExpect(status().isCreated)
+        val step = createStep(me, caseId, "시도")
+        setStepLinks(me, caseId, step, linkIdOf(me, caseId, "pullRequests", 420)).andExpect(status().isOk)
+
+        val body = evidence(125L, caseId)
+            .andExpect(jsonPath("$.pullRequests[0].masked").value(true))
+            .andExpect(jsonPath("$.pullRequests[0].stepIds").value(org.hamcrest.Matchers.contains(step.toInt())))
+            .andReturn().response.contentAsString
+        assertFalse(body.contains("PRIVATE-STEP-title"))
+        assertFalse(body.contains("\"linkId\""), "가려진 항목엔 연결 id 도 없음: $body")
     }
 
     // ── Case 삭제 ─────────────────────────────────────────────

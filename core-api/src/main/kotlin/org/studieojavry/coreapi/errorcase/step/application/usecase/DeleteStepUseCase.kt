@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.errorcase.step.application.usecase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.StepGithubCleanupPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
@@ -19,6 +20,7 @@ class DeleteStepUseCase(
     private val solutionRepository: SolutionRepositoryPort,
     private val errorCaseRepository: ErrorCaseRepositoryPort,
     private val cacheInvalidator: DashboardCacheInvalidator,
+    private val stepGithubCleanup: StepGithubCleanupPort,
 ) {
     @Transactional
     fun invoke(stepId: Long, requesterUserId: Long) {
@@ -33,6 +35,7 @@ class DeleteStepUseCase(
                 "step $stepId is referenced by ${refs.size} solution(s); delete or update those first"
             )
         }
+        stepGithubCleanup.deleteAllByStepId(stepId)   // GitHub 근거 꼬리표 (근거 자체는 Case 에 남음)
         stepRepository.delete(stepId)
 
         // 캐시 무효화 — case owner 의 recent-active + 작성자의 my-recent-activities (Create 와 대칭).

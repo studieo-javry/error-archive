@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.errorcase.github.presentation.web.dto
 import com.fasterxml.jackson.annotation.JsonInclude
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
@@ -18,6 +19,20 @@ data class LinkGithubRequest(
     @field:NotBlank
     @field:Size(max = 500)
     val url: String,
+)
+
+@Schema(description = "Step 의 GitHub 근거 꼬리표를 이 목록으로 맞춤(빈 목록 = 모두 해제)")
+data class SetStepGithubLinksRequest(
+    @field:Schema(description = "이 Case 에 붙어 있는 근거의 연결 id(`GET .../github` 의 linkId) 목록", example = "[12, 15]")
+    @field:NotNull
+    @field:Size(max = 50)
+    val linkIds: List<Long>,
+)
+
+@Schema(description = "Step 의 GitHub 근거 꼬리표")
+data class StepGithubLinksResponse(
+    val stepId: Long,
+    @field:Schema(description = "꼬리표로 붙은 연결 id") val linkIds: List<Long>,
 )
 
 @Schema(description = "연결 결과")
@@ -79,11 +94,17 @@ data class GithubEvidenceItemResponse(
     @field:Schema(description = "VIA_ISSUE 일 때 경유한 Issue") val viaIssue: GetCaseGithubEvidenceUseCase.RefView?,
     val diff: GetCaseGithubEvidenceUseCase.DiffView?,
     @field:Schema(description = "PR 최신 head 커밋의 CI 요약. stale=true 면 새 커밋 CI 대기 중") val ci: GetCaseGithubEvidenceUseCase.CiView?,
+    @field:Schema(
+        description = "이 근거가 꼬리표로 붙은 Step id(빈 배열 = Case 전체 근거). 가려진 항목에도 내려간다. " +
+            "Solution 의 근거는 Solution 의 stepIds 와 이 값을 맞춰 FE 가 계산한다.",
+        example = "[101, 103]",
+    )
+    val stepIds: List<Long>,
 ) {
     companion object {
         fun of(i: GetCaseGithubEvidenceUseCase.ItemView) = GithubEvidenceItemResponse(
             i.linkId, i.kind, i.masked, i.state, i.repo, i.number, i.isPrivate, i.title, i.url, i.author,
-            i.linkSource, i.linkedAt, i.isDraft, i.viaIssue, i.diff, i.ci,
+            i.linkSource, i.linkedAt, i.isDraft, i.viaIssue, i.diff, i.ci, i.stepIds,
         )
     }
 }

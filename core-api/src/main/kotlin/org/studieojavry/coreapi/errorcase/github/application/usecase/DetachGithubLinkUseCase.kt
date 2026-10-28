@@ -13,6 +13,7 @@ import java.time.Instant
 /**
  * "관련 없음" — 연결을 떼되 행은 남긴다(자동 재부착 방지). 이미 뗀 연결이면 아무것도 안 함(멱등).
  * Issue 를 떼도 그 Issue 경유로 붙은 PR 은 그대로 둔다(이미 쌓인 근거 — 설계 Q3).
+ * 떼면 그 근거의 Step 꼬리표는 지운다 — 다시 연결해도 꼬리표는 복구하지 않는다(P1-e D7).
  */
 @Service
 @ConditionalOnGithubEnabled
@@ -32,6 +33,7 @@ class DetachGithubLinkUseCase(
         val now = Instant.now()
         link.detach(requesterUserId, now)
         evidence.saveLink(link)
+        evidence.deleteStepLinksByLinkId(link.id!!)
         evidence.recordEvent(CaseGithubEvent.detached(caseId, link.kind, link.repoId, link.number, requesterUserId, now))
     }
 }

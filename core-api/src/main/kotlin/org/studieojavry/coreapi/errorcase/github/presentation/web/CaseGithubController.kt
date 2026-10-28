@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -26,12 +27,17 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGith
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubStepLinkInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.LinkGithubToCaseUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase
+import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEvidenceResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubLinkResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.LinkGithubRequest
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.SetStepGithubLinksRequest
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.StepGithubLinksResponse
 
 @Tag(
     name = "error-case-github",
@@ -44,6 +50,7 @@ class CaseGithubController(
     private val linkGithub: LinkGithubToCaseUseCase,
     private val detachGithub: DetachGithubLinkUseCase,
     private val getEvidence: GetCaseGithubEvidenceUseCase,
+    private val setStepLinks: SetStepGithubLinksUseCase,
 ) {
 
     @Operation(
@@ -104,8 +111,11 @@ class CaseGithubController(
         description = """
             연결된 Issue·PR(+CI 요약)과 근거 타임라인. 케이스 읽기 권한 필요.
 
-            **비공개 가림**: 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는 Case 주인과 Case 워크스페이스 멤버에게만 보인다.
-            그 외에게는 `masked=true` + 종류·상태만 내려가고, `maskedCount` 로 개수를 알려준다.
+            **비공개 가림**: 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는
+            워크스페이스 Case 면 그 워크스페이스의 **현재** 멤버(역할 무관 — 주인이어도 탈퇴했으면 가림), 개인 Case 면 주인에게만 보인다.
+            그 외에게는 `masked=true` + 종류·상태(+`stepIds`)만 내려가고, `maskedCount` 로 개수를 알려준다.
+
+            **Step 꼬리표**: 각 항목의 `stepIds` 는 그 근거가 붙은 Step. 비어 있으면 Case 전체 근거.
         """,
     )
     @ApiResponses(
@@ -119,6 +129,31 @@ class CaseGithubController(
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
     ): CaseGithubEvidenceResponse = CaseGithubEvidenceResponse.of(getEvidence.invoke(caseId, userId))
 
+    @Operation(
+        summary = "Step 의 GitHub 근거 꼬리표 설정",
+        description = """
+            Step 에 "이 시도의 근거" 꼬리표를 단다. 요청 목록으로 **통째로 맞춘다**(빈 목록 = 모두 해제). 케이스 쓰기 권한 필요.
+
+            - 고를 수 있는 건 **이미 이 Case 에 붙어 있는(떼지 않은) 근거**의 연결 id 뿐. 아니면 400.
+            - 근거 하나를 여러 Step 에 달 수 있다. 내용은 복사하지 않는다(비공개 가림은 근거 조회 규칙 그대로).
+            - Case 에서 근거를 떼면 꼬리표도 사라지고, 다시 연결해도 복구되지 않는다. Step 을 지우면 그 Step 의 꼬리표도 사라진다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "설정됨"),
+        ApiResponse(responseCode = "400", description = "이 Case 의 활성 근거가 아닌 연결 id 포함 / 50개 초과", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "케이스 쓰기 권한 없음", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "케이스 없음 / 이 Case 의 Step 이 아님", content = [Content()]),
+    )
+    @PutMapping("/steps/{stepId}/links")
+    fun setStepLinks(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
+        @Parameter(description = "Step ID") @PathVariable stepId: Long,
+        @Valid @RequestBody request: SetStepGithubLinksRequest,
+    ): StepGithubLinksResponse =
+        StepGithubLinksResponse(stepId, translate { setStepLinks.invoke(caseId, stepId, userId, request.linkIds) })
+
     /** GitHub 연동 고유 예외 → HTTP. Case 없음/권한 없음은 ErrorCaseExceptionHandler 가 처리. */
     private fun <T> translate(block: () -> T): T = try {
         block()
@@ -129,6 +164,10 @@ class CaseGithubController(
     } catch (e: GithubScopeMismatchException) {
         throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
     } catch (e: GithubItemNotFoundException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
+    } catch (e: GithubStepLinkInvalidException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+    } catch (e: StepNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
     } catch (e: CaseGithubLinkNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)

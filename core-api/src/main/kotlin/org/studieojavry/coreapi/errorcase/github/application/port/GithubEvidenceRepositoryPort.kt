@@ -4,8 +4,10 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
+import org.studieojavry.coreapi.errorcase.github.domain.model.StepGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
+import java.time.Instant
 
 /** Case 근거 저장소 — Issue/PR 스냅샷, PR↔Issue 장부, Case 연결, 타임라인 이벤트. */
 interface GithubEvidenceRepositoryPort {
@@ -29,6 +31,15 @@ interface GithubEvidenceRepositoryPort {
     fun recordEvent(event: CaseGithubEvent)
     fun findEvents(caseId: Long): List<CaseGithubEvent>
 
+    // ── Step ↔ 근거 꼬리표 ──
+    fun findStepLinks(caseId: Long): List<StepGithubLink>
+
+    /** 이 Step 의 꼬리표를 [linkIds] 로 통째로 맞춤. 유지되는 꼬리표는 출처·시각을 그대로 둔다. */
+    fun replaceStepLinks(caseId: Long, stepId: Long, linkIds: Collection<Long>, userId: Long, now: Instant)
+
+    /** Case 에서 근거를 떼면 그 근거의 Step 꼬리표도 모두 지운다(다시 붙여도 복구하지 않음). */
+    fun deleteStepLinksByLinkId(linkId: Long)
+
     enum class ClosingRefSource { GITHUB, KEYWORD }
 }
 
@@ -38,4 +49,9 @@ interface GithubEvidenceRepositoryPort {
  */
 interface CaseGithubCleanupPort {
     fun deleteAllByCaseId(caseId: Long)
+}
+
+/** Step 삭제 시 그 Step 의 GitHub 근거 꼬리표 정리. [CaseGithubCleanupPort] 와 같은 이유로 스위치와 무관하게 등록. */
+interface StepGithubCleanupPort {
+    fun deleteAllByStepId(stepId: Long)
 }

@@ -56,16 +56,22 @@ class GetCaseGithubEvidenceUseCase(
         val pullRequests = evidence.findPullRequests(links.filter { it.kind == GithubRefKind.PULL_REQUEST }.map { GithubItemRef(it.repoId, it.number) })
             .associateBy { GithubItemRef(it.repoId, it.number) }
 
+        // Step 꼬리표 — 떼진 근거의 꼬리표는 떼기 때 지워지지만, 방어적으로 활성 연결 것만.
+        val activeLinkIds = links.mapNotNull { it.id }.toSet()
+        val stepIdsByLink = evidence.findStepLinks(caseId).filter { it.linkId in activeLinkIds }
+            .groupBy({ it.linkId }, { it.stepId })
+
         val canSeePrivate by lazy { canSeePrivate(errorCase, viewerUserId) }
         fun visible(repoId: Long): Boolean = repos[repoId]?.isPrivate == false || canSeePrivate
 
         val items = links.mapNotNull { link ->
             val ref = GithubItemRef(link.repoId, link.number)
             val repo = repos[link.repoId]
+            val stepIds = stepIdsByLink[link.id].orEmpty().sorted()
             when (link.kind) {
                 GithubRefKind.ISSUE -> issues[ref]?.let { issueView(link, it, repo, visible(link.repoId)) }
                 GithubRefKind.PULL_REQUEST -> pullRequests[ref]?.let { prView(link, it, repo, repos, visible(link.repoId)) }
-            }
+            }?.copy(stepIds = stepIds)
         }
 
         val syncStopped = links.any { link ->
@@ -145,6 +151,8 @@ class GetCaseGithubEvidenceUseCase(
         val viaIssue: RefView? = null,
         val diff: DiffView? = null,
         val ci: CiView? = null,
+        /** 이 근거가 꼬리표로 붙은 Step id. 가려진 항목에도 내려준다 — Step 번호는 비공개 내용이 아님(P1-e D9). */
+        val stepIds: List<Long> = emptyList(),
     ) {
         companion object {
             fun masked(kind: GithubRefKind, state: String) = ItemView(linkId = null, kind = kind, masked = true, state = state)

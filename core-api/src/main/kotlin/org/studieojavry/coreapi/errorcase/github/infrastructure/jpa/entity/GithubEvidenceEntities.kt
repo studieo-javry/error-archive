@@ -96,6 +96,20 @@ class CaseGithubLinkEntity(
     @Column(name = "detached_by_user_id") var detachedByUserId: Long?,
 )
 
+data class CaseStepGithubLinkKey(var stepId: Long = 0, var linkId: Long = 0) : Serializable
+
+@Entity
+@Table(name = "case_step_github_link")
+@IdClass(CaseStepGithubLinkKey::class)
+class CaseStepGithubLinkEntity(
+    @Id @Column(name = "step_id") var stepId: Long,
+    @Id @Column(name = "link_id") var linkId: Long,
+    @Column(name = "case_id", nullable = false) var caseId: Long,
+    @Column(name = "source", nullable = false, length = 20) var source: String,
+    @Column(name = "created_by_user_id") var createdByUserId: Long?,
+    @Column(name = "created_at", nullable = false) var createdAt: Instant,
+)
+
 @Entity
 @Table(name = "case_github_event")
 class CaseGithubEventEntity(

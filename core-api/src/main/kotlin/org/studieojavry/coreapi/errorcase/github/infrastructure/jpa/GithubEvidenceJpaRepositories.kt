@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseGithubEventEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseGithubLinkEntity
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseStepGithubLinkEntity
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseStepGithubLinkKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubIssueEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubPrIssueRefEntity
@@ -27,6 +29,23 @@ interface CaseGithubLinkJpaRepository : JpaRepository<CaseGithubLinkEntity, Long
 
     @Modifying
     @Query("DELETE FROM CaseGithubLinkEntity l WHERE l.caseId = :caseId")
+    fun deleteAllByCaseId(@Param("caseId") caseId: Long): Int
+}
+
+interface CaseStepGithubLinkJpaRepository : JpaRepository<CaseStepGithubLinkEntity, CaseStepGithubLinkKey> {
+    fun findAllByCaseIdOrderByCreatedAt(caseId: Long): List<CaseStepGithubLinkEntity>
+    fun findAllByStepId(stepId: Long): List<CaseStepGithubLinkEntity>
+
+    @Modifying
+    @Query("DELETE FROM CaseStepGithubLinkEntity s WHERE s.linkId = :linkId")
+    fun deleteAllByLinkId(@Param("linkId") linkId: Long): Int
+
+    @Modifying
+    @Query("DELETE FROM CaseStepGithubLinkEntity s WHERE s.stepId = :stepId")
+    fun deleteAllByStepId(@Param("stepId") stepId: Long): Int
+
+    @Modifying
+    @Query("DELETE FROM CaseStepGithubLinkEntity s WHERE s.caseId = :caseId")
     fun deleteAllByCaseId(@Param("caseId") caseId: Long): Int
 }
 

@@ -26,3 +26,6 @@ class GithubItemNotFoundException(message: String) : RuntimeException(message)
 
 /** 이 Case 의 연결이 아님 / 없는 연결. */
 class CaseGithubLinkNotFoundException(message: String) : RuntimeException(message)
+
+/** Step 꼬리표 요청에 이 Case 의 활성 근거가 아닌 연결 id 가 있음. */
+class GithubStepLinkInvalidException(message: String) : RuntimeException(message)

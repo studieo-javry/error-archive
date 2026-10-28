@@ -7,7 +7,6 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotF
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
-import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import java.time.Instant
 
 /**
@@ -19,13 +18,13 @@ import java.time.Instant
 @ConditionalOnGithubEnabled
 class DetachGithubLinkUseCase(
     private val errorCases: ErrorCaseRepositoryPort,
-    private val access: ErrorCaseAccess,
+    private val policy: GithubCaseAccessPolicy,
     private val evidence: GithubEvidenceRepositoryPort,
 ) {
     @Transactional
     fun invoke(caseId: Long, linkId: Long, requesterUserId: Long) {
         val errorCase = errorCases.findById(caseId) ?: throw ErrorCaseNotFoundException(caseId)
-        access.requireWrite(errorCase, requesterUserId)
+        policy.requireWrite(errorCase, requesterUserId)
         val link = evidence.findLinkById(linkId)?.takeIf { it.caseId == caseId }
             ?: throw CaseGithubLinkNotFoundException("연결을 찾을 수 없음: case=$caseId link=$linkId")
         if (!link.isActive) return

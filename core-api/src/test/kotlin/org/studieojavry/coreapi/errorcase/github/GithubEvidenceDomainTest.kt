@@ -75,4 +75,13 @@ class GithubEvidenceDomainTest {
         assertTrue(current.applyIfNewer(pr("newer", "sha-3", t2.plusSeconds(60))))
         assertTrue(current.isCiStale, "새 커밋이 올라왔으니 CI 대기 중")
     }
+
+    @Test
+    fun `Step 꼬리표 맞추기 - 가려진 근거는 요청과 무관하게 지금 상태 유지, 응답엔 보이는 것만`() {
+        val r = org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase.nextLinks(
+            wanted = listOf(1L, 3L), hidden = setOf(2L, 3L), current = listOf(2L, 4L),
+        )
+        assertEquals(listOf(1L, 2L), r.stored)   // 1 = 요청(보임) / 2 = 가려진 기존 꼬리표 유지 / 3 = 가려진 걸 새로 다는 요청은 무시 / 4 = 보이는데 요청에 없어 해제
+        assertEquals(listOf(1L), r.visible)
+    }
 }

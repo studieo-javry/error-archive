@@ -17,13 +17,12 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubUrl
-import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import java.time.Instant
 
 /**
  * Case 에 GitHub Issue/PR 주소를 직접 붙인다 (P1-a — 수동 연결).
  *
- * 순서: 주소 해석 → Case 쓰기 권한 → 레포가 활성 연결에 있나 → **범위 일치** → GitHub 에서 최신 정보 조회
+ * 순서: 주소 해석 → Case 쓰기 권한(워크스페이스 Case 는 현재 멤버) → 레포가 활성 연결에 있나 → **범위 일치** → GitHub 에서 최신 정보 조회
  * → (트랜잭션) 스냅샷·장부·연결·타임라인 기록. GitHub 호출은 트랜잭션 밖(DB 커넥션을 붙잡지 않게).
  *
  * 이미 붙어 있으면 그대로 돌려주고(created=false), "관련 없음"으로 뗐던 것이면 다시 붙인다.
@@ -33,7 +32,7 @@ import java.time.Instant
 @ConditionalOnGithubEnabled
 class LinkGithubToCaseUseCase(
     private val errorCases: ErrorCaseRepositoryPort,
-    private val access: ErrorCaseAccess,
+    private val policy: GithubCaseAccessPolicy,
     private val scopeGuard: GithubScopeGuard,
     private val githubApi: GithubAppApiPort,
     private val evidence: GithubEvidenceRepositoryPort,
@@ -48,7 +47,7 @@ class LinkGithubToCaseUseCase(
         val url = GithubUrl.parse(rawUrl)
             ?: throw GithubUrlInvalidException("지원하지 않는 GitHub 주소 (github.com 의 issues/pull 주소만 가능)")
         val errorCase = errorCases.findById(caseId) ?: throw ErrorCaseNotFoundException(caseId)
-        access.requireWrite(errorCase, requesterUserId)
+        policy.requireWrite(errorCase, requesterUserId)
 
         val (repository, installation) = scopeGuard.resolve(url.fullName)
         scopeGuard.requireSameScope(installation, errorCase)

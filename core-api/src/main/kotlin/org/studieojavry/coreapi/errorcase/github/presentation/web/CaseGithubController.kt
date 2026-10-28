@@ -56,7 +56,7 @@ class CaseGithubController(
     @Operation(
         summary = "GitHub Issue/PR 연결",
         description = """
-            Case 에 GitHub Issue 또는 PR 주소를 붙인다. 케이스 쓰기 권한 필요(소유자 또는 워크스페이스 WRITE+).
+            Case 에 GitHub Issue 또는 PR 주소를 붙인다. 케이스 쓰기 권한 필요(소유자 또는 워크스페이스 WRITE+). 워크스페이스 Case 는 소유자여도 **현재 워크스페이스 멤버**여야 한다.
 
             **연결 조건**
             - 레포가 GitHub 연결(App 설치)에 포함되어 있어야 한다.
@@ -72,7 +72,7 @@ class CaseGithubController(
         ApiResponse(responseCode = "201", description = "새로 연결됨 (또는 뗐던 연결 복구)"),
         ApiResponse(responseCode = "200", description = "이미 연결돼 있음"),
         ApiResponse(responseCode = "400", description = "지원하지 않는 주소", content = [Content()]),
-        ApiResponse(responseCode = "403", description = "케이스 쓰기 권한 없음 / 레포가 GitHub 연결에 없음 / 레포 범위와 Case 범위가 다름", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "케이스 쓰기 권한 없음 / 워크스페이스를 떠난 소유자 / 레포가 GitHub 연결에 없음 / 레포 범위와 Case 범위가 다름", content = [Content()]),
         ApiResponse(responseCode = "404", description = "케이스 없음 / GitHub 에 Issue·PR 없음", content = [Content()]),
         ApiResponse(responseCode = "503", description = "GitHub API 사용 불가", content = [Content()]),
     )
@@ -89,7 +89,7 @@ class CaseGithubController(
 
     @Operation(
         summary = "GitHub 연결 떼기 (관련 없음)",
-        description = "연결을 뗀다. 기록은 남겨서 같은 PR 이 나중에 자동으로 다시 붙지 않는다. 같은 주소를 다시 연결하면 복구된다. 케이스 쓰기 권한 필요.",
+        description = "연결을 뗀다. 기록은 남겨서 같은 PR 이 나중에 자동으로 다시 붙지 않는다. 같은 주소를 다시 연결하면 복구된다. 그 근거의 Step 꼬리표는 지워지고 복구되지 않는다. 케이스 쓰기 권한 필요(워크스페이스 Case 는 현재 멤버).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "뗐음 (이미 뗀 연결이어도 204)"),
@@ -132,10 +132,11 @@ class CaseGithubController(
     @Operation(
         summary = "Step 의 GitHub 근거 꼬리표 설정",
         description = """
-            Step 에 "이 시도의 근거" 꼬리표를 단다. 요청 목록으로 **통째로 맞춘다**(빈 목록 = 모두 해제). 케이스 쓰기 권한 필요.
+            Step 에 "이 시도의 근거" 꼬리표를 단다. 요청 목록으로 **통째로 맞춘다**(빈 목록 = 모두 해제). 케이스 쓰기 권한 필요(워크스페이스 Case 는 현재 멤버).
 
             - 고를 수 있는 건 **이미 이 Case 에 붙어 있는(떼지 않은) 근거**의 연결 id 뿐. 아니면 400.
             - 근거 하나를 여러 Step 에 달 수 있다. 내용은 복사하지 않는다(비공개 가림은 근거 조회 규칙 그대로).
+            - 요청자에게 가려진(비공개) 근거의 꼬리표는 요청과 무관하게 그대로 둔다. 응답 linkIds 에도 보이는 것만.
             - Case 에서 근거를 떼면 꼬리표도 사라지고, 다시 연결해도 복구되지 않는다. Step 을 지우면 그 Step 의 꼬리표도 사라진다.
         """,
     )

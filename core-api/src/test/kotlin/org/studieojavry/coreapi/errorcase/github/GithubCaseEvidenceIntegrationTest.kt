@@ -458,6 +458,27 @@ class GithubCaseEvidenceIntegrationTest {
         assertFalse(body.contains("\"linkId\""), "가려진 항목엔 연결 id 도 없음: $body")
     }
 
+    @Test
+    fun `워크스페이스를 떠난 주인 - 근거 연결·떼기·Step 꼬리표 모두 403, GitHub 조회도 안 함`() {
+        val owner = 126L
+        val w = 9102L
+        Mockito.`when`(workspaceQuery.getViewerRole(owner, w)).thenReturn(WorkspaceRole.ADMIN)
+        val s = seedRepo(owner, w, isPrivate = true)
+        val caseId = createCase(owner, "PUBLIC", w)
+        stubItem(s, 430, prItem(s, 430, closes = null))
+        stubChecks(s, "sha-430")
+        link(owner, caseId, "https://github.com/${s.fullName}/pull/430").andExpect(status().isCreated)
+        val linkId = linkIdOf(owner, caseId, "pullRequests", 430)
+        val step = createStep(owner, caseId, "시도")
+
+        Mockito.`when`(workspaceQuery.getViewerRole(owner, w)).thenReturn(null)
+        Mockito.clearInvocations(githubApi)
+        link(owner, caseId, "https://github.com/${s.fullName}/pull/431").andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(githubApi)
+        mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$linkId").with(asUser(owner))).andExpect(status().isForbidden)
+        setStepLinks(owner, caseId, step, linkId).andExpect(status().isForbidden)
+    }
+
     // ── Case 삭제 ─────────────────────────────────────────────
     @Test
     fun `Case 삭제 - 연결·타임라인은 지워지고 PR 스냅샷·장부는 남음`() {

@@ -28,6 +28,7 @@ configMapGenerator:
   - REDIS_HOST=redis
   - REDIS_PORT=6379
   - DEMO_ENABLED=true
+  - CORE_GITHUB_ENABLED=true
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod

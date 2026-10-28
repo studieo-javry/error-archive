@@ -23,7 +23,10 @@ import java.time.Instant
 /**
  * Case 의 GitHub 근거(연결된 Issue·PR·CI) + 근거 타임라인 조회. **비공개 가림은 여기서** 한다.
  *
- * 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는 Case 주인 또는 Case 워크스페이스 멤버에게만.
+ * 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는
+ *  - 워크스페이스 Case: 그 워크스페이스의 **현재** 멤버(역할 무관)에게만. 주인이어도 탈퇴했으면 가린다
+ *    — 레포를 그 워크스페이스에 공유한 건 관리자이고, 공유 대상은 "지금 팀원"이기 때문.
+ *  - 개인 Case: 주인에게만.
  * 그 외(PUBLIC Case 를 본 외부인)에게는 종류·상태만 남기고 나머지 필드를 **응답에서 아예 뺀다**.
  * 저장은 원본 그대로 — 가림은 응답을 만들 때만. 레포 정보를 모르면(장부에서 사라짐) 비공개로 간주.
  */
@@ -79,8 +82,7 @@ class GetCaseGithubEvidenceUseCase(
     }
 
     private fun canSeePrivate(errorCase: ErrorCase, viewerUserId: Long): Boolean {
-        if (errorCase.ownerUserId == viewerUserId) return true
-        val wsId = errorCase.meta.workspaceId ?: return false
+        val wsId = errorCase.meta.workspaceId ?: return errorCase.ownerUserId == viewerUserId
         return workspaceQuery.getViewerRole(viewerUserId, wsId) != null
     }
 

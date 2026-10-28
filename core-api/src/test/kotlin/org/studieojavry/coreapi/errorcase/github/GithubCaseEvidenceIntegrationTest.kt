@@ -302,6 +302,31 @@ class GithubCaseEvidenceIntegrationTest {
     }
 
     @Test
+    fun `비공개 레포 근거 - 워크스페이스 Case 는 현재 멤버(READ 포함)만, 주인이어도 탈퇴하면 가림`() {
+        val owner = 111L
+        val reader = 112L
+        val w = 9101L
+        Mockito.`when`(workspaceQuery.getViewerRole(owner, w)).thenReturn(WorkspaceRole.ADMIN)
+        Mockito.`when`(workspaceQuery.getViewerRole(reader, w)).thenReturn(WorkspaceRole.READ)
+        val s = seedRepo(owner, w, isPrivate = true)
+        val caseId = createCase(owner, "PUBLIC", w)
+        stubItem(s, 195, prItem(s, 195, closes = null, title = "TEAM-ONLY-title"))
+        stubChecks(s, "sha-195")
+        link(owner, caseId, "https://github.com/${s.fullName}/pull/195").andExpect(status().isCreated)
+
+        evidence(owner, caseId).andExpect(jsonPath("$.pullRequests[0].title").value("TEAM-ONLY-title"))
+        evidence(reader, caseId).andExpect(jsonPath("$.pullRequests[0].title").value("TEAM-ONLY-title"))
+
+        // 주인이 워크스페이스를 떠남 → Case 는 여전히 열람 가능(PUBLIC)하지만 비공개 근거 상세는 가림
+        Mockito.`when`(workspaceQuery.getViewerRole(owner, w)).thenReturn(null)
+        val body = evidence(owner, caseId)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.pullRequests[0].masked").value(true))
+            .andReturn().response.contentAsString
+        assertFalse(body.contains("TEAM-ONLY-title"), "탈퇴한 주인에게 비공개 제목이 보이면 안 됨: $body")
+    }
+
+    @Test
     fun `공개 레포 근거는 외부인에게도 그대로 보임`() {
         val me = 109L
         val s = seedRepo(me, null, isPrivate = false)

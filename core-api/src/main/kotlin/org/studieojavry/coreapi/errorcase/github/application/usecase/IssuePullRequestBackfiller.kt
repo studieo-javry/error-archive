@@ -40,19 +40,31 @@ class IssuePullRequestBackfiller(
     private val log = KotlinLogging.logger {}
     private val tx = TransactionTemplate(transactionManager)
 
-    /** @return 새로 붙은 PR 수 */
-    fun backfill(errorCase: ErrorCase, issue: GithubItemRef, timelineCandidates: List<GithubAppApiPort.PullRequestCandidate>): Int {
+    /**
+     * 연결 요청 안에서 **끝까지 돌고** 결과를 돌려준다(비동기 아님) — 응답을 받은 시점에 소급 부착은 완료.
+     * 후보 하나가 실패(GitHub 오류 등)해도 나머지는 계속하고, 실패 수를 [Result.failed] 로 알려 FE 가 안내할 수 있게 한다.
+     */
+    fun backfill(errorCase: ErrorCase, issue: GithubItemRef, timelineCandidates: List<GithubAppApiPort.PullRequestCandidate>): Result {
         val caseId = requireNotNull(errorCase.id)
         val candidates = candidates(issue, timelineCandidates)
         var attached = 0
+        var failed = 0
         for (candidate in candidates) {
             runCatching { if (tryAttach(errorCase, caseId, issue, candidate)) attached++ }
-                .onFailure { log.warn { "[github] backfill candidate failed: case=$caseId issue=$issue pr=${candidate.fullName}#${candidate.number} cause=${it.message}" } }
+                .onFailure {
+                    failed++
+                    log.warn { "[github] backfill candidate failed: case=$caseId issue=$issue pr=${candidate.fullName}#${candidate.number} cause=${it.message}" }
+                }
         }
         if (candidates.isNotEmpty()) {
-            log.info { "[github] backfill case=$caseId issue=${issue.repoId}#${issue.number} candidates=${candidates.size} attached=$attached" }
+            log.info { "[github] backfill case=$caseId issue=${issue.repoId}#${issue.number} candidates=${candidates.size} attached=$attached failed=$failed" }
         }
-        return attached
+        return Result(attached, failed)
+    }
+
+    /** [attached] 새로 붙은 PR 수, [failed] GitHub 오류 등으로 확인하지 못한 후보 수(다음 PR 웹훅에서 붙을 수 있음). */
+    data class Result(val attached: Int, val failed: Int) {
+        companion object { val NONE = Result(0, 0) }
     }
 
     private fun candidates(

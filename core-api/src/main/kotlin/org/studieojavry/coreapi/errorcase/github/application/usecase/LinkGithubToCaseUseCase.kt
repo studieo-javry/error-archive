@@ -40,7 +40,7 @@ class LinkGithubToCaseUseCase(
     private val log = KotlinLogging.logger {}
     private val tx = TransactionTemplate(transactionManager)
 
-    data class Result(val link: CaseGithubLink, val created: Boolean, val backfilledPullRequests: Int = 0)
+    data class Result(val link: CaseGithubLink, val created: Boolean, val backfill: IssuePullRequestBackfiller.Result = IssuePullRequestBackfiller.Result.NONE)
 
     fun invoke(caseId: Long, requesterUserId: Long, rawUrl: String): Result {
         val url = GithubUrl.parse(rawUrl)
@@ -65,7 +65,7 @@ class LinkGithubToCaseUseCase(
             is GithubAppApiPort.IssueItem -> {
                 val result = tx.execute { linkIssue(caseId, requesterUserId, item) }!!
                 val issueRef = GithubItemRef(item.repoId, item.snapshot.number)
-                result.copy(backfilledPullRequests = backfiller.backfill(errorCase, issueRef, item.pullRequestCandidates))
+                result.copy(backfill = backfiller.backfill(errorCase, issueRef, item.pullRequestCandidates))
             }
         }
     }

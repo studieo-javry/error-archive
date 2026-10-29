@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
@@ -200,7 +201,8 @@ class GithubIssueImportIntegrationTest {
 
         link(me, caseId, "https://github.com/${s.fullName}/issues/142")
             .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.backfilledPullRequests").value(1))
+            .andExpect(jsonPath("$.backfill.attached").value(1))
+            .andExpect(jsonPath("$.backfill.failed").value(0))
 
         evidence(me, caseId)
             .andExpect(jsonPath("$.issues[0].number").value(142))
@@ -209,13 +211,34 @@ class GithubIssueImportIntegrationTest {
             .andExpect(jsonPath("$.issues[0].pullRequests[0].linkSource").value("VIA_ISSUE"))
             .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(142))
             .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.status").value("SUCCESS"))
-            .andExpect(jsonPath("$.pullRequests").isEmpty)
+            .andExpect(jsonPath("$.ungroupedPullRequests").isEmpty)
         events(me, caseId)
             .andExpect(jsonPath("$.events[?(@.type=='PR_MERGED')]").isNotEmpty)
             .andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.number").value(org.hamcrest.Matchers.contains(142)))
             .andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.repo").value(org.hamcrest.Matchers.contains(s.fullName)))
         val (otherOwner, otherName) = other.fullName.split('/')
         Mockito.verify(githubApi, Mockito.never()).fetchItem(other.installationId, otherOwner, otherName, 302)
+    }
+
+    @Test
+    fun `소급 - 후보 하나가 GitHub 오류여도 나머지는 붙고, 확인 못 한 수를 failed 로 알려줌`() {
+        val me = 207L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        stubItem(s, 190, issueItem(s, 190, listOf(cand(s, 340), cand(s, 341))))
+        stubItem(s, 340, prItem(s, 340, closes = 190))
+        stubChecks(s, "sha-340")
+        val (owner, name) = s.fullName.split('/')
+        Mockito.`when`(githubApi.fetchItem(s.installationId, owner, name, 341)).thenThrow(GithubApiException("GitHub 503"))
+
+        link(me, caseId, "https://github.com/${s.fullName}/issues/190")
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.backfill.attached").value(1))
+            .andExpect(jsonPath("$.backfill.failed").value(1))
+        // 응답을 받은 시점에 이미 끝나 있음 — 바로 조회하면 Issue 아래 PR 과 활동이 함께 보인다
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests[*].number").value(org.hamcrest.Matchers.contains(340)))
+            .andExpect(jsonPath("$.activity.events[?(@.type=='PR_LINKED')].issue.number").value(org.hamcrest.Matchers.contains(190)))
     }
 
     @Test
@@ -230,11 +253,11 @@ class GithubIssueImportIntegrationTest {
 
         stubItem(s, 150, issueItem(s, 150))   // 타임라인 후보 없음 — 장부로만 찾음
         link(me, caseB, "https://github.com/${s.fullName}/issues/150")
-            .andExpect(jsonPath("$.backfilledPullRequests").value(1))
+            .andExpect(jsonPath("$.backfill.attached").value(1))
         evidence(me, caseB)
             .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(310))
-            .andExpect(jsonPath("$.pullRequests").isEmpty)
-        evidence(me, caseA).andExpect(jsonPath("$.pullRequests[0].number").value(310))   // 직접 연결한 Case 에선 최상위 그대로
+            .andExpect(jsonPath("$.ungroupedPullRequests").isEmpty)
+        evidence(me, caseA).andExpect(jsonPath("$.ungroupedPullRequests[0].number").value(310))   // 직접 연결한 Case 에선 최상위 그대로
     }
 
     @Test
@@ -245,17 +268,17 @@ class GithubIssueImportIntegrationTest {
         stubItem(s, 160, issueItem(s, 160, listOf(cand(s, 320))))
         stubItem(s, 320, prItem(s, 320, closes = 160))
         stubChecks(s, "sha-320")
-        link(me, caseId, "https://github.com/${s.fullName}/issues/160").andExpect(jsonPath("$.backfilledPullRequests").value(1))
+        link(me, caseId, "https://github.com/${s.fullName}/issues/160").andExpect(jsonPath("$.backfill.attached").value(1))
 
         val prLinkId = om.readTree(evidence(me, caseId).andReturn().response.contentAsString)["issues"][0]["pullRequests"][0]["linkId"].asLong()
         mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$prLinkId").with(asUser(me))).andExpect(status().isNoContent)
 
         link(me, caseId, "https://github.com/${s.fullName}/issues/160")
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.backfilledPullRequests").value(0))
+            .andExpect(jsonPath("$.backfill.attached").value(0))
         evidence(me, caseId)
             .andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
-            .andExpect(jsonPath("$.pullRequests").isEmpty)
+            .andExpect(jsonPath("$.ungroupedPullRequests").isEmpty)
     }
 
     // ── Issue 로 Case 만들기 ───────────────────────────────────
@@ -311,7 +334,7 @@ class GithubIssueImportIntegrationTest {
         val res = importCase(me, mapOf("url" to "https://github.com/${s.fullName}/issues/180", "title" to "결제 커넥션 타임아웃", "visibility" to "PUBLIC"))
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.status").value("OPEN"))
-            .andExpect(jsonPath("$.backfilledPullRequests").value(1))
+            .andExpect(jsonPath("$.backfill.attached").value(1))
             .andReturn().response.contentAsString
         val caseId = om.readTree(res)["caseId"].asLong()
 

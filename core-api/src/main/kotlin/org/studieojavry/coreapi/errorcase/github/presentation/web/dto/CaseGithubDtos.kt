@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActivityReader
+import org.studieojavry.coreapi.errorcase.github.application.usecase.IssuePullRequestBackfiller
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
@@ -46,13 +47,27 @@ data class CaseGithubLinkResponse(
     val linkSource: CaseGithubLink.LinkSource,
     val linkedAt: Instant,
     @field:Schema(description = "이번 요청으로 새로 붙었나(false = 이미 연결돼 있었음)") val created: Boolean,
-    @field:Schema(description = "Issue 를 붙였을 때, 그 Issue 를 닫는 PR 중 함께 붙은 수(소급 부착). PR 연결이면 0")
-    val backfilledPullRequests: Int,
+    @field:Schema(description = "Issue 를 붙였을 때 그 Issue 를 닫는 PR 소급 부착 결과. 응답 시점에 이미 끝나 있다. PR 연결이면 0/0")
+    val backfill: GithubBackfillResponse,
 ) {
     companion object {
-        fun of(link: CaseGithubLink, created: Boolean, backfilled: Int = 0) = CaseGithubLinkResponse(
-            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created, backfilled,
+        fun of(link: CaseGithubLink, created: Boolean, backfill: IssuePullRequestBackfiller.Result) = CaseGithubLinkResponse(
+            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created, GithubBackfillResponse.of(backfill),
         )
+    }
+}
+
+@Schema(description = "닫는 PR 소급 부착 결과 — 연결 요청 안에서 끝까지 돈 뒤 응답(비동기 아님)")
+data class GithubBackfillResponse(
+    @field:Schema(description = "함께 붙은 PR 수", example = "2") val attached: Int,
+    @field:Schema(
+        description = "GitHub 오류 등으로 확인하지 못한 후보 PR 수. 0 보다 크면 \"PR N건은 확인하지 못했어요\" 안내 — 나중에 그 PR 의 웹훅이 오면 붙을 수 있다",
+        example = "0",
+    )
+    val failed: Int,
+) {
+    companion object {
+        fun of(r: IssuePullRequestBackfiller.Result) = GithubBackfillResponse(r.attached, r.failed)
     }
 }
 

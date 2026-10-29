@@ -105,11 +105,11 @@ data class CreateCaseFromGithubIssueResponse(
     val title: String,
     @field:Schema(description = "OPEN. 우회 Step 을 함께 만들면 IN_PROGRESS") val status: String,
     @field:Schema(description = "Issue 연결 id (출처 IMPORTED)") val linkId: Long,
-    @field:Schema(description = "그 Issue 를 닫는 PR 중 함께 붙은 수(소급 부착)") val backfilledPullRequests: Int,
+    @field:Schema(description = "그 Issue 를 닫는 PR 소급 부착 결과(응답 시점에 완료)") val backfill: GithubBackfillResponse,
     @field:Schema(description = "우회 방법으로 만든 Step id. 안 만들었으면 null") val workaroundStepId: Long?,
 ) {
     companion object {
         fun of(c: ImportGithubIssueUseCase.Created) =
-            CreateCaseFromGithubIssueResponse(c.caseId, c.title, c.status, c.linkId, c.backfilledPullRequests, c.workaroundStepId)
+            CreateCaseFromGithubIssueResponse(c.caseId, c.title, c.status, c.linkId, GithubBackfillResponse.of(c.backfill), c.workaroundStepId)
     }
 }

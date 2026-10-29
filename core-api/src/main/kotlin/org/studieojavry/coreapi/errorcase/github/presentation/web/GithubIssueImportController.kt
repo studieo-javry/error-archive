@@ -75,7 +75,7 @@ class GithubIssueImportController(
         description = """
             미리보기에서 확인한 값으로 Case(OPEN)를 만들고 Issue 를 연결(출처 IMPORTED)한다.
             생략한 태그는 빈 목록, 심각도·발생 시각은 비움. `includeWorkaroundStep=true` 면 우회 방법으로 첫 Step(IN_PROGRESS)을 만들고 Case 는 IN_PROGRESS.
-            이어서 **그 Issue 를 닫는 PR 을 함께 붙인다(소급)** — 개수는 `backfilledPullRequests`.
+            이어서 **그 Issue 를 닫는 PR 을 함께 붙인다(소급)** — 결과는 `backfill`(attached·failed), 응답 전에 끝난다.
             비공개 저장소 Issue 로 PUBLIC Case 는 만들 수 없다(400).
         """,
     )

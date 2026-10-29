@@ -117,7 +117,7 @@ class ImportGithubIssueUseCase(
     )
 
     data class Created(
-        val caseId: Long, val title: String, val status: String, val linkId: Long, val backfilledPullRequests: Int,
+        val caseId: Long, val title: String, val status: String, val linkId: Long, val backfill: IssuePullRequestBackfiller.Result,
         val workaroundStepId: Long?,
     )
 

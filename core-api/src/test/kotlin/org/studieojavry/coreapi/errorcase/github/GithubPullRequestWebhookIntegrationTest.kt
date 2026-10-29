@@ -159,6 +159,8 @@ class GithubPullRequestWebhookIntegrationTest {
     )
 
     private fun evidence(uid: Long, caseId: Long) = mvc.perform(get("/api/v1/error-cases/$caseId/github").with(asUser(uid)))
+    private fun events(uid: Long, caseId: Long) =
+        mvc.perform(get("/api/v1/error-cases/$caseId/github/events").with(asUser(uid)).param("size", "100"))
 
     /** `pull_request` 웹훅 1건 적재 → 처리 → 최종 상태. payload 는 GitHub 가 보내는 모양 중 우리가 읽는 필드만. */
     private fun prWebhook(s: Seeded, action: String, number: Int, body: String? = null, title: String = "fix: 주문 발행 재시도"): InboxStatus {
@@ -198,16 +200,18 @@ class GithubPullRequestWebhookIntegrationTest {
         assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 500, body = "Fixes #142"))
 
         evidence(me, caseId)
-            .andExpect(jsonPath("$.pullRequests[0].number").value(500))
-            .andExpect(jsonPath("$.pullRequests[0].linkSource").value("VIA_ISSUE"))
-            .andExpect(jsonPath("$.pullRequests[0].viaIssue.number").value(142))
-            .andExpect(jsonPath("$.pullRequests[0].state").value("OPEN"))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(500))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].linkSource").value("VIA_ISSUE"))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(142))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].state").value("OPEN"))
+            .andExpect(jsonPath("$.pullRequests").isEmpty)
+        events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.number").value(org.hamcrest.Matchers.contains(142)))
         assertTrue(eventTypes(caseId).containsAll(listOf(Type.PR_LINKED, Type.PR_OPENED)))
 
         stubItem(s, 500, prItem(s, 500, state = "MERGED", closes = listOf(issue), body = "Fixes #142", updatedAt = t0.plusSeconds(7200)))
         assertEquals(InboxStatus.DONE, prWebhook(s, "closed", 500, body = "Fixes #142"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests[0].state").value("MERGED"))
+        evidence(me, caseId).andExpect(jsonPath("$.issues[0].pullRequests[0].state").value("MERGED"))
         val types = eventTypes(caseId)
         assertTrue(Type.PR_MERGED in types)
         assertEquals(1, types.count { it == Type.PR_LINKED }, "두 번째 웹훅에서 다시 붙지 않음")
@@ -252,7 +256,7 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(s, 530, prItem(s, 530, closes = emptyList(), body = "Closes #150", base = "alpha"))
         assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 530, body = "Closes #150"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests[0].number").value(530))
+        evidence(me, caseId).andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(530))
         assertEquals(listOf("KEYWORD"), ledgerRepo.findAllByPrRepoIdAndPrNumber(s.repoId, 530).map { it.source })
 
         stubItem(s, 530, prItem(s, 530, closes = emptyList(), body = "재시도 정리", base = "alpha", updatedAt = t0.plusSeconds(5000)))
@@ -260,7 +264,9 @@ class GithubPullRequestWebhookIntegrationTest {
 
         assertTrue(ledgerRepo.findAllByPrRepoIdAndPrNumber(s.repoId, 530).isEmpty())
         assertTrue(Type.REF_REMOVED in eventTypes(caseId))
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests[0].number").value(530))
+        events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='REF_REMOVED')].issue.number").value(org.hamcrest.Matchers.contains(150)))
+        // 연결은 유지 — 관계(경유 Issue)도 그대로라 Issue 아래에 남는다
+        evidence(me, caseId).andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(530))
     }
 
     @Test
@@ -273,7 +279,7 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(s, 540, prItem(s, 540, closes = emptyList(), body = "`fixes #160` 문법 설명"))
         assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 540, body = "`fixes #160` 문법 설명"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 
     @Test
@@ -285,11 +291,11 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(s, 550, prItem(s, 550, closes = listOf(issue), body = "Fixes #170"))
         prWebhook(s, "opened", 550, body = "Fixes #170")
 
-        val linkId = om.readTree(evidence(me, caseId).andReturn().response.contentAsString)["pullRequests"][0]["linkId"].asLong()
+        val linkId = om.readTree(evidence(me, caseId).andReturn().response.contentAsString)["issues"][0]["pullRequests"][0]["linkId"].asLong()
         mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$linkId").with(asUser(me))).andExpect(status().isNoContent)
 
         assertEquals(InboxStatus.DONE, prWebhook(s, "synchronize", 550, body = "Fixes #170"))
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 
     @Test
@@ -302,6 +308,6 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(others, 560, prItem(others, 560, closes = listOf(GithubItemRef(mine.repoId, 180)), body = "Fixes ${mine.fullName}#180"))
         assertEquals(InboxStatus.DONE, prWebhook(others, "opened", 560, body = "Fixes ${mine.fullName}#180"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 }

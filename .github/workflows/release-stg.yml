@@ -135,9 +135,14 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: alpha }
       - name: install kustomize
+        # 고정 버전 릴리스 tarball 을 CDN 에서 직접 받는다. install_kustomize.sh 는 "최신 릴리스"를
+        # GitHub API 로 조회하다 익명 레이트리밋(60/h)에 걸려 간헐 실패했다 → API 미사용 + 재현 가능.
+        env:
+          KUSTOMIZE_VERSION: 5.5.0
         run: |
-          curl -sSfL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          curl -sSfL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | tar -xz
           sudo mv kustomize /usr/local/bin/
+          kustomize version
       - name: bump changed images
         run: |
           cd docs/deploy/kustomize/overlays/stg

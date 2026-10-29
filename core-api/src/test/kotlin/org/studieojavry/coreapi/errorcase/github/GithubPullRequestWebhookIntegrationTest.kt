@@ -204,7 +204,9 @@ class GithubPullRequestWebhookIntegrationTest {
             .andExpect(jsonPath("$.issues[0].pullRequests[0].linkSource").value("VIA_ISSUE"))
             .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(142))
             .andExpect(jsonPath("$.issues[0].pullRequests[0].state").value("OPEN"))
-            .andExpect(jsonPath("$.pullRequests").isEmpty)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].closesIssues[0].number").value(142))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].closesIssues[0].inCase").value(true))
+            .andExpect(jsonPath("$.ungroupedPullRequests").isEmpty)
         events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.number").value(org.hamcrest.Matchers.contains(142)))
         assertTrue(eventTypes(caseId).containsAll(listOf(Type.PR_LINKED, Type.PR_OPENED)))
 
@@ -234,7 +236,7 @@ class GithubPullRequestWebhookIntegrationTest {
 
         val types = eventTypes(caseId)
         assertTrue(Type.PR_CLOSED in types && Type.PR_REOPENED in types, "$types")
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests[0].state").value("OPEN"))
+        evidence(me, caseId).andExpect(jsonPath("$.ungroupedPullRequests[0].state").value("OPEN"))
     }
 
     @Test
@@ -265,8 +267,11 @@ class GithubPullRequestWebhookIntegrationTest {
         assertTrue(ledgerRepo.findAllByPrRepoIdAndPrNumber(s.repoId, 530).isEmpty())
         assertTrue(Type.REF_REMOVED in eventTypes(caseId))
         events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='REF_REMOVED')].issue.number").value(org.hamcrest.Matchers.contains(150)))
-        // 연결은 유지 — 관계(경유 Issue)도 그대로라 Issue 아래에 남는다
-        evidence(me, caseId).andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(530))
+        // 연결은 유지 — 경유 Issue 도 그대로라 Issue 아래에 남고, 닫는 Issue 목록에서만 빠진다("더 이상 닫지 않음")
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(530))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(150))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].closesIssues").isEmpty)
     }
 
     @Test
@@ -279,7 +284,7 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(s, 540, prItem(s, 540, closes = emptyList(), body = "`fixes #160` 문법 설명"))
         assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 540, body = "`fixes #160` 문법 설명"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.ungroupedPullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 
     @Test
@@ -295,7 +300,7 @@ class GithubPullRequestWebhookIntegrationTest {
         mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$linkId").with(asUser(me))).andExpect(status().isNoContent)
 
         assertEquals(InboxStatus.DONE, prWebhook(s, "synchronize", 550, body = "Fixes #170"))
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.ungroupedPullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 
     @Test
@@ -308,6 +313,6 @@ class GithubPullRequestWebhookIntegrationTest {
         stubItem(others, 560, prItem(others, 560, closes = listOf(GithubItemRef(mine.repoId, 180)), body = "Fixes ${mine.fullName}#180"))
         assertEquals(InboxStatus.DONE, prWebhook(others, "opened", 560, body = "Fixes ${mine.fullName}#180"))
 
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
+        evidence(me, caseId).andExpect(jsonPath("$.ungroupedPullRequests").isEmpty).andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
     }
 }

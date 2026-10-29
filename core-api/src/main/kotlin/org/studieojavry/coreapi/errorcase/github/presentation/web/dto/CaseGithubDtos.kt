@@ -46,10 +46,12 @@ data class CaseGithubLinkResponse(
     val linkSource: CaseGithubLink.LinkSource,
     val linkedAt: Instant,
     @field:Schema(description = "이번 요청으로 새로 붙었나(false = 이미 연결돼 있었음)") val created: Boolean,
+    @field:Schema(description = "Issue 를 붙였을 때, 그 Issue 를 닫는 PR 중 함께 붙은 수(소급 부착). PR 연결이면 0")
+    val backfilledPullRequests: Int,
 ) {
     companion object {
-        fun of(link: CaseGithubLink, created: Boolean) = CaseGithubLinkResponse(
-            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created,
+        fun of(link: CaseGithubLink, created: Boolean, backfilled: Int = 0) = CaseGithubLinkResponse(
+            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created, backfilled,
         )
     }
 }

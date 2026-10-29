@@ -32,3 +32,9 @@ class GithubStepLinkInvalidException(message: String) : RuntimeException(message
 
 /** 타임라인 커서 형식이 틀림. */
 class GithubEventCursorInvalidException(message: String) : RuntimeException(message)
+
+/** Issue 로 Case 만들 때 고를 수 없는 공개 범위(예: 비공개 저장소 Issue → PUBLIC). */
+class GithubImportVisibilityException(message: String) : RuntimeException(message)
+
+/** Issue 로 Case 만들 때 초안에 없는 값을 골랐음(예: 우회 방법 섹션 없는 Issue 에 우회 Step 요청, 범위 밖 심각도). */
+class GithubImportInvalidRequestException(message: String) : RuntimeException(message)

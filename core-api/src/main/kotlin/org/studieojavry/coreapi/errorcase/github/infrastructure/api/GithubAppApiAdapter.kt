@@ -263,6 +263,7 @@ class GithubAppApiAdapter(
         val deletions: Int? = null,
         val changedFiles: Int? = null,
         val closingIssuesReferences: GraphqlNodes<GraphqlIssueRef>? = null,
+        val timelineItems: GraphqlNodes<GraphqlTimelineNode>? = null,
     ) {
         fun toDomain(repo: GraphqlRepository): GithubAppApiPort.GithubItem = if (typename == "PullRequest") {
             GithubAppApiPort.PullRequestItem(
@@ -285,9 +286,31 @@ class GithubAppApiAdapter(
                 ),
                 body = body,
                 labels = labels?.nodes.orEmpty().mapNotNull { it?.name },
+                pullRequestCandidates = timelineItems?.nodes.orEmpty().filterNotNull()
+                    .mapNotNull { node -> (node.source ?: node.subject)?.toCandidate() }
+                    .distinct(),
             )
         }
     }
+
+    /** Issue 타임라인 이벤트 — CrossReferenced 는 source, Connected 는 subject 에 PR 이 온다(Issue 면 PR 필드 없음). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class GraphqlTimelineNode(val source: GraphqlPrRef? = null, val subject: GraphqlPrRef? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class GraphqlPrRef(
+        @JsonProperty("__typename") val typename: String? = null,
+        val number: Int? = null,
+        val repository: GraphqlRepoName? = null,
+    ) {
+        fun toCandidate(): GithubAppApiPort.PullRequestCandidate? {
+            if (typename != "PullRequest" || number == null || repository == null) return null
+            return GithubAppApiPort.PullRequestCandidate(repository.databaseId, repository.nameWithOwner, number)
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class GraphqlRepoName(val databaseId: Long, val nameWithOwner: String)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class CheckRun(
@@ -312,6 +335,12 @@ class GithubAppApiAdapter(
                     number title url state body createdAt updatedAt closedAt
                     author { login }
                     labels(first: 20) { nodes { name } }
+                    timelineItems(first: 50, itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT]) {
+                      nodes {
+                        ... on CrossReferencedEvent { source { __typename ... on PullRequest { number repository { databaseId nameWithOwner } } } }
+                        ... on ConnectedEvent { subject { __typename ... on PullRequest { number repository { databaseId nameWithOwner } } } }
+                      }
+                    }
                   }
                   ... on PullRequest {
                     number title url state body createdAt updatedAt closedAt mergedAt isDraft

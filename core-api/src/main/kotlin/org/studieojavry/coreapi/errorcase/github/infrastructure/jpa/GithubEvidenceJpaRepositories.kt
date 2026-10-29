@@ -23,11 +23,13 @@ interface GithubPullRequestJpaRepository : JpaRepository<GithubPullRequestEntity
 interface GithubPrIssueRefJpaRepository : JpaRepository<GithubPrIssueRefEntity, GithubPrIssueRefKey> {
     fun findAllByPrRepoIdAndPrNumber(prRepoId: Long, prNumber: Int): List<GithubPrIssueRefEntity>
     fun findAllByPrRepoIdInAndPrNumberIn(prRepoIds: Collection<Long>, prNumbers: Collection<Int>): List<GithubPrIssueRefEntity>
+    fun findAllByIssueRepoIdAndIssueNumber(issueRepoId: Long, issueNumber: Int): List<GithubPrIssueRefEntity>
 }
 
 interface CaseGithubLinkJpaRepository : JpaRepository<CaseGithubLinkEntity, Long> {
     fun findByCaseIdAndKindAndRepoIdAndNumber(caseId: Long, kind: String, repoId: Long, number: Int): CaseGithubLinkEntity?
     fun findAllByCaseIdOrderByLinkedAt(caseId: Long): List<CaseGithubLinkEntity>
+    fun findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind: String, repoId: Long, number: Int): List<CaseGithubLinkEntity>
 
     @Modifying
     @Query("DELETE FROM CaseGithubLinkEntity l WHERE l.caseId = :caseId")

@@ -105,7 +105,14 @@ class GithubEvidenceRepositoryAdapter(
             .mapValues { (_, issues) -> issues.distinct() }
     }
 
+    override fun findPullRequestsClosing(issue: GithubItemRef): List<GithubItemRef> =
+        prIssueRefs.findAllByIssueRepoIdAndIssueNumber(issue.repoId, issue.number)
+            .map { GithubItemRef(it.prRepoId, it.prNumber) }.distinct()
+
     // ── 연결 ─────────────────────────────────────────────────
+    override fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long> =
+        links.findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind.name, ref.repoId, ref.number).map { it.caseId }
+
     override fun findLink(caseId: Long, kind: GithubRefKind, ref: GithubItemRef): CaseGithubLink? =
         links.findByCaseIdAndKindAndRepoIdAndNumber(caseId, kind.name, ref.repoId, ref.number)?.toDomain()
 

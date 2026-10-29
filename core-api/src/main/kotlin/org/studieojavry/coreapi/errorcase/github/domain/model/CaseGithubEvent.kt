@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.github.domain.model
 
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
 
@@ -30,10 +31,17 @@ class CaseGithubEvent(
     companion object {
         private fun ref(repoId: Long, number: Int) = "$repoId#$number"
 
-        fun linked(caseId: Long, kind: GithubRefKind, repoId: Long, number: Int, source: CaseGithubLink.LinkSource, byUserId: Long?, at: Instant) =
+        fun linked(
+            caseId: Long, kind: GithubRefKind, repoId: Long, number: Int, source: CaseGithubLink.LinkSource, byUserId: Long?, at: Instant,
+            viaIssue: GithubItemRef? = null,
+        ) =
             CaseGithubEvent(
                 caseId, if (kind == GithubRefKind.ISSUE) Type.ISSUE_LINKED else Type.PR_LINKED, kind, repoId, number, at,
-                mapOf("source" to source.name, "byUserId" to byUserId),
+                buildMap {
+                    put("source", source.name)
+                    put("byUserId", byUserId)
+                    viaIssue?.let { put("viaIssueNumber", it.number); put("viaIssueRepoId", it.repoId) }
+                },
                 // 떼었다 다시 붙이면 새 줄이 생기도록 시각 포함
                 "LINKED:$kind:${ref(repoId, number)}@${at.toEpochMilli()}",
             )

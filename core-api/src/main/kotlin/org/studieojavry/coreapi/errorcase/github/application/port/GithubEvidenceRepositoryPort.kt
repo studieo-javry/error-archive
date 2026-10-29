@@ -26,9 +26,15 @@ interface GithubEvidenceRepositoryPort {
     /** 여러 PR 각각이 닫는 Issue(출처 무관, 중복 제거). 근거 조회에서 PR 을 어느 Issue 아래에 둘지 정할 때 쓴다. */
     fun findClosingIssuesOf(prs: Collection<GithubItemRef>): Map<GithubItemRef, List<GithubItemRef>>
 
+    /** 장부에서 이 Issue 를 닫는다고 알려진 PR 들. */
+    fun findPullRequestsClosing(issue: GithubItemRef): List<GithubItemRef>
+
     fun findLink(caseId: Long, kind: GithubRefKind, ref: GithubItemRef): CaseGithubLink?
     fun findLinkById(linkId: Long): CaseGithubLink?
     fun findLinks(caseId: Long): List<CaseGithubLink>
+
+    /** 이 Issue/PR 이 붙어 있는(떼지 않은) Case id 들. */
+    fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>
     fun saveLink(link: CaseGithubLink): CaseGithubLink
 
     /** 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀. */

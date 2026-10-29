@@ -30,6 +30,7 @@ interface CaseGithubLinkJpaRepository : JpaRepository<CaseGithubLinkEntity, Long
     fun findByCaseIdAndKindAndRepoIdAndNumber(caseId: Long, kind: String, repoId: Long, number: Int): CaseGithubLinkEntity?
     fun findAllByCaseIdOrderByLinkedAt(caseId: Long): List<CaseGithubLinkEntity>
     fun findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind: String, repoId: Long, number: Int): List<CaseGithubLinkEntity>
+    fun existsByKindAndRepoIdAndNumber(kind: String, repoId: Long, number: Int): Boolean
 
     @Modifying
     @Query("DELETE FROM CaseGithubLinkEntity l WHERE l.caseId = :caseId")

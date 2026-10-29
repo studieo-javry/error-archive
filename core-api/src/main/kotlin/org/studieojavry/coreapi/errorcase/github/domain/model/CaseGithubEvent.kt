@@ -76,6 +76,18 @@ class CaseGithubEvent(
             )
         }
 
+        fun prReopened(caseId: Long, pr: GithubPullRequestSnapshot, at: Instant) = CaseGithubEvent(
+            caseId, Type.PR_REOPENED, GithubRefKind.PULL_REQUEST, pr.repoId, pr.number, at,
+            emptyMap(), "PR_REOPENED:${ref(pr.repoId, pr.number)}@${at.toEpochMilli()}",
+        )
+
+        /** PR 이 더 이상 이 Issue 를 닫지 않음(본문에서 키워드 삭제 등). 연결은 그대로 두고 사실만 남긴다. */
+        fun refRemoved(caseId: Long, pr: GithubPullRequestSnapshot, issue: GithubItemRef, at: Instant) = CaseGithubEvent(
+            caseId, Type.REF_REMOVED, GithubRefKind.PULL_REQUEST, pr.repoId, pr.number, at,
+            mapOf("issueRepoId" to issue.repoId, "issueNumber" to issue.number),
+            "REF_REMOVED:${ref(pr.repoId, pr.number)}>${ref(issue.repoId, issue.number)}@${at.toEpochMilli()}",
+        )
+
         fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant) = CaseGithubEvent(
             caseId, Type.CI_COMPLETED, GithubRefKind.PULL_REQUEST, repoId, prNumber, ci.completedAt ?: at,
             mapOf(

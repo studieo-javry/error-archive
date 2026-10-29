@@ -26,12 +26,21 @@ interface GithubEvidenceRepositoryPort {
     /** 여러 PR 각각이 닫는 Issue(출처 무관, 중복 제거). 근거 조회에서 PR 을 어느 Issue 아래에 둘지 정할 때 쓴다. */
     fun findClosingIssuesOf(prs: Collection<GithubItemRef>): Map<GithubItemRef, List<GithubItemRef>>
 
+    /** 장부에서 이 PR 이 닫는다고 알려진 Issue 들(출처 무관). */
+    fun findClosingIssues(pr: GithubItemRef): List<GithubItemRef>
+
     /** 장부에서 이 Issue 를 닫는다고 알려진 PR 들. */
     fun findPullRequestsClosing(issue: GithubItemRef): List<GithubItemRef>
 
     fun findLink(caseId: Long, kind: GithubRefKind, ref: GithubItemRef): CaseGithubLink?
     fun findLinkById(linkId: Long): CaseGithubLink?
     fun findLinks(caseId: Long): List<CaseGithubLink>
+
+    /** 이 Issue/PR 이 붙어 있는(떼지 않은) 연결들. */
+    fun findActiveLinks(kind: GithubRefKind, ref: GithubItemRef): List<CaseGithubLink>
+
+    /** 어떤 Case 에든 연결된 적이 있나(뗀 것 포함) — 웹훅 사전 필터용. */
+    fun hasAnyLink(kind: GithubRefKind, ref: GithubItemRef): Boolean
 
     /** 이 Issue/PR 이 붙어 있는(떼지 않은) Case id 들. */
     fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>

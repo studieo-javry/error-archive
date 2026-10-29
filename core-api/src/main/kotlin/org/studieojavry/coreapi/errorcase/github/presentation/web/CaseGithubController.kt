@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CaseGithubLinkNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DetachGithubLinkUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActivityReader
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubEventCursorInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
@@ -36,9 +37,9 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.ListCaseGit
 import org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase
 import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
-import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEventPageResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEvidenceResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubLinkResponse
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubActivityResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.LinkGithubRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.SetStepGithubLinksRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.StepGithubLinksResponse
@@ -114,11 +115,15 @@ class CaseGithubController(
     @Operation(
         summary = "Case 의 GitHub 근거 조회",
         description = """
-            연결된 Issue·PR(+CI 요약). 케이스 읽기 권한 필요. 근거 타임라인은 `GET .../github/events`.
+            Case 상세의 GitHub 영역을 **한 번에**: 관계형 근거(Issue ▸ PR, +CI 요약) + GitHub 활동 첫 쪽(`activity`, 최신 20건 + 커서).
+            케이스 읽기 권한 필요. 연결·떼기 뒤에도 이것 하나만 다시 부르면 된다. 이전 활동은 `GET .../github/events?cursor=`.
 
-            **관계형 묶음**: `issues[].pullRequests` 에 그 Issue 를 닫는 PR 이라 함께 붙은 PR 이 들어간다.
-            최상위 `pullRequests` 는 어느 Issue 아래에도 묶이지 않은 PR 만(직접 연결, 경유 Issue 를 뗐거나 가려진 PR). 한 PR 은 한 곳에만 나온다.
-            Issue·PR 중 하나라도 요청자에게 가려지면 묶지 않는다(관계 자체가 비공개 정보).
+            **같은 시점**: 근거와 활동을 한 DB 스냅샷에서 읽어, 사이에 웹훅이 처리돼도 한 응답 안에서 어긋나지 않는다.
+            GitHub API 는 부르지 않는다(DB 만) — GitHub 장애와 무관.
+
+            **관계형 묶음(위치)**: PR 은 ① 경유한 Issue → ② 그 PR 이 닫는 다른 Issue(먼저 연결된 순) 중 이 Case 에 붙어 있는 것 아래에 한 번만.
+            없으면 `ungroupedPullRequests`. 위치와 출처는 별개 — 직접 연결한 PR 도 닫는 Issue 가 있으면 그 아래, 출처는 `linkSource`.
+            PR·Issue 중 하나라도 요청자에게 가려지면 묶지 않는다(관계 자체가 비공개 정보). `closesIssues` 로 함께 닫는 다른 Issue 를 알 수 있다.
 
             **비공개 가림**: 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는
             워크스페이스 Case 면 그 워크스페이스의 **현재** 멤버(역할 무관 — 주인이어도 탈퇴했으면 가림), 개인 Case 면 주인에게만 보인다.
@@ -139,13 +144,14 @@ class CaseGithubController(
     ): CaseGithubEvidenceResponse = CaseGithubEvidenceResponse.of(getEvidence.invoke(caseId, userId))
 
     @Operation(
-        summary = "Case 의 GitHub 근거 타임라인 조회 (커서)",
+        summary = "Case 의 이전 GitHub 활동 조회 (커서)",
         description = """
-            근거 타임라인(연결·떼기·PR 열림/머지/닫힘·Issue 닫힘·CI 결과 …)을 **최신순으로 한 쪽씩**. 케이스 읽기 권한 필요.
-            이벤트는 모두 보존되고, 화면이 실제로 보는 구간만 가져온다.
+            "이전 GitHub 이력 더 보기". 근거 조회의 `activity.nextCursor`(또는 이 API 의 `nextCursor`)를 넘기면 그보다 오래된 쪽을 준다.
+            케이스 읽기 권한 필요. 활동은 모두 보존되고, 화면이 실제로 보는 구간만 가져온다. 근거 조회의 `activity` 와 같은 로직·같은 모양.
 
-            - 첫 쪽은 `cursor` 없이. 응답의 `nextCursor` 를 그대로 넘기면 그보다 오래된 쪽. `nextCursor=null` 이면 끝.
-            - 커서는 (발생 시각, id) 기준이라 사이에 새 이벤트가 쌓여도 이미 받은 줄이 다음 쪽에 다시 나오지 않는다. 새 이벤트는 첫 쪽을 다시 받으면 보인다.
+            - 정렬: GitHub 쪽 발생 시각 내림차순, 같은 시각은 id 내림차순. `nextCursor=null` 이면 끝. `cursor` 없이 부르면 첫 쪽.
+            - 이미 받은 줄은 다음 쪽에 다시 나오지 않는다. 늦게 기록된 과거 활동이 이미 받은 구간에 들어갈 수 있으니 갱신 때 첫 쪽을 다시 받아 **id 로 합친다**
+              (CI 결과는 같은 줄이 최신 값으로 바뀌며 시각이 옮겨질 수 있음 — id 는 그대로).
             - 비공개 가림은 근거 조회와 같다: 가려진 줄은 `masked=true` + 종류·시각(CI 는 결과만).
         """,
     )
@@ -161,8 +167,8 @@ class CaseGithubController(
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
         @Parameter(description = "이전 응답의 nextCursor. 첫 쪽이면 생략") @RequestParam(required = false) cursor: String?,
         @Parameter(description = "한 쪽 크기(1~100, 범위 밖이면 가까운 값으로). 기본 20")
-        @RequestParam(defaultValue = ListCaseGithubEventsUseCase.DEFAULT_SIZE.toString()) size: Int,
-    ): CaseGithubEventPageResponse = CaseGithubEventPageResponse.of(translate { listEvents.invoke(caseId, userId, cursor, size) })
+        @RequestParam(defaultValue = GithubActivityReader.DEFAULT_SIZE.toString()) size: Int,
+    ): GithubActivityResponse = GithubActivityResponse.of(translate { listEvents.invoke(caseId, userId, cursor, size) })
 
     @Operation(
         summary = "Step 의 GitHub 근거 꼬리표 설정",

@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
-import org.studieojavry.coreapi.errorcase.github.application.usecase.ListCaseGithubEventsUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActivityReader
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
@@ -55,28 +55,31 @@ data class CaseGithubLinkResponse(
 }
 
 @Schema(
-    description = "Case 의 GitHub 근거 — Issue 와 그 Issue 로 붙은 PR 을 묶은 관계형 목록(+CI). 비공개 레포 근거는 권한 없는 사람에게 가려져 내려간다. " +
-        "근거 타임라인은 `GET .../github/events` 로 따로 나눠 받는다.",
+    description = "Case 의 GitHub 근거 화면 한 번에 — Issue ▸ 그 Issue 를 닫는 PR 관계형 근거(+CI) + GitHub 활동 첫 쪽. " +
+        "근거와 활동은 같은 시점(한 DB 스냅샷)에서 읽는다. 비공개 레포 근거는 권한 없는 사람에게 가려져 내려간다.",
 )
 data class CaseGithubEvidenceResponse(
     @field:Schema(description = "연결된 레포 중 GitHub 연결이 끊긴(설치 삭제/정지·레포 제외) 것이 있음 — 새 소식이 더 이상 반영되지 않음")
     val syncStopped: Boolean,
-    @field:Schema(description = "연결된 Issue(연결 순). 각 Issue 의 `pullRequests` 에 그 Issue 를 닫는 PR 이라 함께 붙은 PR 이 들어 있다.")
+    @field:Schema(description = "연결된 Issue(연결 순). 각 Issue 의 `pullRequests` 에 그 Issue 를 닫는 PR 이 들어 있다.")
     val issues: List<GithubEvidenceItemResponse>,
     @field:Schema(
-        description = "어느 Issue 아래에도 묶이지 않은 PR(연결 순) — 직접 연결한 PR, 경유 Issue 를 뗐거나 가려진 PR. " +
-            "Issue 아래 PR 은 여기 다시 나오지 않는다.",
+        description = "어느 Issue 아래에도 묶이지 않은 PR(연결 순). **위치일 뿐 출처가 아님** — 직접 연결한 PR 일 수도, " +
+            "Issue 로 자동 연결됐다가 그 Issue 를 뗀 PR 일 수도 있다(출처는 `linkSource`). 한 PR 은 한 곳에만 나온다.",
     )
-    val pullRequests: List<GithubEvidenceItemResponse>,
+    val ungroupedPullRequests: List<GithubEvidenceItemResponse>,
     @field:Schema(description = "가려진 항목 수(Issue 아래 PR 포함) — FE 표시용(예: \"비공개 저장소 PR 1건\")", example = "{\"ISSUE\":0,\"PULL_REQUEST\":1}")
     val maskedCount: Map<GithubRefKind, Int>,
+    @field:Schema(description = "GitHub 활동 첫 쪽(최신 20건). 이전 활동은 `GET .../github/events?cursor={nextCursor}`")
+    val activity: GithubActivityResponse,
 ) {
     companion object {
         fun of(v: GetCaseGithubEvidenceUseCase.EvidenceView) = CaseGithubEvidenceResponse(
             syncStopped = v.syncStopped,
             issues = v.issues.map { g -> GithubEvidenceItemResponse.of(g.issue, g.pullRequests.map(GithubEvidenceItemResponse::of)) },
-            pullRequests = v.pullRequests.map(GithubEvidenceItemResponse::of),
+            ungroupedPullRequests = v.ungroupedPullRequests.map(GithubEvidenceItemResponse::of),
             maskedCount = v.maskedCount,
+            activity = GithubActivityResponse.of(v.activity),
         )
     }
 }
@@ -98,6 +101,12 @@ data class GithubEvidenceItemResponse(
     val linkedAt: Instant?,
     val isDraft: Boolean?,
     @field:Schema(description = "VIA_ISSUE 일 때 경유한 Issue. 그 Issue 가 요청자에게 가려지면 없음") val viaIssue: GetCaseGithubEvidenceUseCase.RefView?,
+    @field:Schema(
+        description = "PR 에만 있음 — 이 PR 이 지금 닫는 Issue(빈 배열 가능). `inCase=true` 면 그 Issue 도 이 Case 에 붙어 있음. " +
+            "여러 Issue 를 닫아도 PR 은 한 Issue 아래에만 보이므로 \"다른 Issue 1건도 해결\" 표시에 쓴다. " +
+            "경유 Issue(viaIssue)가 여기 없으면 그 Issue 를 더 이상 닫지 않음. 가려진 저장소의 Issue 는 빠진다.",
+    )
+    val closesIssues: List<GetCaseGithubEvidenceUseCase.ClosingIssueView>?,
     val diff: GetCaseGithubEvidenceUseCase.DiffView?,
     @field:Schema(description = "PR 최신 head 커밋의 CI 요약. stale=true 면 새 커밋 CI 대기 중") val ci: GetCaseGithubEvidenceUseCase.CiView?,
     @field:Schema(
@@ -107,31 +116,31 @@ data class GithubEvidenceItemResponse(
     )
     val stepIds: List<Long>,
     @field:Schema(
-        description = "Issue 에만 있음 — 이 Issue 를 닫는 PR 이라 함께 붙은 PR(연결 순, 빈 배열 가능). " +
-            "Issue 가 가려졌으면 항상 빈 배열(그 PR 들은 최상위 `pullRequests` 로). 가려진 PR 은 Issue 아래에 묶지 않는다.",
+        description = "Issue 에만 있음 — 이 Issue 아래에 보일 PR(연결 순, 빈 배열 가능): 이 Issue 를 경유해 붙은 PR, 또는 직접 붙였어도 이 Issue 를 닫는 PR. " +
+            "Issue 가 가려졌으면 항상 빈 배열(그 PR 들은 `ungroupedPullRequests` 로). 가려진 PR 은 Issue 아래에 묶지 않는다.",
     )
     val pullRequests: List<GithubEvidenceItemResponse>? = null,
 ) {
     companion object {
         fun of(i: GetCaseGithubEvidenceUseCase.ItemView, children: List<GithubEvidenceItemResponse>? = null) = GithubEvidenceItemResponse(
             i.linkId, i.kind, i.masked, i.state, i.repo, i.number, i.isPrivate, i.title, i.url, i.author,
-            i.linkSource, i.linkedAt, i.isDraft, i.viaIssue, i.diff, i.ci, i.stepIds, children,
+            i.linkSource, i.linkedAt, i.isDraft, i.viaIssue, i.closesIssues, i.diff, i.ci, i.stepIds, children,
         )
     }
 }
 
-@Schema(description = "근거 타임라인 한 쪽(최신순). `nextCursor` 로 더 오래된 쪽을 이어 받는다.")
-data class CaseGithubEventPageResponse(
-    @field:Schema(description = "최신순(occurredAt 내림차순, 같은 시각은 id 내림차순). 화면은 FE 가 Step 과 시간순으로 섞어 보여준다.")
+@Schema(description = "GitHub 활동 한 쪽(최신순). 근거 조회의 `activity` 와 `GET .../github/events` 가 같은 모양·같은 규칙")
+data class GithubActivityResponse(
+    @field:Schema(description = "최신순(GitHub 발생 시각 내림차순, 같은 시각은 id 내림차순). FE 는 Step 과 시간순으로 섞고, 다시 받으면 id 로 합친다.")
     val events: List<GithubEvidenceEventResponse>,
-    @field:Schema(description = "더 오래된 이력을 받을 커서. 없으면(null) 마지막 쪽", example = "MjAyNi0xMC0yMFQwMTowMDowMFp8NDI")
+    @field:Schema(description = "더 오래된 활동을 받을 커서. 없으면(null) 마지막 쪽", example = "MjAyNi0xMC0yMFQwMTowMDowMFp8NDI")
     val nextCursor: String?,
     val hasNext: Boolean,
-    @field:Schema(description = "이 Case 의 근거 타임라인 전체 건수(가려진 것 포함)", example = "57")
+    @field:Schema(description = "이 Case 의 GitHub 활동 전체 건수. 가려진 줄도 masked 로 내려가므로 넘겨볼 수 있는 줄 수와 같다", example = "124")
     val totalCount: Long,
 ) {
     companion object {
-        fun of(p: ListCaseGithubEventsUseCase.EventPage) = CaseGithubEventPageResponse(
+        fun of(p: GithubActivityReader.ActivityPage) = GithubActivityResponse(
             p.events.map(GithubEvidenceEventResponse::of), p.nextCursor, p.nextCursor != null, p.totalCount,
         )
     }
@@ -154,7 +163,7 @@ data class GithubEvidenceEventResponse(
     val data: Map<String, Any?>,
 ) {
     companion object {
-        fun of(e: ListCaseGithubEventsUseCase.EventView) = GithubEvidenceEventResponse(
+        fun of(e: GithubActivityReader.EventView) = GithubEvidenceEventResponse(
             e.id, e.type.name, e.occurredAt, e.kind, e.repo, e.number, e.masked, e.issue, e.data,
         )
     }

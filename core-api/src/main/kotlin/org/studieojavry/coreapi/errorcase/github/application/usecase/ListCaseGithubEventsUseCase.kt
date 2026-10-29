@@ -1,96 +1,26 @@
 package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Isolation
+import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
-import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
-import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubEventCursor
-import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
-import java.time.Instant
 
-/**
- * Case 근거 타임라인을 **최신순 커서**로 나눠 조회. 이벤트는 모두 보존하고, 사용자가 실제로 보는 구간만 가져온다.
- * 가림 규칙은 [GetCaseGithubEvidenceUseCase] 와 같다 — 레포 정보를 모르면 비공개로 간주.
- */
+/** "이전 GitHub 이력 더 보기" — 근거 조회가 준 커서 다음 쪽. 로직은 [GithubActivityReader] 하나를 같이 쓴다. */
 @Service
 @ConditionalOnGithubEnabled
 class ListCaseGithubEventsUseCase(
     private val errorCases: ErrorCaseRepositoryPort,
     private val access: ErrorCaseAccess,
-    private val policy: GithubCaseAccessPolicy,
-    private val evidence: GithubEvidenceRepositoryPort,
-    private val installations: GithubInstallationRepositoryPort,
+    private val activity: GithubActivityReader,
 ) {
-    fun invoke(caseId: Long, viewerUserId: Long, cursor: String?, size: Int): EventPage {
+    /** 한 쪽의 이벤트와 건수를 같은 시점에서 읽도록 한 스냅샷. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    fun invoke(caseId: Long, viewerUserId: Long, cursor: String?, size: Int): GithubActivityReader.ActivityPage {
         val errorCase = errorCases.findById(caseId) ?: throw ErrorCaseNotFoundException(caseId)
         access.requireRead(errorCase, viewerUserId)
-        val before = cursor?.let { GithubEventCursor.decode(it) ?: throw GithubEventCursorInvalidException("잘못된 커서: $it") }
-        val limit = size.coerceIn(1, MAX_SIZE)
-
-        // 한 건 더 읽어 다음 쪽이 있는지 판단
-        val fetched = evidence.findEventsBefore(caseId, before, limit + 1)
-        val page = fetched.take(limit)
-        val hasNext = fetched.size > limit
-
-        val repoIds = (page.map { it.repoId } + page.mapNotNull { it.relatedIssueRepoId() }).toSet()
-        val repos = installations.findRepositoriesByIds(repoIds).associateBy { it.repoId }
-        val canSeePrivate by lazy { policy.canSeePrivate(errorCase, viewerUserId) }
-        fun visible(repoId: Long): Boolean = policy.isVisible(repos[repoId], canSeePrivate)
-
-        return EventPage(
-            events = page.map { e ->
-                if (visible(e.repoId)) {
-                    val issue = e.relatedIssueRepoId()?.takeIf(::visible)
-                        ?.let { r -> GetCaseGithubEvidenceUseCase.RefView(repos[r]?.fullName, (e.data[ISSUE_NUMBER] as Number).toInt()) }
-                    EventView(e.id!!, e.type, e.occurredAt, e.kind, repos[e.repoId]?.fullName, e.number, masked = false,
-                        issue = issue, data = e.data - RELATED_ISSUE_KEYS)
-                } else {
-                    // 외부인에게는 "언제 무슨 일이 있었나"만. CI 는 결과(통과/실패)까지만, 실패 job 이름·sha 는 제외.
-                    val data = if (e.type == CaseGithubEvent.Type.CI_COMPLETED) e.data.filterKeys { it == "conclusion" } else emptyMap()
-                    EventView(e.id!!, e.type, e.occurredAt, e.kind, null, null, masked = true, issue = null, data = data)
-                }
-            },
-            nextCursor = if (hasNext) page.last().let { GithubEventCursor(it.occurredAt, it.id!!).encode() } else null,
-            totalCount = evidence.countEvents(caseId),
-        )
-    }
-
-    /** 이벤트가 가리키는 다른 Issue(예: "PR 이 Issue #N 을 닫는 PR 이라 붙음"). 레포 id 그대로는 내보내지 않는다. */
-    private fun CaseGithubEvent.relatedIssueRepoId(): Long? =
-        (data[ISSUE_REPO_ID] as? Number)?.toLong()?.takeIf { data[ISSUE_NUMBER] is Number }
-
-    data class EventPage(
-        /** 최신순. */
-        val events: List<EventView>,
-        /** 더 오래된 쪽을 받을 커서. 없으면 끝. */
-        val nextCursor: String?,
-        val totalCount: Long,
-    )
-
-    data class EventView(
-        val id: Long,
-        val type: CaseGithubEvent.Type,
-        val occurredAt: Instant,
-        val kind: GithubRefKind,
-        val repo: String?,
-        val number: Int?,
-        val masked: Boolean,
-        /** 이 이벤트가 함께 가리키는 Issue. 그 Issue 가 가려지면 없음. */
-        val issue: GetCaseGithubEvidenceUseCase.RefView?,
-        val data: Map<String, Any?>,
-    )
-
-    companion object {
-        const val DEFAULT_SIZE = 20
-        const val MAX_SIZE = 100
-
-        /** 이벤트 data 에서 "관련 Issue" 를 가리키는 키 — 기록 쪽(P1-b 경유 연결, P1-c 참조 해제)이 이 이름으로 넣는다. */
-        const val ISSUE_REPO_ID = "issueRepoId"
-        const val ISSUE_NUMBER = "issueNumber"
-        private val RELATED_ISSUE_KEYS = setOf(ISSUE_REPO_ID, ISSUE_NUMBER)
+        return activity.page(errorCase, viewerUserId, cursor, size)
     }
 }

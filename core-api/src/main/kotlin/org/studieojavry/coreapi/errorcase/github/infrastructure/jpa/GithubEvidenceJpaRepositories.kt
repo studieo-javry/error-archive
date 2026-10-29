@@ -22,6 +22,7 @@ interface GithubPullRequestJpaRepository : JpaRepository<GithubPullRequestEntity
 
 interface GithubPrIssueRefJpaRepository : JpaRepository<GithubPrIssueRefEntity, GithubPrIssueRefKey> {
     fun findAllByPrRepoIdAndPrNumber(prRepoId: Long, prNumber: Int): List<GithubPrIssueRefEntity>
+    fun findAllByPrRepoIdInAndPrNumberIn(prRepoIds: Collection<Long>, prNumbers: Collection<Int>): List<GithubPrIssueRefEntity>
 }
 
 interface CaseGithubLinkJpaRepository : JpaRepository<CaseGithubLinkEntity, Long> {

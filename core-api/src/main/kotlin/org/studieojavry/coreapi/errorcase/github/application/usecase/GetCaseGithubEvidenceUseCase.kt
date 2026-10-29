@@ -1,6 +1,8 @@
 package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Isolation
+import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
@@ -18,8 +20,9 @@ import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAc
 import java.time.Instant
 
 /**
- * Case 의 GitHub 근거(연결된 Issue·PR·CI) 조회 — **Issue → 그 Issue 로 붙은 PR** 관계로 묶어서 준다. **비공개 가림은 여기서** 한다.
- * 근거 타임라인은 쌓이는 양이 많아 [ListCaseGithubEventsUseCase] 가 커서로 나눠 준다.
+ * Case 의 GitHub 근거 화면 한 번에 — **Issue ▸ 그 Issue 를 닫는 PR** 관계형 근거 + GitHub 활동 첫 쪽(최신 20건 + 커서).
+ * 연결·떼기 뒤에도 이것 하나만 다시 부르면 근거와 활동이 같은 시점으로 맞는다. 이전 활동은 [ListCaseGithubEventsUseCase].
+ * **비공개 가림은 여기서** 한다.
  *
  * 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)를 볼 수 있는 사람은 [GithubCaseAccessPolicy.canSeePrivate].
  * 그 외(PUBLIC Case 를 본 외부인)에게는 종류·상태만 남기고 나머지 필드를 **응답에서 아예 뺀다**.
@@ -33,13 +36,23 @@ class GetCaseGithubEvidenceUseCase(
     private val policy: GithubCaseAccessPolicy,
     private val evidence: GithubEvidenceRepositoryPort,
     private val installations: GithubInstallationRepositoryPort,
+    private val activity: GithubActivityReader,
 ) {
+    /**
+     * 근거·Step 꼬리표·활동을 **한 스냅샷**에서 읽는다 — 기본(READ COMMITTED)은 쿼리마다 그 순간을 읽어서,
+     * 사이에 웹훅이 끼면 "근거는 머지 전, 활동은 머지 후" 같은 어긋남이 한 응답 안에서도 생길 수 있다.
+     * PostgreSQL 의 읽기 전용 REPEATABLE READ 는 직렬화 실패가 없다.
+     */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     fun invoke(caseId: Long, viewerUserId: Long): EvidenceView {
         val errorCase = errorCases.findById(caseId) ?: throw ErrorCaseNotFoundException(caseId)
         access.requireRead(errorCase, viewerUserId)
 
         val links = evidence.findLinks(caseId).filter { it.isActive }
-        val repoIds = (links.map { it.repoId } + links.mapNotNull { it.viaIssueRepoId }).toSet()
+        val closingIssues = evidence.findClosingIssuesOf(
+            links.filter { it.kind == GithubRefKind.PULL_REQUEST }.map { GithubItemRef(it.repoId, it.number) },
+        )
+        val repoIds = (links.map { it.repoId } + links.mapNotNull { it.viaIssueRepoId } + closingIssues.values.flatten().map { it.repoId }).toSet()
         val repos = installations.findRepositoriesByIds(repoIds).associateBy { it.repoId }
         val activeInstallations = installations.findByIds(repos.values.map { it.installationId }.toSet())
             .filter { it.status == GithubInstallationStatus.ACTIVE }
@@ -58,23 +71,32 @@ class GetCaseGithubEvidenceUseCase(
         val canSeePrivate by lazy { policy.canSeePrivate(errorCase, viewerUserId) }
         fun visible(repoId: Long): Boolean = policy.isVisible(repos[repoId], canSeePrivate)
 
+        val issueLinkRefs = links.filter { it.kind == GithubRefKind.ISSUE }.map { GithubItemRef(it.repoId, it.number) }.toSet()
         val items = links.mapNotNull { link ->
             val ref = GithubItemRef(link.repoId, link.number)
             val repo = repos[link.repoId]
             val stepIds = stepIdsByLink[link.id].orEmpty().sorted()
             when (link.kind) {
                 GithubRefKind.ISSUE -> issues[ref]?.let { issueView(link, it, repo, visible(link.repoId)) }
-                GithubRefKind.PULL_REQUEST -> pullRequests[ref]?.let { prView(link, it, repo, repos, ::visible) }
+                GithubRefKind.PULL_REQUEST -> pullRequests[ref]?.let {
+                    prView(link, it, repo, repos, ::visible, closingIssues[ref].orEmpty(), issueLinkRefs)
+                }
             }?.let { link to it.copy(stepIds = stepIds) }
         }
 
-        // Issue 아래에 묶는 건 "그 Issue 를 닫는 PR 이라 붙은"(viaIssue) PR 이 그 Issue 와 함께 이 Case 에 붙어 있고
-        // 둘 다 보일 때만. 가려진 쪽이 있으면 관계 자체가 비공개 정보라 묶지 않는다(PR 은 따로 붙은 PR 로).
+        // 위치(어느 Issue 아래에 보일지)는 출처(linkSource)와 따로 정한다:
+        //  ① 경유한 Issue → ② 이 PR 이 닫는 다른 Issue(먼저 연결된 순) 중 이 Case 에 붙어 있고 보이는 것 → ③ 없으면 묶지 않음.
+        // PR·Issue 중 하나라도 가려지면 그 관계 자체가 비공개 정보라 묶지 않는다.
         val visibleIssueRefs = items.filter { (link, view) -> link.kind == GithubRefKind.ISSUE && !view.masked }
-            .map { (link, _) -> GithubItemRef(link.repoId, link.number) }.toSet()
-        val (nested, standalone) = items.filter { (link, _) -> link.kind == GithubRefKind.PULL_REQUEST }
-            .partition { (link, view) -> !view.masked && link.viaIssueRef() in visibleIssueRefs }
-        val childrenByIssue = nested.groupBy({ (link, _) -> link.viaIssueRef() }, { (_, view) -> view })
+            .map { (link, _) -> GithubItemRef(link.repoId, link.number) }
+        val placed = items.filter { (link, _) -> link.kind == GithubRefKind.PULL_REQUEST }.map { (link, view) ->
+            val ref = GithubItemRef(link.repoId, link.number)
+            val home = if (view.masked) null
+            else link.viaIssueRef()?.takeIf { it in visibleIssueRefs }
+                ?: visibleIssueRefs.firstOrNull { it in closingIssues[ref].orEmpty() }
+            home to view
+        }
+        val childrenByIssue = placed.filter { it.first != null }.groupBy({ it.first!! }, { it.second })
 
         val syncStopped = links.any { link ->
             val repo = repos[link.repoId]
@@ -86,8 +108,9 @@ class GetCaseGithubEvidenceUseCase(
             issues = items.filter { (link, _) -> link.kind == GithubRefKind.ISSUE }.map { (link, view) ->
                 IssueGroup(view, childrenByIssue[GithubItemRef(link.repoId, link.number)].orEmpty())
             },
-            pullRequests = standalone.map { (_, view) -> view },
+            ungroupedPullRequests = placed.filter { it.first == null }.map { it.second },
             maskedCount = GithubRefKind.entries.associateWith { k -> items.count { (_, v) -> v.kind == k && v.masked } },
+            activity = activity.page(errorCase, viewerUserId, cursor = null, size = GithubActivityReader.DEFAULT_SIZE),
         )
     }
 
@@ -108,6 +131,8 @@ class GetCaseGithubEvidenceUseCase(
         repo: GithubRepository?,
         repos: Map<Long, GithubRepository>,
         visible: (Long) -> Boolean,
+        closes: List<GithubItemRef>,
+        issueLinkRefs: Set<GithubItemRef>,
     ) = if (!visible(link.repoId)) ItemView.masked(GithubRefKind.PULL_REQUEST, pr.state)
     else ItemView(
         linkId = link.id, kind = GithubRefKind.PULL_REQUEST, masked = false, state = pr.state,
@@ -116,6 +141,8 @@ class GetCaseGithubEvidenceUseCase(
         isDraft = pr.isDraft,
         // 경유 Issue 가 비공개 레포에 있고 볼 권한이 없으면 그 번호도 비공개 정보 — 빼고 준다.
         viaIssue = link.viaIssueRef()?.takeIf { visible(it.repoId) }?.let { RefView(repos[it.repoId]?.fullName, it.number) },
+        // 이 PR 이 지금 닫는 Issue(GitHub 판정 + 비기본 브랜치 키워드). 경유 Issue 가 여기 없으면 "더 이상 닫지 않음".
+        closesIssues = closes.filter { visible(it.repoId) }.map { ClosingIssueView(repos[it.repoId]?.fullName, it.number, it in issueLinkRefs) },
         diff = DiffView(pr.additions, pr.deletions, pr.changedFiles),
         ci = pr.ci?.let { CiView(it.conclusion, it.passed, it.total, it.failedNames, "${pr.url}/checks", pr.isCiStale) },
     )
@@ -124,11 +151,13 @@ class GetCaseGithubEvidenceUseCase(
     // ── 조회 결과 ─────────────────────────────────────────────
     data class EvidenceView(
         val syncStopped: Boolean,
-        /** 연결 순. 각 Issue 아래에 그 Issue 로 붙은 PR. */
+        /** 연결 순. 각 Issue 아래에 그 Issue 를 닫는 PR. */
         val issues: List<IssueGroup>,
-        /** 어느 Issue 아래에도 묶이지 않은 PR — 직접 연결, 경유 Issue 를 뗐거나 가려진 경우. */
-        val pullRequests: List<ItemView>,
+        /** 어느 Issue 아래에도 묶이지 않은 PR — 출처(직접/자동)와 무관, 붙을 Issue 가 Case 에 없거나 가려진 경우. */
+        val ungroupedPullRequests: List<ItemView>,
         val maskedCount: Map<GithubRefKind, Int>,
+        /** GitHub 활동 첫 쪽 — 근거와 같은 스냅샷. */
+        val activity: GithubActivityReader.ActivityPage,
     )
 
     data class IssueGroup(val issue: ItemView, val pullRequests: List<ItemView>)
@@ -148,6 +177,7 @@ class GetCaseGithubEvidenceUseCase(
         val linkedAt: Instant? = null,
         val isDraft: Boolean? = null,
         val viaIssue: RefView? = null,
+        val closesIssues: List<ClosingIssueView>? = null,
         val diff: DiffView? = null,
         val ci: CiView? = null,
         /** 이 근거가 꼬리표로 붙은 Step id. 가려진 항목에도 내려준다 — Step 번호는 비공개 내용이 아님(P1-e D9). */
@@ -159,6 +189,9 @@ class GetCaseGithubEvidenceUseCase(
     }
 
     data class RefView(val repo: String?, val number: Int)
+
+    /** PR 이 닫는 Issue. [inCase] = 그 Issue 도 이 Case 에 붙어 있음(목록에서 함께 보임). */
+    data class ClosingIssueView(val repo: String?, val number: Int, val inCase: Boolean)
     data class DiffView(val additions: Int?, val deletions: Int?, val changedFiles: Int?)
     data class CiView(
         val status: CiSummary.CiConclusion,

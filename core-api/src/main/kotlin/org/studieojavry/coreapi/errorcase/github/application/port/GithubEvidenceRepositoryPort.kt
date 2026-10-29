@@ -23,6 +23,9 @@ interface GithubEvidenceRepositoryPort {
     /** 이 PR 이 닫는 Issue 목록을 [source] 출처분만 통째로 교체. */
     fun replaceClosingRefs(pr: GithubItemRef, issues: Collection<GithubItemRef>, source: ClosingRefSource)
 
+    /** 여러 PR 각각이 닫는 Issue(출처 무관, 중복 제거). 근거 조회에서 PR 을 어느 Issue 아래에 둘지 정할 때 쓴다. */
+    fun findClosingIssuesOf(prs: Collection<GithubItemRef>): Map<GithubItemRef, List<GithubItemRef>>
+
     fun findLink(caseId: Long, kind: GithubRefKind, ref: GithubItemRef): CaseGithubLink?
     fun findLinkById(linkId: Long): CaseGithubLink?
     fun findLinks(caseId: Long): List<CaseGithubLink>

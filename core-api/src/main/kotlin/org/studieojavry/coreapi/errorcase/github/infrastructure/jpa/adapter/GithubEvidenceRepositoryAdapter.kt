@@ -94,6 +94,17 @@ class GithubEvidenceRepositoryAdapter(
         if (added.isNotEmpty()) prIssueRefs.saveAll(added)
     }
 
+    override fun findClosingIssuesOf(prs: Collection<GithubItemRef>): Map<GithubItemRef, List<GithubItemRef>> {
+        if (prs.isEmpty()) return emptyMap()
+        val wanted = prs.toSet()
+        // (repo IN, number IN) 은 교차곱이라 넓게 읽힘 — 원하는 PR 만 다시 거른다
+        return prIssueRefs.findAllByPrRepoIdInAndPrNumberIn(wanted.map { it.repoId }.toSet(), wanted.map { it.number }.toSet())
+            .filter { GithubItemRef(it.prRepoId, it.prNumber) in wanted }
+            .sortedBy { it.observedAt }
+            .groupBy({ GithubItemRef(it.prRepoId, it.prNumber) }, { GithubItemRef(it.issueRepoId, it.issueNumber) })
+            .mapValues { (_, issues) -> issues.distinct() }
+    }
+
     // ── 연결 ─────────────────────────────────────────────────
     override fun findLink(caseId: Long, kind: GithubRefKind, ref: GithubItemRef): CaseGithubLink? =
         links.findByCaseIdAndKindAndRepoIdAndNumber(caseId, kind.name, ref.repoId, ref.number)?.toDomain()

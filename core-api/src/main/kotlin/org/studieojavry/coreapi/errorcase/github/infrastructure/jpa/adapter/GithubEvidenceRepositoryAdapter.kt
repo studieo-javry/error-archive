@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.adapter
 
+import org.springframework.data.domain.Limit
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.github.application.port.CaseGithubCleanupPort
@@ -12,6 +13,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapsho
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.StepGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubEventCursor
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
@@ -120,13 +122,18 @@ class GithubEvidenceRepositoryAdapter(
         }
     }
 
-    override fun findEvents(caseId: Long): List<CaseGithubEvent> =
-        events.findAllByCaseIdOrderByOccurredAtAscIdAsc(caseId).map {
-            CaseGithubEvent(
-                it.caseId, CaseGithubEvent.Type.valueOf(it.type), GithubRefKind.valueOf(it.kind), it.repoId, it.number,
-                it.occurredAt, it.data?.let { json -> objectMapper.readValue(json, MAP_TYPE) } ?: emptyMap(), it.dedupeKey,
-            )
-        }
+    override fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent> =
+        (before?.let { events.findOlderThan(caseId, it.occurredAt, it.id, Limit.of(limit)) }
+            ?: events.findAllByCaseIdOrderByOccurredAtDescIdDesc(caseId, Limit.of(limit)))
+            .map {
+                CaseGithubEvent(
+                    it.caseId, CaseGithubEvent.Type.valueOf(it.type), GithubRefKind.valueOf(it.kind), it.repoId, it.number,
+                    it.occurredAt, it.data?.let { json -> objectMapper.readValue(json, MAP_TYPE) } ?: emptyMap(), it.dedupeKey,
+                    id = it.id,
+                )
+            }
+
+    override fun countEvents(caseId: Long): Long = events.countByCaseId(caseId)
 
     // ── Step ↔ 근거 꼬리표 ──────────────────────────────────────
     override fun findStepLinks(caseId: Long): List<StepGithubLink> =

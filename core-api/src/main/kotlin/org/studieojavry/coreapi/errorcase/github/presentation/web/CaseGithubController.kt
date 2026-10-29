@@ -17,12 +17,14 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CaseGithubLinkNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DetachGithubLinkUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubEventCursorInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
@@ -30,9 +32,11 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScope
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubStepLinkInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.LinkGithubToCaseUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.ListCaseGithubEventsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase
 import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEventPageResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEvidenceResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubLinkResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.LinkGithubRequest
@@ -51,6 +55,7 @@ class CaseGithubController(
     private val detachGithub: DetachGithubLinkUseCase,
     private val getEvidence: GetCaseGithubEvidenceUseCase,
     private val setStepLinks: SetStepGithubLinksUseCase,
+    private val listEvents: ListCaseGithubEventsUseCase,
 ) {
 
     @Operation(
@@ -109,7 +114,11 @@ class CaseGithubController(
     @Operation(
         summary = "Case 의 GitHub 근거 조회",
         description = """
-            연결된 Issue·PR(+CI 요약)과 근거 타임라인. 케이스 읽기 권한 필요.
+            연결된 Issue·PR(+CI 요약). 케이스 읽기 권한 필요. 근거 타임라인은 `GET .../github/events`.
+
+            **관계형 묶음**: `issues[].pullRequests` 에 그 Issue 를 닫는 PR 이라 함께 붙은 PR 이 들어간다.
+            최상위 `pullRequests` 는 어느 Issue 아래에도 묶이지 않은 PR 만(직접 연결, 경유 Issue 를 뗐거나 가려진 PR). 한 PR 은 한 곳에만 나온다.
+            Issue·PR 중 하나라도 요청자에게 가려지면 묶지 않는다(관계 자체가 비공개 정보).
 
             **비공개 가림**: 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)는
             워크스페이스 Case 면 그 워크스페이스의 **현재** 멤버(역할 무관 — 주인이어도 탈퇴했으면 가림), 개인 Case 면 주인에게만 보인다.
@@ -128,6 +137,32 @@ class CaseGithubController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
     ): CaseGithubEvidenceResponse = CaseGithubEvidenceResponse.of(getEvidence.invoke(caseId, userId))
+
+    @Operation(
+        summary = "Case 의 GitHub 근거 타임라인 조회 (커서)",
+        description = """
+            근거 타임라인(연결·떼기·PR 열림/머지/닫힘·Issue 닫힘·CI 결과 …)을 **최신순으로 한 쪽씩**. 케이스 읽기 권한 필요.
+            이벤트는 모두 보존되고, 화면이 실제로 보는 구간만 가져온다.
+
+            - 첫 쪽은 `cursor` 없이. 응답의 `nextCursor` 를 그대로 넘기면 그보다 오래된 쪽. `nextCursor=null` 이면 끝.
+            - 커서는 (발생 시각, id) 기준이라 사이에 새 이벤트가 쌓여도 이미 받은 줄이 다음 쪽에 다시 나오지 않는다. 새 이벤트는 첫 쪽을 다시 받으면 보인다.
+            - 비공개 가림은 근거 조회와 같다: 가려진 줄은 `masked=true` + 종류·시각(CI 는 결과만).
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "조회 성공"),
+        ApiResponse(responseCode = "400", description = "잘못된 커서", content = [Content()]),
+        ApiResponse(responseCode = "403", description = "케이스 읽기 권한 없음", content = [Content()]),
+        ApiResponse(responseCode = "404", description = "케이스 없음", content = [Content()]),
+    )
+    @GetMapping("/events")
+    fun events(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
+        @Parameter(description = "이전 응답의 nextCursor. 첫 쪽이면 생략") @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "한 쪽 크기(1~100, 범위 밖이면 가까운 값으로). 기본 20")
+        @RequestParam(defaultValue = ListCaseGithubEventsUseCase.DEFAULT_SIZE.toString()) size: Int,
+    ): CaseGithubEventPageResponse = CaseGithubEventPageResponse.of(translate { listEvents.invoke(caseId, userId, cursor, size) })
 
     @Operation(
         summary = "Step 의 GitHub 근거 꼬리표 설정",
@@ -167,6 +202,8 @@ class CaseGithubController(
     } catch (e: GithubItemNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
     } catch (e: GithubStepLinkInvalidException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
+    } catch (e: GithubEventCursorInvalidException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
     } catch (e: StepNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)

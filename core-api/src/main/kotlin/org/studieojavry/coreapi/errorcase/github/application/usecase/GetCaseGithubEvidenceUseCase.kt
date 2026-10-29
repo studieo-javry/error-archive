@@ -6,7 +6,6 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotF
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
-import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
@@ -19,7 +18,8 @@ import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAc
 import java.time.Instant
 
 /**
- * Case 의 GitHub 근거(연결된 Issue·PR·CI) + 근거 타임라인 조회. **비공개 가림은 여기서** 한다.
+ * Case 의 GitHub 근거(연결된 Issue·PR·CI) 조회 — **Issue → 그 Issue 로 붙은 PR** 관계로 묶어서 준다. **비공개 가림은 여기서** 한다.
+ * 근거 타임라인은 쌓이는 양이 많아 [ListCaseGithubEventsUseCase] 가 커서로 나눠 준다.
  *
  * 비공개 레포 근거의 상세(제목·주소·레포·번호·CI 실패 이름)를 볼 수 있는 사람은 [GithubCaseAccessPolicy.canSeePrivate].
  * 그 외(PUBLIC Case 를 본 외부인)에게는 종류·상태만 남기고 나머지 필드를 **응답에서 아예 뺀다**.
@@ -39,8 +39,7 @@ class GetCaseGithubEvidenceUseCase(
         access.requireRead(errorCase, viewerUserId)
 
         val links = evidence.findLinks(caseId).filter { it.isActive }
-        val events = evidence.findEvents(caseId)
-        val repoIds = (links.map { it.repoId } + events.map { it.repoId } + links.mapNotNull { it.viaIssueRepoId }).toSet()
+        val repoIds = (links.map { it.repoId } + links.mapNotNull { it.viaIssueRepoId }).toSet()
         val repos = installations.findRepositoriesByIds(repoIds).associateBy { it.repoId }
         val activeInstallations = installations.findByIds(repos.values.map { it.installationId }.toSet())
             .filter { it.status == GithubInstallationStatus.ACTIVE }
@@ -65,9 +64,17 @@ class GetCaseGithubEvidenceUseCase(
             val stepIds = stepIdsByLink[link.id].orEmpty().sorted()
             when (link.kind) {
                 GithubRefKind.ISSUE -> issues[ref]?.let { issueView(link, it, repo, visible(link.repoId)) }
-                GithubRefKind.PULL_REQUEST -> pullRequests[ref]?.let { prView(link, it, repo, repos, visible(link.repoId)) }
-            }?.copy(stepIds = stepIds)
+                GithubRefKind.PULL_REQUEST -> pullRequests[ref]?.let { prView(link, it, repo, repos, ::visible) }
+            }?.let { link to it.copy(stepIds = stepIds) }
         }
+
+        // Issue 아래에 묶는 건 "그 Issue 를 닫는 PR 이라 붙은"(viaIssue) PR 이 그 Issue 와 함께 이 Case 에 붙어 있고
+        // 둘 다 보일 때만. 가려진 쪽이 있으면 관계 자체가 비공개 정보라 묶지 않는다(PR 은 따로 붙은 PR 로).
+        val visibleIssueRefs = items.filter { (link, view) -> link.kind == GithubRefKind.ISSUE && !view.masked }
+            .map { (link, _) -> GithubItemRef(link.repoId, link.number) }.toSet()
+        val (nested, standalone) = items.filter { (link, _) -> link.kind == GithubRefKind.PULL_REQUEST }
+            .partition { (link, view) -> !view.masked && link.viaIssueRef() in visibleIssueRefs }
+        val childrenByIssue = nested.groupBy({ (link, _) -> link.viaIssueRef() }, { (_, view) -> view })
 
         val syncStopped = links.any { link ->
             val repo = repos[link.repoId]
@@ -76,11 +83,16 @@ class GetCaseGithubEvidenceUseCase(
 
         return EvidenceView(
             syncStopped = syncStopped,
-            items = items,
-            events = events.map { eventView(it, repos[it.repoId], visible(it.repoId)) },
-            maskedCount = GithubRefKind.entries.associateWith { k -> items.count { it.kind == k && it.masked } },
+            issues = items.filter { (link, _) -> link.kind == GithubRefKind.ISSUE }.map { (link, view) ->
+                IssueGroup(view, childrenByIssue[GithubItemRef(link.repoId, link.number)].orEmpty())
+            },
+            pullRequests = standalone.map { (_, view) -> view },
+            maskedCount = GithubRefKind.entries.associateWith { k -> items.count { (_, v) -> v.kind == k && v.masked } },
         )
     }
+
+    private fun CaseGithubLink.viaIssueRef(): GithubItemRef? =
+        viaIssueRepoId?.let { r -> viaIssueNumber?.let { n -> GithubItemRef(r, n) } }
 
     private fun issueView(link: CaseGithubLink, issue: GithubIssueSnapshot, repo: GithubRepository?, visible: Boolean) =
         if (!visible) ItemView.masked(GithubRefKind.ISSUE, issue.state)
@@ -95,34 +107,31 @@ class GetCaseGithubEvidenceUseCase(
         pr: GithubPullRequestSnapshot,
         repo: GithubRepository?,
         repos: Map<Long, GithubRepository>,
-        visible: Boolean,
-    ) = if (!visible) ItemView.masked(GithubRefKind.PULL_REQUEST, pr.state)
+        visible: (Long) -> Boolean,
+    ) = if (!visible(link.repoId)) ItemView.masked(GithubRefKind.PULL_REQUEST, pr.state)
     else ItemView(
         linkId = link.id, kind = GithubRefKind.PULL_REQUEST, masked = false, state = pr.state,
         repo = repo?.fullName, number = pr.number, isPrivate = repo?.isPrivate, title = pr.title, url = pr.url,
         author = pr.authorLogin, linkSource = link.linkSource, linkedAt = link.linkedAt,
         isDraft = pr.isDraft,
-        viaIssue = link.viaIssueRepoId?.let { r -> link.viaIssueNumber?.let { n -> RefView(repos[r]?.fullName, n) } },
+        // 경유 Issue 가 비공개 레포에 있고 볼 권한이 없으면 그 번호도 비공개 정보 — 빼고 준다.
+        viaIssue = link.viaIssueRef()?.takeIf { visible(it.repoId) }?.let { RefView(repos[it.repoId]?.fullName, it.number) },
         diff = DiffView(pr.additions, pr.deletions, pr.changedFiles),
         ci = pr.ci?.let { CiView(it.conclusion, it.passed, it.total, it.failedNames, "${pr.url}/checks", pr.isCiStale) },
     )
 
-    private fun eventView(e: CaseGithubEvent, repo: GithubRepository?, visible: Boolean): EventView =
-        if (visible) {
-            EventView(e.type, e.occurredAt, e.kind, repo?.fullName, e.number, masked = false, data = e.data)
-        } else {
-            // 외부인에게는 "언제 무슨 일이 있었나"만. CI 는 결과(통과/실패)까지만, 실패 job 이름·sha 는 제외.
-            val data = if (e.type == CaseGithubEvent.Type.CI_COMPLETED) e.data.filterKeys { it == "conclusion" } else emptyMap()
-            EventView(e.type, e.occurredAt, e.kind, null, null, masked = true, data = data)
-        }
 
     // ── 조회 결과 ─────────────────────────────────────────────
     data class EvidenceView(
         val syncStopped: Boolean,
-        val items: List<ItemView>,
-        val events: List<EventView>,
+        /** 연결 순. 각 Issue 아래에 그 Issue 로 붙은 PR. */
+        val issues: List<IssueGroup>,
+        /** 어느 Issue 아래에도 묶이지 않은 PR — 직접 연결, 경유 Issue 를 뗐거나 가려진 경우. */
+        val pullRequests: List<ItemView>,
         val maskedCount: Map<GithubRefKind, Int>,
     )
+
+    data class IssueGroup(val issue: ItemView, val pullRequests: List<ItemView>)
 
     data class ItemView(
         val linkId: Long?,
@@ -159,15 +168,5 @@ class GetCaseGithubEvidenceUseCase(
         val url: String,
         /** 최신 CI 가 지금 head 커밋 것이 아님 — 새 커밋의 CI 대기 중. */
         val stale: Boolean,
-    )
-
-    data class EventView(
-        val type: CaseGithubEvent.Type,
-        val occurredAt: Instant,
-        val kind: GithubRefKind,
-        val repo: String?,
-        val number: Int?,
-        val masked: Boolean,
-        val data: Map<String, Any?>,
     )
 }

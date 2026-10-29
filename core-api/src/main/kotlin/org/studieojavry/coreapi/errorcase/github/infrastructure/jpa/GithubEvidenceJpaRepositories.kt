@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.github.infrastructure.jpa
 
+import org.springframework.data.domain.Limit
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -51,6 +52,18 @@ interface CaseStepGithubLinkJpaRepository : JpaRepository<CaseStepGithubLinkEnti
 
 interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Long> {
     fun findAllByCaseIdOrderByOccurredAtAscIdAsc(caseId: Long): List<CaseGithubEventEntity>
+    fun findAllByCaseIdOrderByOccurredAtDescIdDesc(caseId: Long, limit: Limit): List<CaseGithubEventEntity>
+    fun countByCaseId(caseId: Long): Long
+
+    /** (occurredAt, id) 가 커서보다 오래된 것 — ix_case_github_event_cursor 를 역방향으로 탄다. */
+    @Query(
+        """
+        SELECT e FROM CaseGithubEventEntity e
+        WHERE e.caseId = :caseId AND (e.occurredAt < :at OR (e.occurredAt = :at AND e.id < :id))
+        ORDER BY e.occurredAt DESC, e.id DESC
+        """,
+    )
+    fun findOlderThan(@Param("caseId") caseId: Long, @Param("at") at: Instant, @Param("id") id: Long, limit: Limit): List<CaseGithubEventEntity>
 
     @Modifying
     @Query("DELETE FROM CaseGithubEventEntity e WHERE e.caseId = :caseId")

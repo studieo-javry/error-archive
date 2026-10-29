@@ -22,15 +22,21 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
+import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubLinkJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseStepGithubLinkJpaRepository
@@ -50,7 +56,7 @@ import kotlin.test.assertTrue
 
 /**
  * GitHub 연동 P1-a 통합 — Case 에 Issue/PR 수동 연결·떼기·근거 조회(가림)·Case 삭제 정리.
- * 실 Postgres + Flyway(V1~V5) + `ddl-auto=validate`. GitHub API 는 [GithubAppApiPort] 목.
+ * 실 Postgres + Flyway(V1~V7) + `ddl-auto=validate`. GitHub API 는 [GithubAppApiPort] 목.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -89,6 +95,8 @@ class GithubCaseEvidenceIntegrationTest {
     @Autowired private lateinit var prRepo: GithubPullRequestJpaRepository
     @Autowired private lateinit var ledgerRepo: GithubPrIssueRefJpaRepository
     @Autowired private lateinit var stepLinkRepo: CaseStepGithubLinkJpaRepository
+    @Autowired private lateinit var evidencePort: GithubEvidenceRepositoryPort
+    @Autowired private lateinit var txManager: PlatformTransactionManager
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -164,6 +172,25 @@ class GithubCaseEvidenceIntegrationTest {
     private fun evidence(uid: Long, caseId: Long) =
         mvc.perform(get("/api/v1/error-cases/$caseId/github").with(asUser(uid)))
 
+    private fun events(uid: Long, caseId: Long, cursor: String? = null, size: Int? = null) =
+        mvc.perform(
+            get("/api/v1/error-cases/$caseId/github/events").with(asUser(uid))
+                .apply { cursor?.let { param("cursor", it) }; size?.let { param("size", it.toString()) } },
+        )
+
+    /** 기록은 실제로 쓰기 유스케이스 트랜잭션 안에서만 일어남 — 테스트도 같은 조건으로. */
+    private fun recordEvent(event: CaseGithubEvent) =
+        TransactionTemplate(txManager).executeWithoutResult { evidencePort.recordEvent(event) }
+
+    /** P1-b 의 소급 부착이 만드는 것과 같은 모양 — 이미 붙은 PR 연결을 "이 Issue 를 닫는 PR 이라 붙음" 으로 바꾼다. */
+    private fun markViaIssue(linkId: Long, issueRepoId: Long, issueNumber: Int) {
+        val link = evidencePort.findLinkById(linkId)!!
+        link.linkSource = CaseGithubLink.LinkSource.VIA_ISSUE
+        link.viaIssueRepoId = issueRepoId
+        link.viaIssueNumber = issueNumber
+        evidencePort.saveLink(link)
+    }
+
     private fun createStep(uid: Long, caseId: Long, title: String): Long {
         val res = mvc.perform(
             post("/api/v1/error-cases/$caseId/steps").with(asUser(uid))
@@ -204,10 +231,12 @@ class GithubCaseEvidenceIntegrationTest {
             .andExpect(jsonPath("$.pullRequests[0].ci.status").value("FAILURE"))
             .andExpect(jsonPath("$.pullRequests[0].ci.failed[0]").value("integration-test"))
             .andExpect(jsonPath("$.pullRequests[0].ci.stale").value(false))
+            .andExpect(jsonPath("$.syncStopped").value(false))
+            .andExpect(jsonPath("$.events").doesNotExist())
+        events(me, caseId)
             .andExpect(jsonPath("$.events[*].type").value(org.hamcrest.Matchers.containsInAnyOrder(
                 "PR_OPENED", "PR_MERGED", "CI_COMPLETED", "PR_LINKED",
             )))
-            .andExpect(jsonPath("$.syncStopped").value(false))
 
         assertEquals(1, ledgerRepo.findAllByPrRepoIdAndPrNumber(s.repoId, 153).count { it.issueNumber == 142 })
 
@@ -234,7 +263,7 @@ class GithubCaseEvidenceIntegrationTest {
         evidence(me, caseId)
             .andExpect(jsonPath("$.issues[0].title").value("Pool exhausted in prod"))
             .andExpect(jsonPath("$.pullRequests[0].ci").doesNotExist())
-            .andExpect(jsonPath("$.events[?(@.type=='ISSUE_LINKED')]").isNotEmpty)
+        events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='ISSUE_LINKED')]").isNotEmpty)
     }
 
     @Test
@@ -286,7 +315,7 @@ class GithubCaseEvidenceIntegrationTest {
         mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$linkId").with(asUser(me))).andExpect(status().isNoContent)
         evidence(me, caseId)
             .andExpect(jsonPath("$.pullRequests").isEmpty)
-            .andExpect(jsonPath("$.events[?(@.type=='LINK_DETACHED')]").isNotEmpty)
+        events(me, caseId).andExpect(jsonPath("$.events[?(@.type=='LINK_DETACHED')]").isNotEmpty)
 
         link(me, caseId, "https://github.com/${s.fullName}/pull/170")
             .andExpect(status().isCreated)
@@ -314,10 +343,13 @@ class GithubCaseEvidenceIntegrationTest {
             .andExpect(jsonPath("$.pullRequests[0].masked").value(true))
             .andExpect(jsonPath("$.pullRequests[0].state").value("MERGED"))
             .andExpect(jsonPath("$.maskedCount.PULL_REQUEST").value(1))
+            .andReturn().response.contentAsString
+        val eventsBody = events(outsider, caseId)
             .andExpect(jsonPath("$.events[?(@.type=='CI_COMPLETED')].data.conclusion").value(org.hamcrest.Matchers.hasItem("FAILURE")))
             .andReturn().response.contentAsString
         listOf("SECRET-TITLE-xyz", s.fullName, "pull/180", "secret-job-name", "sha-180", "\"number\"").forEach {
             assertFalse(body.contains(it), "외부인 응답에 '$it' 가 있으면 안 됨: $body")
+            assertFalse(eventsBody.contains(it), "외부인 타임라인에 '$it' 가 있으면 안 됨: $eventsBody")
         }
     }
 
@@ -359,6 +391,133 @@ class GithubCaseEvidenceIntegrationTest {
             .andExpect(jsonPath("$.pullRequests[0].masked").value(false))
             .andExpect(jsonPath("$.pullRequests[0].title").value("fix: close ResultSet"))
     }
+
+    // ── 관계형 묶음 ───────────────────────────────────────────
+    @Test
+    fun `관계형 - Issue 로 붙은 PR 은 그 Issue 아래에만, 직접 연결 PR 은 최상위, Issue 를 떼면 PR 은 최상위로`() {
+        val me = 131L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        stubItem(s, 440, issueItem(s, 440))
+        stubItem(s, 441, prItem(s, 441, closes = 440))
+        stubItem(s, 442, prItem(s, 442, closes = 440, state = "OPEN"))
+        stubItem(s, 443, prItem(s, 443, closes = null))
+        listOf("441", "442", "443").forEach { stubChecks(s, "sha-$it") }
+        link(me, caseId, "https://github.com/${s.fullName}/issues/440").andExpect(status().isCreated)
+        listOf(441, 442, 443).forEach { link(me, caseId, "https://github.com/${s.fullName}/pull/$it").andExpect(status().isCreated) }
+        markViaIssue(linkIdOf(me, caseId, "pullRequests", 441), s.repoId, 440)
+        markViaIssue(linkIdOf(me, caseId, "pullRequests", 442), s.repoId, 440)
+
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues.length()").value(1))
+            .andExpect(jsonPath("$.issues[0].number").value(440))
+            .andExpect(jsonPath("$.issues[0].pullRequests[*].number").value(org.hamcrest.Matchers.contains(441, 442)))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(440))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].pullRequests").doesNotExist())
+            .andExpect(jsonPath("$.pullRequests[*].number").value(org.hamcrest.Matchers.contains(443)))
+
+        val issueLinkId = linkIdOf(me, caseId, "issues", 440)
+        mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$issueLinkId").with(asUser(me))).andExpect(status().isNoContent)
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues").isEmpty)
+            .andExpect(jsonPath("$.pullRequests[*].number").value(org.hamcrest.Matchers.contains(441, 442, 443)))
+            .andExpect(jsonPath("$.pullRequests[0].viaIssue.number").value(440))
+    }
+
+    @Test
+    fun `관계형 - 비공개 레포 Issue 아래 공개 PR, 외부인에게는 묶지 않고 경유 Issue 번호·레포도 뺌`() {
+        val me = 132L
+        val outsider = 133L
+        val secret = seedRepo(me, null, isPrivate = true)
+        val open = seedRepo(me, null, isPrivate = false)
+        val caseId = createCase(me, "PUBLIC")
+        stubItem(secret, 450, issueItem(secret, 450, title = "SECRET-ISSUE-title"))
+        stubItem(open, 451, prItem(open, 451, closes = null))
+        stubChecks(open, "sha-451")
+        link(me, caseId, "https://github.com/${secret.fullName}/issues/450").andExpect(status().isCreated)
+        link(me, caseId, "https://github.com/${open.fullName}/pull/451").andExpect(status().isCreated)
+        markViaIssue(linkIdOf(me, caseId, "pullRequests", 451), secret.repoId, 450)
+
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(451))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.repo").value(secret.fullName))
+            .andExpect(jsonPath("$.pullRequests").isEmpty)
+
+        val body = evidence(outsider, caseId)
+            .andExpect(jsonPath("$.issues[0].masked").value(true))
+            .andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
+            .andExpect(jsonPath("$.pullRequests[0].number").value(451))
+            .andExpect(jsonPath("$.pullRequests[0].masked").value(false))
+            .andExpect(jsonPath("$.pullRequests[0].viaIssue").doesNotExist())
+            .andReturn().response.contentAsString
+        listOf("SECRET-ISSUE-title", secret.fullName, "\"number\":450").forEach {
+            assertFalse(body.contains(it), "외부인 응답에 '$it' 가 있으면 안 됨: $body")
+        }
+    }
+
+    // ── 근거 타임라인 커서 ────────────────────────────────────
+    @Test
+    fun `타임라인 커서 - 최신순으로 나눠 받고 겹치거나 빠지는 줄 없음, 같은 시각은 id 로 구분, 잘못된 커서 400`() {
+        val me = 134L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        // 25건 — 두 건씩 같은 시각(동순위)이 섞이게
+        (0 until 25).forEach { i ->
+            recordEvent(
+                CaseGithubEvent(caseId, CaseGithubEvent.Type.PR_OPENED, GithubRefKind.PULL_REQUEST, s.repoId, 500 + i,
+                    t0.plusSeconds((i / 2) * 60L), emptyMap(), "TEST:$i"),
+            )
+        }
+
+        val seen = mutableListOf<JsonNodeRow>()
+        var cursor: String? = null
+        val pageSizes = mutableListOf<Int>()
+        do {
+            val page = om.readTree(events(me, caseId, cursor, size = 10).andExpect(status().isOk).andReturn().response.contentAsString)
+            assertEquals(25, page["totalCount"].asInt())
+            pageSizes += page["events"].size()
+            page["events"].forEach { seen += JsonNodeRow(it["id"].asLong(), Instant.parse(it["occurredAt"].asText())) }
+            cursor = page["nextCursor"].takeUnless { it.isNull }?.asText()
+            assertEquals(cursor != null, page["hasNext"].asBoolean())
+        } while (cursor != null)
+
+        assertEquals(listOf(10, 10, 5), pageSizes)
+        assertEquals(25, seen.map { it.id }.toSet().size, "겹치는 줄 없음")
+        assertEquals(seen.sortedWith(compareByDescending<JsonNodeRow> { it.at }.thenByDescending { it.id }), seen, "최신순")
+
+        events(me, caseId, cursor = "not-a-cursor").andExpect(status().isBadRequest)
+        events(me, caseId, size = 1000).andExpect(jsonPath("$.events.length()").value(25))
+        events(135L, caseId).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `타임라인 - 관련 Issue 는 레포 이름으로, 비공개 Issue 면 외부인에게 빼고 data 에 레포 id 를 남기지 않음`() {
+        val me = 136L
+        val secret = seedRepo(me, null, isPrivate = true)
+        val open = seedRepo(me, null, isPrivate = false)
+        val caseId = createCase(me, "PUBLIC")
+        recordEvent(
+            CaseGithubEvent(caseId, CaseGithubEvent.Type.PR_LINKED, GithubRefKind.PULL_REQUEST, open.repoId, 461, t0,
+                mapOf("source" to "VIA_ISSUE", "issueRepoId" to secret.repoId, "issueNumber" to 460), "TEST:via"),
+        )
+
+        events(me, caseId)
+            .andExpect(jsonPath("$.events[0].repo").value(open.fullName))
+            .andExpect(jsonPath("$.events[0].issue.repo").value(secret.fullName))
+            .andExpect(jsonPath("$.events[0].issue.number").value(460))
+            .andExpect(jsonPath("$.events[0].data.issueRepoId").doesNotExist())
+            .andExpect(jsonPath("$.events[0].data.source").value("VIA_ISSUE"))
+        val body = events(137L, caseId)
+            .andExpect(jsonPath("$.events[0].masked").value(false))
+            .andExpect(jsonPath("$.events[0].number").value(461))
+            .andExpect(jsonPath("$.events[0].issue").doesNotExist())
+            .andReturn().response.contentAsString
+        listOf(secret.fullName, "\"number\":460", "issueNumber", "issueRepoId").forEach {
+            assertFalse(body.contains(it), "외부인 타임라인에 '$it' 가 있으면 안 됨: $body")
+        }
+    }
+
+    private data class JsonNodeRow(val id: Long, val at: Instant)
 
     // ── Step 꼬리표 ───────────────────────────────────────────
     @Test

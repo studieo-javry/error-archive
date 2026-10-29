@@ -18,6 +18,8 @@ class CaseGithubEvent(
     val data: Map<String, Any?>,
     val dedupeKey: String,
     val replaceable: Boolean = false,
+    /** 저장된 뒤에만 있음 — 타임라인 커서의 동순위 구분용. */
+    val id: Long? = null,
 ) {
     enum class Type {
         ISSUE_LINKED, ISSUE_CLOSED, ISSUE_REOPENED,

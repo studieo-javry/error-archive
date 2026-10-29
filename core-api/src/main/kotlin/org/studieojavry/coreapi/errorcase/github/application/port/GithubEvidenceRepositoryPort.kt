@@ -5,6 +5,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.StepGithubLink
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubEventCursor
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
@@ -29,7 +30,10 @@ interface GithubEvidenceRepositoryPort {
 
     /** 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀. */
     fun recordEvent(event: CaseGithubEvent)
-    fun findEvents(caseId: Long): List<CaseGithubEvent>
+
+    /** 타임라인 한 쪽 — 최신순(occurredAt↓, id↓). [before] 가 있으면 그보다 오래된 것만. */
+    fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent>
+    fun countEvents(caseId: Long): Long
 
     // ── Step ↔ 근거 꼬리표 ──
     fun findStepLinks(caseId: Long): List<StepGithubLink>

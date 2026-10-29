@@ -29,3 +29,6 @@ class CaseGithubLinkNotFoundException(message: String) : RuntimeException(messag
 
 /** Step 꼬리표 요청에 이 Case 의 활성 근거가 아닌 연결 id 가 있음. */
 class GithubStepLinkInvalidException(message: String) : RuntimeException(message)
+
+/** 타임라인 커서 형식이 틀림. */
+class GithubEventCursorInvalidException(message: String) : RuntimeException(message)

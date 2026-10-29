@@ -40,7 +40,8 @@ class CaseGithubEvent(
                 buildMap {
                     put("source", source.name)
                     put("byUserId", byUserId)
-                    viaIssue?.let { put("viaIssueNumber", it.number); put("viaIssueRepoId", it.repoId) }
+                    // 관련 Issue 키 이름은 조회 쪽(ListCaseGithubEventsUseCase)과 약속 — 레포 이름으로 바꾸고 가림 처리함
+                    viaIssue?.let { put("issueRepoId", it.repoId); put("issueNumber", it.number) }
                 },
                 // 떼었다 다시 붙이면 새 줄이 생기도록 시각 포함
                 "LINKED:$kind:${ref(repoId, number)}@${at.toEpochMilli()}",

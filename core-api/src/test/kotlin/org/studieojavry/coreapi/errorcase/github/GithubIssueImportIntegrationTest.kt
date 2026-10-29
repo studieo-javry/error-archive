@@ -182,6 +182,9 @@ class GithubIssueImportIntegrationTest {
     private fun evidence(uid: Long, caseId: Long) =
         mvc.perform(get("/api/v1/error-cases/$caseId/github").with(asUser(uid)))
 
+    private fun events(uid: Long, caseId: Long) =
+        mvc.perform(get("/api/v1/error-cases/$caseId/github/events").with(asUser(uid)).param("size", "100"))
+
 
     // ── 소급 부착 ─────────────────────────────────────────────
     @Test
@@ -200,12 +203,17 @@ class GithubIssueImportIntegrationTest {
             .andExpect(jsonPath("$.backfilledPullRequests").value(1))
 
         evidence(me, caseId)
-            .andExpect(jsonPath("$.pullRequests.length()").value(1))
-            .andExpect(jsonPath("$.pullRequests[0].number").value(300))
-            .andExpect(jsonPath("$.pullRequests[0].linkSource").value("VIA_ISSUE"))
-            .andExpect(jsonPath("$.pullRequests[0].viaIssue.number").value(142))
-            .andExpect(jsonPath("$.pullRequests[0].ci.status").value("SUCCESS"))
+            .andExpect(jsonPath("$.issues[0].number").value(142))
+            .andExpect(jsonPath("$.issues[0].pullRequests.length()").value(1))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(300))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].linkSource").value("VIA_ISSUE"))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].viaIssue.number").value(142))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.status").value("SUCCESS"))
+            .andExpect(jsonPath("$.pullRequests").isEmpty)
+        events(me, caseId)
             .andExpect(jsonPath("$.events[?(@.type=='PR_MERGED')]").isNotEmpty)
+            .andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.number").value(org.hamcrest.Matchers.contains(142)))
+            .andExpect(jsonPath("$.events[?(@.type=='PR_LINKED')].issue.repo").value(org.hamcrest.Matchers.contains(s.fullName)))
         val (otherOwner, otherName) = other.fullName.split('/')
         Mockito.verify(githubApi, Mockito.never()).fetchItem(other.installationId, otherOwner, otherName, 302)
     }
@@ -223,7 +231,10 @@ class GithubIssueImportIntegrationTest {
         stubItem(s, 150, issueItem(s, 150))   // 타임라인 후보 없음 — 장부로만 찾음
         link(me, caseB, "https://github.com/${s.fullName}/issues/150")
             .andExpect(jsonPath("$.backfilledPullRequests").value(1))
-        evidence(me, caseB).andExpect(jsonPath("$.pullRequests[0].number").value(310))
+        evidence(me, caseB)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(310))
+            .andExpect(jsonPath("$.pullRequests").isEmpty)
+        evidence(me, caseA).andExpect(jsonPath("$.pullRequests[0].number").value(310))   // 직접 연결한 Case 에선 최상위 그대로
     }
 
     @Test
@@ -236,13 +247,15 @@ class GithubIssueImportIntegrationTest {
         stubChecks(s, "sha-320")
         link(me, caseId, "https://github.com/${s.fullName}/issues/160").andExpect(jsonPath("$.backfilledPullRequests").value(1))
 
-        val prLinkId = om.readTree(evidence(me, caseId).andReturn().response.contentAsString)["pullRequests"][0]["linkId"].asLong()
+        val prLinkId = om.readTree(evidence(me, caseId).andReturn().response.contentAsString)["issues"][0]["pullRequests"][0]["linkId"].asLong()
         mvc.perform(delete("/api/v1/error-cases/$caseId/github/links/$prLinkId").with(asUser(me))).andExpect(status().isNoContent)
 
         link(me, caseId, "https://github.com/${s.fullName}/issues/160")
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.backfilledPullRequests").value(0))
-        evidence(me, caseId).andExpect(jsonPath("$.pullRequests").isEmpty)
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests").isEmpty)
+            .andExpect(jsonPath("$.pullRequests").isEmpty)
     }
 
     // ── Issue 로 Case 만들기 ───────────────────────────────────
@@ -309,7 +322,7 @@ class GithubIssueImportIntegrationTest {
         evidence(me, caseId)
             .andExpect(jsonPath("$.issues[0].number").value(180))
             .andExpect(jsonPath("$.issues[0].linkSource").value("IMPORTED"))
-            .andExpect(jsonPath("$.pullRequests[0].number").value(330))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].number").value(330))
     }
 
     @Test

@@ -65,11 +65,30 @@ data class GithubBackfillResponse(
         example = "0",
     )
     val failed: Int,
+    @field:Schema(description = "함께 붙은 PR(연결 완료 안내에 표시). 길이 = attached") val pullRequests: List<GithubBackfilledPullRequestResponse>,
+    @field:Schema(description = "이 Issue 를 닫지만 전에 \"관련 없음\"으로 뗐던 탓에 다시 붙이지 않은 PR") val skipped: List<GithubBackfillSkippedResponse>,
 ) {
     companion object {
-        fun of(r: IssuePullRequestBackfiller.Result) = GithubBackfillResponse(r.attached, r.failed)
+        fun of(r: IssuePullRequestBackfiller.Result) = GithubBackfillResponse(
+            r.attached,
+            r.failed,
+            r.pullRequests.map { GithubBackfilledPullRequestResponse(it.repo, it.number, it.title, it.state) },
+            r.skipped.map { GithubBackfillSkippedResponse(it.repo, it.number) },
+        )
     }
 }
+
+data class GithubBackfilledPullRequestResponse(
+    @field:Schema(example = "acme/payment-api") val repo: String,
+    @field:Schema(example = "61") val number: Int,
+    @field:Schema(example = "fix: 주문 이벤트 멱등 키로 중복 생성 방지") val title: String,
+    @field:Schema(description = "OPEN | CLOSED | MERGED", example = "MERGED") val state: String,
+)
+
+data class GithubBackfillSkippedResponse(
+    @field:Schema(example = "acme/payment-api") val repo: String,
+    @field:Schema(example = "62") val number: Int,
+)
 
 @Schema(
     description = "Case 의 GitHub 근거 화면 한 번에 — Issue ▸ 그 Issue 를 닫는 PR 관계형 근거(+CI) + GitHub 활동 첫 쪽. " +

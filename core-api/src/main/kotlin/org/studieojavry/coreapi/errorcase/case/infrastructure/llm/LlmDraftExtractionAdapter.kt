@@ -54,6 +54,13 @@ class LlmDraftExtractionAdapter(
             input.exceptionClassHint?.let { append("정규식이 추출한 예외 클래스 후보: ").append(it).append('\n') }
             append("---\n").append(input.maskedPaste)
         }
+        // 모델군별 구조화 전략 차이:
+        //  - 강제 가능 모델(Haiku/Fable 등): tool_choice 로 extract_error_draft 를 **반드시** 쓰게 해 출력을 스키마에 가둔다.
+        //  - 확장사고 모델(Sonnet/Opus 5 등): 강제 tool_choice(tool/any) 를 지원하지 않음 → auto 로 두고, system 으로 툴 사용을 강하게 유도.
+        //    (tool_use 가 없으면 parseResponse 가 텍스트 JSON 을 폴백 파싱 → 동일한 신뢰성 확보)
+        val toolChoice: Map<String, Any> =
+            if (supportsForcedToolChoice(props.model)) mapOf("type" to "tool", "name" to TOOL_NAME)
+            else mapOf("type" to "auto")
         val body = mapOf(
             // temperature 는 Haiku 5.5 등 신모델에서 deprecated → 보내지 않는다(모델 기본값). tool use 가 이미 출력을 구조로 가둬 결정성은 충분.
             "model" to props.model,
@@ -66,18 +73,28 @@ class LlmDraftExtractionAdapter(
             "tools" to listOf(
                 mapOf("name" to TOOL_NAME, "description" to "에러 로그에서 제목·예외·요약·태그·심각도를 추출", "input_schema" to schema),
             ),
-            "tool_choice" to mapOf("type" to "tool", "name" to TOOL_NAME),
+            "tool_choice" to toolChoice,
         )
         return om.writeValueAsString(body)
     }
 
-    /** 응답 content[] 에서 tool_use(extract_error_draft) 블록의 input 을 Output 으로. 없으면 null. */
+    /** 응답 content[] 에서 tool_use(extract_error_draft) 블록의 input 을 Output 으로. 없으면 텍스트 JSON 폴백, 그래도 없으면 null. */
     private fun parseResponse(json: String): DraftExtractionPort.Output? {
         val root = om.readTree(json)
         val block = root.path("content").firstOrNull {
             it.path("type").asText() == "tool_use" && it.path("name").asText() == TOOL_NAME
-        } ?: return null
-        val inp = block.path("input")
+        }
+        val inp: JsonNode = when {
+            block != null -> block.path("input")
+            // 폴백: 확장사고 모델(auto)이 tool 대신 텍스트로 JSON 을 낸 경우 본문에서 객체만 추출해 파싱.
+            else -> {
+                val text = root.path("content")
+                    .firstOrNull { it.path("type").asText() == "text" }
+                    ?.path("text")?.asText() ?: return null
+                val jsonObj = Regex("""\{.*\}""", RegexOption.DOT_MATCHES_ALL).find(text)?.value ?: return null
+                runCatching { om.readTree(jsonObj) }.getOrNull() ?: return null
+            }
+        }
         return DraftExtractionPort.Output(
             title = inp.path("title").textOrNull(),
             exceptionClass = inp.path("exceptionClass").textOrNull(),
@@ -92,6 +109,16 @@ class LlmDraftExtractionAdapter(
 
     companion object {
         private const val TOOL_NAME = "extract_error_draft"
+
+        /**
+         * 강제 tool_choice(`{type:"tool"}` / `{type:"any"}`) 지원 여부.
+         * Haiku·Fable 등 비(非)확장사고 모델은 강제 지원 → 스키마 강제. Sonnet·Opus(확장사고)는 미지원 → auto.
+         * (실측: claude-sonnet-5-5 는 강제 시 `type "tool" and "any" are not supported for this model` 로 전건 실패)
+         */
+        fun supportsForcedToolChoice(model: String): Boolean {
+            val m = model.lowercase()
+            return m.contains("haiku") || m.contains("fable")
+        }
 
         /**
          * few-shot 예시 — **eval 데이터셋과 겹치지 않는** 샘플로, severity 양 끝(S1·S4)과

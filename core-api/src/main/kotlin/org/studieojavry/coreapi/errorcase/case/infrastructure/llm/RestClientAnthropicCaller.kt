@@ -28,11 +28,15 @@ class RestClientAnthropicCaller(props: LlmProperties) : AnthropicCaller {
         )
         .build()
 
-    override fun call(requestJson: String): String =
-        client.post()
+    override fun call(requestJson: String): String {
+        // 응답을 ByteArray 로 받아 UTF-8 로 직접 디코드한다.
+        // (일부 응답이 content-type: application/octet-stream 으로 와 String 컨버터가 실패하던 문제 회피 — 본문은 항상 JSON)
+        val bytes = client.post()
             .uri("/v1/messages")
             .body(requestJson)
             .retrieve()
-            .body(String::class.java)
+            .body(ByteArray::class.java)
             ?: throw IllegalStateException("empty anthropic response")
+        return String(bytes, Charsets.UTF_8)
+    }
 }

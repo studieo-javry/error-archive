@@ -89,6 +89,8 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-starter-test")
   testImplementation("org.springframework.security:spring-security-test")
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+  // CircuitBreaker("llm") 단위 테스트에서 Resilience4JCircuitBreakerFactory 를 직접 구성할 때 필요(provider 인자). 버전은 spring-cloud 가 관리.
+  testImplementation("io.github.resilience4j:resilience4j-bulkhead")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
   // 유사 에러(pg_trgm) 는 H2 가 지원 안 함 → 실 Postgres(Testcontainers)로만 검증.
   testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.6"))

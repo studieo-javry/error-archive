@@ -17,8 +17,9 @@ data class SuggestErrorDraftRequest(
     val paste: String,
 
     @field:Schema(
-        description = "이 워크스페이스에서 자주 쓰는 태그(신규 태그 남발 방지용 어휘 힌트). 선택.",
+        description = "이 워크스페이스에서 자주 쓰는 태그(신규 태그 남발 방지용 어휘 힌트). 선택. 최대 20개·각 ≤40자.",
         example = "[\"java\", \"prod\", \"order\"]",
     )
-    val workspaceTags: List<String> = emptyList(),
+    @field:Size(max = 20)
+    val workspaceTags: List<@Size(max = 40) String> = emptyList(),
 )

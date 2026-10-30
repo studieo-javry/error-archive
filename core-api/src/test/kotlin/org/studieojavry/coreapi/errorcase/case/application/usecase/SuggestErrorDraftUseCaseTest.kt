@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.studieojavry.coreapi.errorcase.case.application.port.DraftExtractionPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity
 import org.studieojavry.coreapi.errorcase.case.infrastructure.extractor.RegexErrorSnapshotExtractorAdapter
+import org.studieojavry.coreapi.errorcase.case.infrastructure.ratelimit.NoOpDraftRateLimiter
 
 /**
  * SuggestErrorDraftUseCase 단위 테스트 (LLM 없이도 도는 결정적 토대 + 병합/폴백/마스킹 검증).
@@ -15,7 +16,7 @@ import org.studieojavry.coreapi.errorcase.case.infrastructure.extractor.RegexErr
 class SuggestErrorDraftUseCaseTest {
 
     private val regex = RegexErrorSnapshotExtractorAdapter()
-    private fun useCase(llm: DraftExtractionPort) = SuggestErrorDraftUseCase(regex, llm)
+    private fun useCase(llm: DraftExtractionPort) = SuggestErrorDraftUseCase(regex, llm, NoOpDraftRateLimiter())
 
     /** 입력을 캡처해 마스킹 검증에 쓰는 가짜 LLM 포트. */
     private class FixedLlm(private val out: DraftExtractionPort.Output?) : DraftExtractionPort {

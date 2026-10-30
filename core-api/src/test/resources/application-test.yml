@@ -50,6 +50,11 @@ core:
   cache:
     backend: caffeine
 
+# test 는 Redis 불요 → draft 비용 가드 리미터를 NoOp(무제한)으로. (실 Redis 리미터 검증은 별도 통합 테스트)
+llm:
+  rate-limit:
+    enabled: false
+
 internal-auth:
   ttl-seconds: 60
   verifier:

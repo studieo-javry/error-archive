@@ -20,7 +20,8 @@ import org.studieojavry.coreapi.errorcase.case.infrastructure.llm.LlmDraftExtrac
 class DraftResilienceSecurityTest {
 
     private val regex = RegexErrorSnapshotExtractorAdapter()
-    private fun uc(llm: DraftExtractionPort) = SuggestErrorDraftUseCase(regex, llm)
+    private fun uc(llm: DraftExtractionPort) =
+        SuggestErrorDraftUseCase(regex, llm, org.studieojavry.coreapi.errorcase.case.infrastructure.ratelimit.NoOpDraftRateLimiter())
 
     private class FixedLlm(private val out: DraftExtractionPort.Output?) : DraftExtractionPort {
         var lastInput: DraftExtractionPort.Input? = null

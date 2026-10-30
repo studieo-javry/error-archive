@@ -51,6 +51,7 @@ import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.toDto
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.toQuoteDto
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.toResponse
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
 
 @Tag(
     name = "error-case-comments",
@@ -164,10 +165,10 @@ class CommentController(
             helpful = CommentResponse.HelpfulDto(0, emptyList(), false),
             mentions = emptyList(),
             suggestion = suggestion?.toDto(),
-            editedAt = created.editedAt,
-            deletedAt = created.deletedAt,
-            createdAt = created.createdAt,
-            updatedAt = created.updatedAt,
+            editedAt = created.editedAt?.toApiOffset(),
+            deletedAt = created.deletedAt?.toApiOffset(),
+            createdAt = created.createdAt.toApiOffset(),
+            updatedAt = created.updatedAt.toApiOffset(),
             replies = emptyList(),
         )
     }
@@ -286,8 +287,8 @@ class CommentController(
             helpful = CommentResponse.HelpfulDto(0, emptyList(), false),
             mentions = emptyList(),
             suggestion = suggestion?.toDto(),
-            editedAt = c.editedAt, deletedAt = c.deletedAt,
-            createdAt = c.createdAt, updatedAt = c.updatedAt,
+            editedAt = c.editedAt?.toApiOffset(), deletedAt = c.deletedAt?.toApiOffset(),
+            createdAt = c.createdAt.toApiOffset(), updatedAt = c.updatedAt.toApiOffset(),
             replies = emptyList(),
         )
     }
@@ -407,7 +408,7 @@ class CommentController(
         } catch (e: CommentInvalidException) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
         }
-        return SuggestionStatusResponse(commentId = s.commentId, status = s.status, updatedAt = s.updatedAt)
+        return SuggestionStatusResponse(commentId = s.commentId, status = s.status, updatedAt = s.updatedAt.toApiOffset())
     }
 
     @Operation(summary = "이모지 리액션 해제", description = "본인 것만. 이미 없으면 멱등.")

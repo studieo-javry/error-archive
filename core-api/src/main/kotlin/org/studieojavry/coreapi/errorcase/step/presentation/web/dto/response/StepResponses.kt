@@ -4,7 +4,8 @@ import io.swagger.v3.oas.annotations.media.Schema
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 data class StepResponse(
     val id: Long,
@@ -16,15 +17,15 @@ data class StepResponse(
     val attemptType: String?,
     val body: String?,
     val insight: String?,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
 ) {
     companion object {
         fun from(s: Step) = StepResponse(
             id = s.id!!, errorCaseId = s.errorCaseId, authorUserId = s.authorUserId,
             orderIndex = s.orderIndex, title = s.title, status = s.status,
             attemptType = s.attemptType, body = s.body, insight = s.insight,
-            createdAt = s.createdAt, updatedAt = s.updatedAt,
+            createdAt = s.createdAt.toApiOffset(), updatedAt = s.updatedAt.toApiOffset(),
         )
     }
 }

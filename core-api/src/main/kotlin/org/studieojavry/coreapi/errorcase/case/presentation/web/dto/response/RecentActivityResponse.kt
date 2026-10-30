@@ -1,7 +1,8 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyRecentActivitiesUseCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * my-page "Recent activities" timeline 항목.
@@ -18,7 +19,7 @@ data class RecentActivityResponse(
     val type: String,
     val caseId: Long,
     val caseTitle: String?,
-    val occurredAt: LocalDateTime,
+    val occurredAt: OffsetDateTime,
     val commentPreview: String? = null,
     val commentIsReply: Boolean = false,
     val stepTitle: String? = null,
@@ -37,7 +38,7 @@ data class RecentActivityResponse(
             type = i.type.name,
             caseId = i.caseId,
             caseTitle = i.caseTitle,
-            occurredAt = i.occurredAt,
+            occurredAt = i.occurredAt.toApiOffset(),
             commentPreview = i.commentPreview,
             commentIsReply = i.commentIsReply,
             stepTitle = i.stepTitle,

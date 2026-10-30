@@ -9,7 +9,8 @@ import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentSuggestion
 import org.studieojavry.coreapi.errorcase.comment.domain.model.vo.QuoteSourceKind
 import org.studieojavry.coreapi.errorcase.comment.domain.model.vo.SuggestionSourceType
 import org.studieojavry.coreapi.errorcase.comment.domain.model.vo.SuggestionStatus
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 @Schema(description = "댓글 응답(트리). top-level + replies(depth=1).")
 data class CommentResponse(
@@ -29,10 +30,10 @@ data class CommentResponse(
     val mentions: List<String>,
     @field:Schema(description = "Diff 제안. 없으면 null.")
     val suggestion: SuggestionDto?,
-    val editedAt: LocalDateTime?,
-    val deletedAt: LocalDateTime?,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
+    val editedAt: OffsetDateTime?,
+    val deletedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
     val replies: List<CommentResponse>,
 ) {
     @Schema(description = "인용 정보. NONE 이면 응답에서 null.")
@@ -72,8 +73,8 @@ data class CommentResponse(
         val deletions: Int,
         @field:Schema(description = "렌더링용 라인 단위 unified diff (del+add only — 단순 line 치환).")
         val lines: List<DiffLineDto>,
-        val createdAt: LocalDateTime,
-        val updatedAt: LocalDateTime,
+        val createdAt: OffsetDateTime,
+        val updatedAt: OffsetDateTime,
     )
 
     @Schema(description = "Diff 라인 — type=del/add. ctx 는 단순 라인 치환이라 없음.")
@@ -149,7 +150,7 @@ data class HelpfulToggleResponse(
 data class SuggestionStatusResponse(
     val commentId: Long,
     val status: SuggestionStatus,
-    val updatedAt: LocalDateTime,
+    val updatedAt: OffsetDateTime,
 )
 
 // ── mappers ──────────────────────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ internal fun CommentSuggestion.toDto(): CommentResponse.SuggestionDto {
         status = status,
         additions = additions, deletions = deletions,
         lines = rows,
-        createdAt = createdAt, updatedAt = updatedAt,
+        createdAt = createdAt.toApiOffset(), updatedAt = updatedAt.toApiOffset(),
     )
 }
 
@@ -209,9 +210,9 @@ internal fun ListCommentsUseCase.CommentNode.toResponse(
         helpful = CommentResponse.HelpfulDto(helpedByCount, helpedByUserIds, helpedByMe),
         mentions = mentions,
         suggestion = suggestion?.toDto(),
-        editedAt = comment.editedAt,
-        deletedAt = comment.deletedAt,
-        createdAt = comment.createdAt,
-        updatedAt = comment.updatedAt,
+        editedAt = comment.editedAt?.toApiOffset(),
+        deletedAt = comment.deletedAt?.toApiOffset(),
+        createdAt = comment.createdAt.toApiOffset(),
+        updatedAt = comment.updatedAt.toApiOffset(),
         replies = replies.map { it.toResponse(caseOwnerUserId, authors) },
     )

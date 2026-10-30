@@ -85,14 +85,22 @@ class SuggestErrorDraftUseCase(
         )
     }
 
-    /** 민감정보 마스킹 + 길이 절삭(스택 head+tail). 외부 LLM 호출 비용·프라이버시 방어. */
+    /** 민감정보 마스킹 + 길이 절삭(스택 head+tail 라인 → 그래도 길면 문자수 head/tail). 외부 LLM 호출 비용·프라이버시 방어. */
     private fun scrubAndTrim(raw: String): String {
         var s = raw.trim()
         for (re in SECRET_PATTERNS) s = re.replace(s, REDACTED)
         val lines = s.lines()
-        if (lines.size <= HEAD_LINES + TAIL_LINES) return s
-        val omitted = lines.size - HEAD_LINES - TAIL_LINES
-        return (lines.take(HEAD_LINES) + "… ($omitted lines trimmed) …" + lines.takeLast(TAIL_LINES)).joinToString("\n")
+        if (lines.size > HEAD_LINES + TAIL_LINES) {
+            val omitted = lines.size - HEAD_LINES - TAIL_LINES
+            s = (lines.take(HEAD_LINES) + "… ($omitted lines trimmed) …" + lines.takeLast(TAIL_LINES)).joinToString("\n")
+        }
+        // 라인 절삭이 안 먹히는 경우(예: 거대한 한 줄)도 문자수 상한으로 토큰 비용을 바운드.
+        if (s.length > MAX_CHARS) {
+            val head = (MAX_CHARS * 6) / 10
+            val tail = MAX_CHARS - head
+            s = s.take(head).trimEnd() + "\n… (chars trimmed) …\n" + s.takeLast(tail).trimStart()
+        }
+        return s
     }
 
     private fun fallbackTitle(exClass: String?, exMsg: String?, paste: String): String {
@@ -126,6 +134,8 @@ class SuggestErrorDraftUseCase(
         private const val TAGS_MAX = 5
         private const val HEAD_LINES = 60
         private const val TAIL_LINES = 40
+        /** LLM 에 보내는 마스킹 텍스트의 문자수 상한(라인 절삭과 별개의 비용 바운드). */
+        private const val MAX_CHARS = 8000
         private const val REDACTED = "«redacted»"
         private val SECRET_PATTERNS = listOf(
             Regex("""(?i)bearer\s+[A-Za-z0-9._\-]+"""),

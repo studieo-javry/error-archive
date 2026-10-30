@@ -60,6 +60,16 @@ class SecurityConfig {
                     // 게스트는 AI 초안 제안 금지 — 외부 LLM 호출 비용/남용 방어(로그인 사용자 전용).
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-cases/draft-suggestion")
                     .access(denyGuests())
+                    // GitHub 웹훅 — GitHub 가 호출(앱 토큰 없음). 인증은 컨트롤러의 X-Hub-Signature-256 HMAC 검증이 대신한다.
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/integrations/github/webhook").permitAll()
+                    // GitHub 연결은 게스트 금지 — 데모 계정에 실제 레포가 붙지 않도록.
+                    // denyGuests 단독은 익명 토큰(isAuthenticated=true)도 통과시키므로 인증 필수와 AND.
+                    .requestMatchers("/api/v1/integrations/**").access(
+                        org.springframework.security.authorization.AuthorizationManagers.allOf(
+                            org.springframework.security.authorization.AuthenticatedAuthorizationManager.authenticated(),
+                            denyGuests(),
+                        ),
+                    )
                     .anyRequest().authenticated()
             }
             .exceptionHandling {

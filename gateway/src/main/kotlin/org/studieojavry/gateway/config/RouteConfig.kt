@@ -211,6 +211,20 @@ class RouteConfig(
             .before(setPath("/v3/api-docs"))
             .build()
 
+    /**
+     * GitHub 웹훅 — GitHub 서버가 호출(앱 JWT 없음, 인증은 core-api 의 HMAC 서명 검증). 무인증 공개라 per-IP rate limit.
+     * 비멱등처럼 보이지만 core-api 가 delivery id 로 멱등 처리하므로 재시도 안전 — 그래도 본문 재전송 비용을 피하려 retry 미적용.
+     * coreApiRoute 보다 먼저 선언(그쪽 integrations 와일드카드의 서브셋).
+     */
+    @Bean
+    fun githubWebhookRoute(): RouterFunction<ServerResponse> =
+        route("github-webhook")
+            .POST("/api/v1/integrations/github/webhook", http())
+            .before(uri(downstream.coreApi))
+            .filter(RateLimitFilters.perIp(rateLimiter, "github-webhook", capacity = 60.0, refillPerSec = 5.0))
+            .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
+            .build()
+
     @Bean
     fun coreApiRoute(): RouterFunction<ServerResponse> =
         route("core-api")
@@ -220,7 +234,9 @@ class RouteConfig(
                     .or(path("/api/v1/error-snippets/**"))
                     .or(path("/api/v1/step-attempt-types/**"))
                     // 게스트 데모 — 사용 가이드 대상 조회(GET /api/v1/demo/guide)
-                    .or(path("/api/v1/demo/**")),
+                    .or(path("/api/v1/demo/**"))
+                    // GitHub 연동(설치 연결·목록). 웹훅은 위 githubWebhookRoute 가 먼저 잡는다.
+                    .or(path("/api/v1/integrations/**")),
                 http()
             )
             .before(uri(downstream.coreApi))

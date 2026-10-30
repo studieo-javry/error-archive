@@ -71,6 +71,9 @@ class SecurityConfig {
                     //  핸들러는 principal 없이 token 만 받는 익명 설계(수락 /accept 은 인증 필요). preview 만
                     //  정확히 공개하고, 워크스페이스 스코프 초대 CRUD(ADMIN)·/accept 는 authenticated 로 유지.
                     "/api/v1/invitations/preview",
+                    // GitHub 웹훅 — GitHub 서버가 호출(JWT 없음). core-api 가 X-Hub-Signature-256 로 검증.
+                    //  RouteConfig 의 github-webhook 이 per-IP rate limit 적용. (연결 API 는 인증 유지)
+                    "/api/v1/integrations/github/webhook",
                     // Swagger UI(aggregator) + 게이트웨이 자체 docs + 다운스트림 docs 프록시 경로
                     "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/api-docs/**"
                 ).permitAll()

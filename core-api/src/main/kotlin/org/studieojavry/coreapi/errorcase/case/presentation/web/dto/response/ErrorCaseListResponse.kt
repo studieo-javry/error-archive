@@ -3,7 +3,8 @@ package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
 import org.studieojavry.coreapi.errorcase.case.application.usecase.DescriptionPreview
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * 목록 항목 요약 응답.
@@ -22,8 +23,8 @@ data class ErrorCaseSummaryResponse(
     val workspaceId: Long?,
     val fingerprint: String?,
     val exceptionClass: String?,
-    val createdAt: LocalDateTime,
-    val occurredAt: LocalDateTime?,
+    val createdAt: OffsetDateTime,
+    val occurredAt: OffsetDateTime?,
     val tags: List<String>,
     val descriptionPreview: String?,
     val author: AuthorSummaryResponse?,
@@ -42,8 +43,8 @@ data class ErrorCaseSummaryResponse(
             workspaceId = s.workspaceId,
             fingerprint = s.fingerprint,
             exceptionClass = s.exceptionClass,
-            createdAt = s.createdAt,
-            occurredAt = s.occurredAt,
+            createdAt = s.createdAt.toApiOffset(),
+            occurredAt = s.occurredAt?.toApiOffset(),
             tags = s.tags,
             descriptionPreview = DescriptionPreview.of(s.descriptionRaw),
             author = author?.let { AuthorSummaryResponse.from(it) },

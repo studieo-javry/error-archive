@@ -1,7 +1,8 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * 에러케이스 상세 응답 — 스냅샷/스니펫/첨부 전체 포함.
@@ -18,9 +19,9 @@ data class ErrorCaseDetailResponse(
     val description: String?,
     val workspaceId: Long?,
     val tags: List<String>,
-    val occurredAt: LocalDateTime?,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime,
+    val occurredAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
     val snapshot: SnapshotDto?,
     val snippets: List<SnippetDto>,
     val attachments: List<AttachmentDto>,
@@ -98,9 +99,9 @@ data class ErrorCaseDetailResponse(
             description = c.description,
             workspaceId = c.meta.workspaceId,
             tags = c.tags.toList(),
-            occurredAt = c.occurredAt,
-            createdAt = c.createdAt,
-            updatedAt = c.updatedAt,
+            occurredAt = c.occurredAt?.toApiOffset(),
+            createdAt = c.createdAt.toApiOffset(),
+            updatedAt = c.updatedAt.toApiOffset(),
             snapshot = c.snapshot?.let {
                 SnapshotDto(
                     exceptionClass = it.exceptionClass,

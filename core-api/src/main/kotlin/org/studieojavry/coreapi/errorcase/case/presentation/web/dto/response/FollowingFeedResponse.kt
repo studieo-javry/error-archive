@@ -3,7 +3,8 @@ package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSummary
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyFollowingFeedUseCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * 홈 대시보드의 "Following · 새 케이스" 응답 — 팔로우한 사용자들의 최근 PUBLIC 케이스.
@@ -32,7 +33,7 @@ data class FollowingFeedItemResponse(
     val ownerUserId: Long,
     val title: String,
     val status: String,
-    val createdAt: LocalDateTime,
+    val createdAt: OffsetDateTime,
     val tags: List<String>,
     val author: FollowingFeedAuthorResponse?,
 ) {
@@ -42,7 +43,7 @@ data class FollowingFeedItemResponse(
             ownerUserId = s.ownerUserId,
             title = s.title,
             status = s.status.name,
-            createdAt = s.createdAt,
+            createdAt = s.createdAt.toApiOffset(),
             tags = s.tags,
             author = author?.let { FollowingFeedAuthorResponse.from(it) },
         )

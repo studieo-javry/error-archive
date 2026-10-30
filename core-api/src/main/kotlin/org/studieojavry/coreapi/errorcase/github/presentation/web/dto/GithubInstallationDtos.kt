@@ -6,7 +6,8 @@ import jakarta.validation.constraints.Positive
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListMyGithubInstallationsUseCase
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 @Schema(description = "GitHub App 설치 페이지 URL")
 data class GithubInstallUrlResponse(
@@ -36,7 +37,7 @@ data class GithubInstallationResponse(
     @field:Schema(description = "연결한 사용자") val installedByUserId: Long,
     @field:Schema(description = "ACTIVE | SUSPENDED") val status: String,
     @field:Schema(description = "설치 대상 레포(활성)") val repositories: List<GithubRepositoryResponse>,
-    val connectedAt: LocalDateTime,
+    val connectedAt: OffsetDateTime,
 ) {
     companion object {
         fun of(installation: GithubInstallation, repositories: List<GithubRepository>) = GithubInstallationResponse(
@@ -47,7 +48,7 @@ data class GithubInstallationResponse(
             installedByUserId = installation.installedByUserId,
             status = installation.status.name,
             repositories = repositories.map(GithubRepositoryResponse::of),
-            connectedAt = installation.createdAt,
+            connectedAt = installation.createdAt.toApiOffset(),
         )
 
         fun of(item: ListMyGithubInstallationsUseCase.Item) = of(item.installation, item.repositories)

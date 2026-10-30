@@ -61,6 +61,7 @@ import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.Err
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.SimilarCaseListResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.SimilarCaseResponse
 import org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response.MeTooResponse
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
 
 @Tag(
     name = "error-cases",
@@ -176,7 +177,7 @@ class ErrorCaseController(
             fingerprint = result.fingerprint,
             snippetMarkerIds = result.snippetMarkerIds,
             attachmentMarkerIds = result.attachmentMarkerIds,
-            createdAt = result.createdAt,
+            createdAt = result.createdAt.toApiOffset(),
             severity = request.severity,
         )
     }

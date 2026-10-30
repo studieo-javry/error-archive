@@ -2,7 +2,8 @@ package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 
 import org.studieojavry.coreapi.errorcase.case.application.usecase.DescriptionPreview
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyWatchlistUseCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * Library > Watchlist 페이지 · 관리용 목록 항목.
@@ -20,12 +21,12 @@ data class WatchlistItemResponse(
     val visibility: String,
     val workspaceId: Long?,
     val exceptionClass: String?,
-    val createdAt: LocalDateTime,
+    val createdAt: OffsetDateTime,
     val tags: List<String>,
     val descriptionPreview: String?,
     // watchlist-level
-    val addedAt: LocalDateTime,
-    val lastActivityAt: LocalDateTime?,
+    val addedAt: OffsetDateTime,
+    val lastActivityAt: OffsetDateTime?,
     val unreadCount: Long,
     val isOwn: Boolean,
 ) {
@@ -40,11 +41,11 @@ data class WatchlistItemResponse(
                 visibility = s.visibility.name,
                 workspaceId = s.workspaceId,
                 exceptionClass = s.exceptionClass,
-                createdAt = s.createdAt,
+                createdAt = s.createdAt.toApiOffset(),
                 tags = s.tags,
                 descriptionPreview = DescriptionPreview.of(s.descriptionRaw),
-                addedAt = item.addedAt,
-                lastActivityAt = item.lastActivityAt,
+                addedAt = item.addedAt.toApiOffset(),
+                lastActivityAt = item.lastActivityAt?.toApiOffset(),
                 unreadCount = item.unreadCount,
                 isOwn = s.ownerUserId == viewerUserId,
             )

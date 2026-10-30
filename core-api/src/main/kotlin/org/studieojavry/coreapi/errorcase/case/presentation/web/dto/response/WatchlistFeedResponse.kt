@@ -3,7 +3,8 @@ package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort.AuthorSummary
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseActivitySource
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyWatchlistFeedUseCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * 홈 대시보드의 "Watchlist · 업데이트" 카드 1개.
@@ -26,7 +27,7 @@ data class WatchlistFeedItemResponse(
      * FE 는 이걸로 "[displayName]가 X 했어요" + 아바타 렌더. 없으면 `latestActivityActorUserId` fallback.
      */
     val actor: WatchlistFeedActorResponse?,
-    val lastActivityAt: LocalDateTime,
+    val lastActivityAt: OffsetDateTime,
     /** 사용자가 case 를 마지막으로 본 이후 다른 사람의 활동 수. */
     val unreadActivityCount: Long,
     /**
@@ -55,7 +56,7 @@ data class WatchlistFeedItemResponse(
             latestActivitySource = i.latestActivitySource.name,
             latestActivityActorUserId = i.latestActivityActorUserId,
             actor = i.latestActivityActorUserId?.let { authors[it] }?.let { WatchlistFeedActorResponse.from(it) },
-            lastActivityAt = i.lastActivityAt,
+            lastActivityAt = i.lastActivityAt.toApiOffset(),
             unreadActivityCount = i.unreadActivityCount,
             detailUrl = buildDetailUrl(i.summary.id, i.latestActivitySource, i.latestActivityId),
         )

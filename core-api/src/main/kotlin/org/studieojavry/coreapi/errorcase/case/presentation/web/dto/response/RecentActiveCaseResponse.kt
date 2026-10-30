@@ -1,7 +1,8 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.response
 
 import org.studieojavry.coreapi.errorcase.case.application.usecase.GetMyRecentActiveCasesUseCase
-import java.time.LocalDateTime
+import org.studieojavry.coreapi.shared.presentation.toApiOffset
+import java.time.OffsetDateTime
 
 /**
  * 홈 대시보드의 "My Recent Active Cases" 카드.
@@ -19,8 +20,8 @@ data class RecentActiveCaseResponse(
     val commentCount: Long,
     val solutionCount: Long,
     val meTooCount: Long,
-    val createdAt: LocalDateTime,
-    val lastActivityAt: LocalDateTime,
+    val createdAt: OffsetDateTime,
+    val lastActivityAt: OffsetDateTime,
     /** 마지막 view 이후 다른 사람 활동 수. 본인이 한 활동은 제외. 한 번도 안 봤으면 전체 활동 수. */
     val unreadCount: Long,
     /** 지난 24h 새 댓글 수 (작성자 무관). FE 가 lastActivityAt 신선도에 따라 24h vs 7d 표시 선택. */
@@ -43,8 +44,8 @@ data class RecentActiveCaseResponse(
             commentCount = i.commentCount,
             solutionCount = i.solutionCount,
             meTooCount = i.meTooCount,
-            createdAt = i.summary.createdAt,
-            lastActivityAt = i.lastActivityAt,
+            createdAt = i.summary.createdAt.toApiOffset(),
+            lastActivityAt = i.lastActivityAt.toApiOffset(),
             unreadCount = i.unreadCount,
             commentDelta24h = i.commentDelta24h,
             commentDelta7d = i.commentDelta7d,

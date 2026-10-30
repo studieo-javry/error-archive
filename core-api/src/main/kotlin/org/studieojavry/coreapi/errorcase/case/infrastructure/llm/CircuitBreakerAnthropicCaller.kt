@@ -25,8 +25,9 @@ import org.springframework.stereotype.Component
 @Primary
 @ConditionalOnProperty(prefix = "llm", name = ["enabled"], havingValue = "true")
 class CircuitBreakerAnthropicCaller(
-    // 실제 HTTP caller 를 이름으로 지목(자기 자신·다른 AnthropicCaller 와 혼동 방지). 테스트는 가짜 caller 주입 가능.
-    @Qualifier("restClientAnthropicCaller") private val delegate: AnthropicCaller,
+    // 계측 데코레이터(그 안에 실 HTTP caller)를 감싼다 → CB 가 최외곽. OPEN 으로 차단되면 계측도 안 탄다
+    // (= 실제 발생한 호출만 메트릭에 집계). 테스트는 가짜 caller 주입 가능.
+    @Qualifier("meteredAnthropicCaller") private val delegate: AnthropicCaller,
     cbFactory: CircuitBreakerFactory<*, *>,
 ) : AnthropicCaller {
 

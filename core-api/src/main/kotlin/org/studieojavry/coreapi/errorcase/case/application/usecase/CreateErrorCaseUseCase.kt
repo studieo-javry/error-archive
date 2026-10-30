@@ -61,7 +61,7 @@ class CreateErrorCaseUseCase(
         val snapshot = command.paste?.takeIf { it.isNotBlank() }?.let { buildSnapshot(it) }
         val meta = Meta.create(
             workspaceId = command.workspaceId,
-            severityCode = null,
+            severityCode = command.severityCode,
         )
 
         // 태그 정규화: trim·소문자·distinct, 빈 값 제거, max 20개 컷

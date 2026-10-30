@@ -56,13 +56,25 @@ groups:
           summary: "LLM 일일 호출량 예산 임박 (>240/300)"
           description: "최근 24h LLM 호출이 전역 일일 예산(300)의 80%를 넘음. 초과 시 그날 LLM off(정규식 폴백)."
 
-      # 일일 추정 비용 임계 초과(단가 설정 시에만 유효). 기본 $5/일 — 환경에 맞게 조정.
-      - alert: LlmDailyCostHigh
-        expr: increase(llm_draft_estimated_cost_usd_total[24h]) > 5
-        for: 5m
+      # 월 추정 비용이 콘솔 월 한도($20)의 80%($16) 접근 — 하드 차단(400) 전 사전 경고.
+      # (콘솔 월 한도를 바꾸면 이 임계도 그 80%로 맞출 것. 단가 LLM_PRICE_* 설정 시에만 유효.)
+      - alert: LlmMonthlyCostApproaching
+        expr: increase(llm_draft_estimated_cost_usd_total[30d]) > 16
+        for: 10m
         labels:
           severity: warning
           service: core-api
         annotations:
-          summary: "LLM 추정 일일 비용 > $5 (core-api)"
-          description: "최근 24h 추정 LLM 비용이 임계($5)를 초과. 콘솔 spend limit·호출 패턴 확인."
+          summary: "LLM 추정 월 비용 > $16 (콘솔 한도 $20의 80%)"
+          description: "최근 30일 추정 LLM 비용이 월 한도의 80%를 넘음. 초과 시 콘솔이 400으로 하드 차단(→정규식 폴백). 사용 패턴·한도 재검토."
+
+      # 하루가 비정상적으로 비싸짐(일일 캡 300회 꽉 채운 최악치 ~$1.7 수준). 단가 설정 시에만 유효.
+      - alert: LlmDailyCostSpike
+        expr: increase(llm_draft_estimated_cost_usd_total[24h]) > 1.5
+        for: 10m
+        labels:
+          severity: info
+          service: core-api
+        annotations:
+          summary: "LLM 추정 일일 비용 > $1.5 (core-api)"
+          description: "하루 추정 비용이 일일 캡 최악치 수준에 도달. 월 한도($20) 소진 속도 확인."

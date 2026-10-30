@@ -25,7 +25,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepos
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ImportGithubIssueUseCase
-import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
+import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubIssueImportEnabled
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateCaseFromGithubIssueRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateCaseFromGithubIssueResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubIssuePreviewResponse
@@ -36,7 +36,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubIssu
 )
 @RestController
 @RequestMapping("/api/v1/error-cases")
-@ConditionalOnGithubEnabled
+@ConditionalOnGithubIssueImportEnabled
 class GithubIssueImportController(
     private val importIssue: ImportGithubIssueUseCase,
 ) {

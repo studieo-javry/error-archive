@@ -61,6 +61,7 @@ import kotlin.test.assertTrue
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect",
     "spring.datasource.driver-class-name=org.postgresql.Driver",
     "core.github.enabled=true",
+    "core.github.issue-import.enabled=true",
     "core.github.app-id=1",
     "core.github.app-slug=error-archive-test",
     "core.github.client-id=cid",

@@ -13,7 +13,7 @@ import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
-import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
+import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubIssueImportEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink.LinkSource
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueCaseDraft
@@ -45,7 +45,7 @@ import java.time.ZoneId
  * 초안 규칙([GithubIssueCaseDraft]): 태그·심각도·발생 시각은 **자동으로 넣지 않고 후보로만** 돌려준다.
  */
 @Service
-@ConditionalOnGithubEnabled
+@ConditionalOnGithubIssueImportEnabled
 class ImportGithubIssueUseCase(
     private val scopeGuard: GithubScopeGuard,
     private val githubApi: GithubAppApiPort,

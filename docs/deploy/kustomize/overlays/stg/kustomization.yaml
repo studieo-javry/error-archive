@@ -51,8 +51,10 @@ configMapGenerator:
   - SPRING_PROFILES_ACTIVE=prod
   - DEMO_ENABLED=true
   name: publish-api-env
-generatorOptions:
-  disableNameSuffixHash: true
+# generatorOptions.disableNameSuffixHash 는 쓰지 않는다(기본=해시 접미사 on).
+# 값이 바뀌면 ConfigMap 이름(<svc>-env-<hash>)과 그걸 참조하는 Deployment 가 같이 바뀌어
+# ArgoCD sync 만으로 해당 서비스만 롤링 재시작된다(수동 rollout restart 불필요).
+# 단, kubectl 로 넣는 <svc>-secrets 변경은 git 밖이라 여전히 수동 재시작.
 
 # GitHub Actions(bump-manifest)가 newTag 를 커밋 SHA 로 갱신. 초기값 stg.
 images:

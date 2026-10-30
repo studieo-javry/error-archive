@@ -13,11 +13,12 @@ import java.time.Instant
 /**
  * inbox 에 쌓인 웹훅 1건 처리 — 호출자(inbox 처리기)의 트랜잭션 안에서 실행된다.
  *
- * P0 범위: 설치/레포 동기화만.
+ * 설치/레포 동기화(P0) + PR 자동 부착(P1-c).
  *  - `installation`            : deleted / suspend / unsuspend → 설치 상태
  *  - `installation_repositories`: added / removed → 설치 대상 레포
  *  - `repository`              : renamed / transferred / privatized / publicized / deleted → 레포 메타(is_private 가 노출 정책 기준)
- *  - `ping` 및 그 외(issues / pull_request / check_suite 는 P1) → SKIPPED (행은 남아 있어 P1 에서 재처리 가능)
+ *  - `pull_request`            : [PullRequestWebhookHandler] — 닫는 PR 자동 부착·상태 기록 (P1-c)
+ *  - `ping` 및 그 외(issues / check_suite 는 P1-d) → SKIPPED
  *
  * 우리 쪽에 연결되지 않은 설치의 이벤트는 SKIPPED — 연결은 반드시 [CompleteGithubInstallationUseCase] 로만.
  */
@@ -26,6 +27,7 @@ import java.time.Instant
 class ProcessGithubWebhookEventUseCase(
     private val repository: GithubInstallationRepositoryPort,
     private val objectMapper: ObjectMapper,
+    private val pullRequests: PullRequestWebhookHandler,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -37,6 +39,7 @@ class ProcessGithubWebhookEventUseCase(
             "installation" -> onInstallation(action, installationId)
             "installation_repositories" -> onInstallationRepositories(action, installationId, root)
             "repository" -> onRepository(action, installationId, root)
+            "pull_request" -> if (pullRequests.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
             else -> Result.SKIPPED
         }
     }

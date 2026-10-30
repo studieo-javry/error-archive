@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary.CiConclusion
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.ClosingKeywords
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubUrl
 import java.time.Instant
@@ -83,5 +84,19 @@ class GithubEvidenceDomainTest {
         )
         assertEquals(listOf(1L, 2L), r.stored)   // 1 = 요청(보임) / 2 = 가려진 기존 꼬리표 유지 / 3 = 가려진 걸 새로 다는 요청은 무시 / 4 = 보이는데 요청에 없어 해제
         assertEquals(listOf(1L), r.visible)
+    }
+
+    @Test
+    fun `ClosingKeywords - 닫는 키워드만, 다른 저장소 표기, 콜론, 대소문자, 단순 언급·단어 일부는 제외`() {
+        val ck = ClosingKeywords
+        assertEquals(
+            listOf(
+                ClosingKeywords.Ref("acme/api", 1), ClosingKeywords.Ref("acme/api", 2), ClosingKeywords.Ref("other/web", 3), ClosingKeywords.Ref("acme/api", 4),
+            ),
+            ck.parse("Fixes #1\ncloses: #2 and RESOLVED other/web#3\nfix #4 / fix #4", "acme/api"),
+        )
+        assertTrue(ck.parse("#142 관련, prefixes #9, fixes#10, hotfix #11", "acme/api").isEmpty())
+        assertTrue(ck.contains("Closes #7"))
+        assertFalse(ck.contains(null))
     }
 }

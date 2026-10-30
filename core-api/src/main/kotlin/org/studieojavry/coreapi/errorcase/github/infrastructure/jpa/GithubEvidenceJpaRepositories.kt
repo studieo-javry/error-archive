@@ -58,11 +58,15 @@ interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Lo
     fun findAllByCaseIdOrderByOccurredAtDescIdDesc(caseId: Long, limit: Limit): List<CaseGithubEventEntity>
     fun countByCaseId(caseId: Long): Long
 
-    /** (occurredAt, id) 가 커서보다 오래된 것 — ix_case_github_event_cursor 를 역방향으로 탄다. */
+    /**
+     * (occurredAt, id) 가 커서보다 오래된 것 — ix_case_github_event_cursor 를 역방향으로 탄다.
+     * `occurredAt <= :at` 은 결과를 바꾸지 않는 중복 조건이지만 없으면 OR 때문에 인덱스 시작 위치를 못 잡고
+     * Case 의 이벤트를 최신부터 훑으며 거른다(1만 건 중간 쪽에서 5,001행 버림). 있으면 커서 위치부터 LIMIT 만큼만 읽는다.
+     */
     @Query(
         """
         SELECT e FROM CaseGithubEventEntity e
-        WHERE e.caseId = :caseId AND (e.occurredAt < :at OR (e.occurredAt = :at AND e.id < :id))
+        WHERE e.caseId = :caseId AND e.occurredAt <= :at AND (e.occurredAt < :at OR e.id < :id)
         ORDER BY e.occurredAt DESC, e.id DESC
         """,
     )

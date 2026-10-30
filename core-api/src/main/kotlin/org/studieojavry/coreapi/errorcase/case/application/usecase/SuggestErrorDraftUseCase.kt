@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.case.application.usecase
 
 import org.springframework.stereotype.Service
 import org.studieojavry.coreapi.errorcase.case.application.port.DraftExtractionPort
+import org.studieojavry.coreapi.errorcase.case.application.port.DraftRateLimiterPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorSnaphostExtractorPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity
 
@@ -20,11 +21,14 @@ import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity
 class SuggestErrorDraftUseCase(
     private val snapshotExtractor: ErrorSnaphostExtractorPort,
     private val draftExtractor: DraftExtractionPort,
+    private val rateLimiter: DraftRateLimiterPort,
 ) {
 
     data class Command(
         val paste: String,
         val workspaceTags: List<String> = emptyList(),
+        /** 비용·남용 방어용 호출자 식별. 컨트롤러가 인증 주체로 채운다(미지정 0 = 비요금 경로: eval/테스트). */
+        val userId: Long = 0L,
     )
 
     data class Result(
@@ -38,21 +42,31 @@ class SuggestErrorDraftUseCase(
     )
 
     fun suggest(command: Command): Result {
+        // 0) 사용자별 쿼터/버스트 — 초과면 요청 거절(429). 정규식 추출보다 먼저 막아 비용·CPU 둘 다 보호.
+        rateLimiter.checkUser(command.userId).let {
+            if (!it.allowed) throw DraftRateLimitExceededException(it.retryAfterSeconds, it.reason ?: "rate-limit")
+        }
+
         val scrubbed = scrubAndTrim(command.paste)
 
         // 1) 사실(결정적): 정규식 추출
         val snapshot = snapshotExtractor.extract(scrubbed)
 
-        // 2) 해석(비결정적): LLM — 실패는 삼켜서 폴백으로
-        val llm: DraftExtractionPort.Output? = runCatching {
-            draftExtractor.extract(
-                DraftExtractionPort.Input(
-                    maskedPaste = scrubbed,
-                    exceptionClassHint = snapshot.exceptionClass,
-                    workspaceTags = command.workspaceTags,
-                ),
-            )
-        }.getOrNull()
+        // 2) 해석(비결정적): LLM — 전역 일일 예산이 남았을 때만 호출(소진 시 생략 → 폴백). 실패는 삼켜서 폴백으로.
+        val llm: DraftExtractionPort.Output? =
+            if (rateLimiter.tryConsumeGlobalBudget()) {
+                runCatching {
+                    draftExtractor.extract(
+                        DraftExtractionPort.Input(
+                            maskedPaste = scrubbed,
+                            exceptionClassHint = snapshot.exceptionClass,
+                            workspaceTags = command.workspaceTags,
+                        ),
+                    )
+                }.getOrNull()
+            } else {
+                null // 전역 예산 소진 → LLM 생략(degraded), 서비스는 정규식 폴백으로 유지
+            }
 
         // 3) 병합·검증: 사실은 정규식 우선, 해석은 LLM, LLM 없으면 폴백
         val exceptionClass = snapshot.exceptionClass ?: llm?.exceptionClass

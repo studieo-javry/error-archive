@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.errorcase.case.eval
 import org.studieojavry.coreapi.errorcase.case.application.port.DraftExtractionPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.SuggestErrorDraftUseCase
 import org.studieojavry.coreapi.errorcase.case.infrastructure.extractor.RegexErrorSnapshotExtractorAdapter
+import org.studieojavry.coreapi.errorcase.case.infrastructure.ratelimit.NoOpDraftRateLimiter
 
 /**
  * eval 측정 공용 로직 — `DraftExtractionPort` 만 바꿔 regex(NoOp)/LLM/LLM+few-shot 를 **같은 하네스·같은 데이터셋**으로 돌린다.
@@ -50,7 +51,7 @@ object DraftEval {
     )
 
     fun run(extractor: DraftExtractionPort, samples: List<EvalSample>): Report {
-        val uc = SuggestErrorDraftUseCase(regex, extractor)
+        val uc = SuggestErrorDraftUseCase(regex, extractor, NoOpDraftRateLimiter())
         var exOk = 0
         var titleTot = 0; var titleOk = 0
         var sevTot = 0; var sevExactOk = 0; var sevAccOk = 0

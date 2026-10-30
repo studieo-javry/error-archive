@@ -51,6 +51,7 @@ class ErrorDraftController(
         ),
         ApiResponse(responseCode = "400", description = "paste 누락/공백 또는 길이 초과", content = [Content()]),
         ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
+        ApiResponse(responseCode = "429", description = "호출 한도 초과(분당/일일 쿼터). Retry-After 헤더 참고", content = [Content()]),
     )
     @PostMapping("/draft-suggestion")
     fun suggest(
@@ -61,6 +62,7 @@ class ErrorDraftController(
             SuggestErrorDraftUseCase.Command(
                 paste = request.paste,
                 workspaceTags = request.workspaceTags,
+                userId = userId,
             ),
         )
         return ErrorDraftResponse.from(result)

@@ -4,6 +4,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapsho
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 
 /**
  * GitHub API 호출 경계. 구현은 App JWT / installation 토큰 / 사용자 토큰을 상황별로 고른다.
@@ -32,7 +33,22 @@ interface GithubAppApiPort {
     /** 커밋 하나의 check run 전부 (`GET /repos/{o}/{r}/commits/{sha}/check-runs`). */
     fun fetchCommitCheckRuns(installationId: Long, owner: String, name: String, sha: String): List<CiSummary.Run>
 
+    /**
+     * 설치 안 레포들에서 Issue·PR 제목 검색 (GraphQL `search`, type ISSUE). [text] 가 비면 최근 갱신순.
+     * GitHub 검색은 설치 토큰 기준 분당 호출 한도가 있어 호출 쪽에서 캐시한다.
+     */
+    fun searchItems(installationId: Long, repoFullNames: List<String>, text: String, limit: Int): List<SearchHit>
+
+    /**
+     * 레포의 최근 생성 Issue [limit]개 + PR [limit]개 (GraphQL, 생성 역순). `#9` → `#95` 같은 번호 앞자리 찾기용 —
+     * GitHub 검색은 번호 앞자리를 못 찾아서 최근 목록을 받아 호출 쪽에서 거른다. 레포가 없으면 빈 목록.
+     */
+    fun listRecentItems(installationId: Long, owner: String, name: String, limit: Int): List<SearchHit>
+
     sealed interface GithubItem { val repoId: Long }
+
+    /** 검색 결과 한 줄 — [state] 는 Issue `OPEN|CLOSED`, PR `OPEN|CLOSED|MERGED`. */
+    data class SearchHit(val repoFullName: String, val number: Int, val kind: GithubRefKind, val title: String, val state: String)
 
     data class IssueItem(
         override val repoId: Long,

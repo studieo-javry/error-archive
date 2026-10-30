@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapsho
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -138,6 +139,42 @@ class GithubAppApiAdapter(
                 ?.checkRuns.orEmpty()
                 .map { CiSummary.Run(it.name, it.status, it.conclusion, it.completedAt) }
         }
+
+    override fun searchItems(
+        installationId: Long,
+        repoFullNames: List<String>,
+        text: String,
+        limit: Int,
+    ): List<GithubAppApiPort.SearchHit> = call("searchItems") {
+        if (repoFullNames.isEmpty()) return@call emptyList()
+        val token = installationToken(installationId)
+        val res = api.post().uri("/graphql")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapOf("query" to SEARCH_QUERY, "variables" to mapOf("q" to searchQuery(repoFullNames, text), "n" to limit)))
+            .retrieve()
+            .body(SearchResponse::class.java)
+        res?.data?.search?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit() }
+    }
+
+    override fun listRecentItems(
+        installationId: Long,
+        owner: String,
+        name: String,
+        limit: Int,
+    ): List<GithubAppApiPort.SearchHit> = call("listRecentItems") {
+        val token = installationToken(installationId)
+        val res = api.post().uri("/graphql")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapOf("query" to RECENT_QUERY, "variables" to mapOf("owner" to owner, "name" to name, "n" to limit)))
+            .retrieve()
+            .body(RecentResponse::class.java)
+        val repo = res?.data?.repository ?: return@call emptyList()
+        val fullName = repo.nameWithOwner ?: "$owner/$name"
+        repo.issues?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.ISSUE) } +
+            repo.pullRequests?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.PULL_REQUEST) }
+    }
 
     /** installation 토큰 — 만료 5분 전까지 캐시 재사용. (설치 수가 적어 단순 맵으로 충분) */
     private fun installationToken(installationId: Long): String {
@@ -312,6 +349,53 @@ class GithubAppApiAdapter(
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class GraphqlRepoName(val databaseId: Long, val nameWithOwner: String)
 
+    // ── GraphQL (Issue/PR 검색) ──────────────────────────────
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentResponse(val data: RecentData? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentData(val repository: RecentRepository? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentRepository(
+        val nameWithOwner: String? = null,
+        val issues: GraphqlNodes<RecentNode>? = null,
+        val pullRequests: GraphqlNodes<RecentNode>? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentNode(val number: Int? = null, val title: String? = null, val state: String? = null) {
+        fun toHit(repoFullName: String, kind: GithubRefKind): GithubAppApiPort.SearchHit? {
+            if (number == null || title == null || state == null) return null
+            return GithubAppApiPort.SearchHit(repoFullName, number, kind, title, state)
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class SearchResponse(val data: SearchData? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class SearchData(val search: GraphqlNodes<SearchNode>? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class SearchNode(
+        @JsonProperty("__typename") val typename: String? = null,
+        val number: Int? = null,
+        val title: String? = null,
+        val state: String? = null,
+        val repository: GraphqlRepoName? = null,
+    ) {
+        fun toHit(): GithubAppApiPort.SearchHit? {
+            val kind = when (typename) {
+                "Issue" -> GithubRefKind.ISSUE
+                "PullRequest" -> GithubRefKind.PULL_REQUEST
+                else -> return null
+            }
+            if (number == null || title == null || state == null || repository == null) return null
+            return GithubAppApiPort.SearchHit(repository.nameWithOwner, number, kind, title, state)
+        }
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class CheckRun(
         val name: String,
@@ -352,6 +436,41 @@ class GithubAppApiAdapter(
               }
             }
         """.trimIndent()
+
+        private val SEARCH_QUERY = """
+            query(${'$'}q: String!, ${'$'}n: Int!) {
+              search(query: ${'$'}q, type: ISSUE, first: ${'$'}n) {
+                nodes {
+                  __typename
+                  ... on Issue { number title state repository { databaseId nameWithOwner } }
+                  ... on PullRequest { number title state repository { databaseId nameWithOwner } }
+                }
+              }
+            }
+        """.trimIndent()
+
+        private val RECENT_QUERY = """
+            query(${'$'}owner: String!, ${'$'}name: String!, ${'$'}n: Int!) {
+              repository(owner: ${'$'}owner, name: ${'$'}name) {
+                nameWithOwner
+                issues(first: ${'$'}n, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number title state } }
+                pullRequests(first: ${'$'}n, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number title state } }
+              }
+            }
+        """.trimIndent()
+
+        /**
+         * `repo:a/b repo:c/d <text> in:title sort:updated-desc`. 사용자 입력은 검색 한정자(`repo:`·`is:` 등)와
+         * 따옴표를 지워 단어로만 — 다른 레포를 끼워 넣어 설치 밖을 뒤지는 걸 막는다(설치 토큰이라 원래도 못 보지만 이중으로).
+         */
+        internal fun searchQuery(repoFullNames: List<String>, text: String): String {
+            val words = text.replace(Regex("[\"\\\\]"), " ").split(Regex("\\s+"))
+                .filter { it.isNotBlank() && !it.contains(':') }
+                .joinToString(" ")
+            val repos = repoFullNames.joinToString(" ") { "repo:$it" }
+            return listOf(repos, if (words.isBlank()) "" else "$words in:title", "sort:updated-desc")
+                .filter { it.isNotBlank() }.joinToString(" ")
+        }
 
         const val API_VERSION = "2022-11-28"
         private const val USER_AGENT = "error-archive-github-app"

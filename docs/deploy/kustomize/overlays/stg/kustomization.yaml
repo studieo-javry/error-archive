@@ -30,9 +30,10 @@ configMapGenerator:
   - DEMO_ENABLED=true
   - CORE_GITHUB_ENABLED=true
   # LLM 에러 자동구조화(draft-suggestion) 활성. LLM_API_KEY 는 core-api-secrets(kubectl, git 밖)로 주입.
-  # 비용 가드: 사용자 분당 5·일 50 쿼터 + CircuitBreaker("llm") 기본. 전역 일일 예산은 미설정(콘솔 spend limit 백스톱).
-  # (전역 상한 원하면 - LLM_RATE_LIMIT_GLOBAL_PER_DAY=<n> 추가)
+  # 비용 가드: 사용자 분당 5·일 50 쿼터 + 전역 일일 300회(초과 시 그날 LLM off·정규식 폴백) + CircuitBreaker("llm").
+  # 전역 상한은 콘솔 spend limit 과 이중 백스톱. (llm.rate-limit.global-per-day ← relaxed binding)
   - LLM_ENABLED=true
+  - LLM_RATE_LIMIT_GLOBAL_PER_DAY=300
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod

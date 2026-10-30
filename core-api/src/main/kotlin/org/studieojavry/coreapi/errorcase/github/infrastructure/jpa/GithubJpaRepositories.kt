@@ -24,4 +24,5 @@ interface GithubInstallationJpaRepository : JpaRepository<GithubInstallationEnti
 
 interface GithubRepositoryJpaRepository : JpaRepository<GithubRepositoryEntity, Long> {
     fun findAllByInstallationIdInOrderByFullName(installationIds: Collection<Long>): List<GithubRepositoryEntity>
+    fun findFirstByFullNameIgnoreCaseAndRemovedAtIsNull(fullName: String): GithubRepositoryEntity?
 }

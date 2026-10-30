@@ -1,5 +1,10 @@
 package org.studieojavry.coreapi.errorcase.github.application.port
 
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
+
 /**
  * GitHub API 호출 경계. 구현은 App JWT / installation 토큰 / 사용자 토큰을 상황별로 고른다.
  * 실패는 [GithubApiException] — 사용자 오류(잘못된 code 등)는 [GithubApiException.clientError]=true.
@@ -17,6 +22,33 @@ interface GithubAppApiPort {
 
     /** 설치 대상 레포 전체 (`GET /installation/repositories`, installation 토큰). */
     fun listInstallationRepositories(installationId: Long): List<RepositoryInfo>
+
+    /**
+     * Issue 또는 PR 한 건 (GraphQL `issueOrPullRequest`). 없거나 접근 불가면 null.
+     * 주소가 `/issues/N` 이어도 실제가 PR 이면 [PullRequestItem] — GitHub 웹도 그렇게 리다이렉트한다.
+     */
+    fun fetchItem(installationId: Long, owner: String, name: String, number: Int): GithubItem?
+
+    /** 커밋 하나의 check run 전부 (`GET /repos/{o}/{r}/commits/{sha}/check-runs`). */
+    fun fetchCommitCheckRuns(installationId: Long, owner: String, name: String, sha: String): List<CiSummary.Run>
+
+    sealed interface GithubItem { val repoId: Long }
+
+    data class IssueItem(
+        override val repoId: Long,
+        val snapshot: GithubIssueSnapshot,
+        val body: String?,
+        val labels: List<String>,
+    ) : GithubItem
+
+    data class PullRequestItem(
+        override val repoId: Long,
+        val snapshot: GithubPullRequestSnapshot,
+        val body: String?,
+        val defaultBranch: String?,
+        /** GitHub 가 판정한 "이 PR 이 닫는 Issue" (closingIssuesReferences — 사이드바 수동 연결 포함). */
+        val closingIssues: List<GithubItemRef>,
+    ) : GithubItem
 
     data class InstallationInfo(val id: Long, val accountLogin: String, val accountType: String)
     data class RepositoryInfo(val id: Long, val fullName: String, val isPrivate: Boolean)

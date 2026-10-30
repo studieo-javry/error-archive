@@ -11,6 +11,7 @@ import org.studieojavry.coreapi.errorcase.case.application.port.CaseWatchlistRep
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseTagRepositoryPort
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.CaseGithubCleanupPort
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.errorcase.snippet.application.usecase.SnippetDeleter
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
@@ -43,6 +44,7 @@ class DeleteErrorCaseUseCase(
     private val meTooRepository: CaseMeTooRepositoryPort,
     private val caseViewRepository: CaseViewRepositoryPort,
     private val caseWatchlistRepository: CaseWatchlistRepositoryPort,
+    private val caseGithubCleanup: CaseGithubCleanupPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
 ) {
     private val log = KotlinLogging.logger {}
@@ -98,8 +100,11 @@ class DeleteErrorCaseUseCase(
         caseViewRepository.deleteAllByCaseId(errorCaseId)
         caseWatchlistRepository.deleteAllByCaseId(errorCaseId)
 
+        // GitHub 연결·근거 타임라인 (Issue/PR 스냅샷·장부는 Case 와 무관이라 유지)
+        caseGithubCleanup.deleteAllByCaseId(errorCaseId)
+
         errorCaseRepository.deleteById(errorCaseId)
-        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist) owner=$ownerUserId" }
+        log.info { "[error-case] deleted caseId=$errorCaseId (cascade attachments/snippets/steps/solutions/comments/tags/me-too/view/watchlist/github) owner=$ownerUserId" }
 
         // 캐시 무효화 — 삭제 후 owner 의 recent-active + my-recent-activities 갱신 필수
         // (삭제된 case 관련 activity 항목이 사라져야 함)

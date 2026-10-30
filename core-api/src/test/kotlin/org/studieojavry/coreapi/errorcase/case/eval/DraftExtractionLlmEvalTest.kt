@@ -9,13 +9,14 @@ import org.studieojavry.coreapi.errorcase.case.infrastructure.llm.NoOpDraftExtra
 import org.studieojavry.coreapi.errorcase.case.infrastructure.llm.RestClientAnthropicCaller
 
 /**
- * **정규식 vs LLM 비교 eval** — 실제 Anthropic 을 호출하므로 `LLM_API_KEY` 가 있을 때만 실행(없으면 skip).
+ * **정규식 vs LLM vs LLM+few-shot 비교 eval** — 실제 Anthropic 호출이라 `LLM_API_KEY` 있을 때만 실행(없으면 skip).
  *
  * 실행:
  *   LLM_API_KEY=sk-ant-... ./gradlew test --tests "*DraftExtractionLlmEvalTest"
  *   (선택) LLM_MODEL=claude-haiku-5-5
  *
- * 같은 데이터셋/하네스(`DraftEval`)를 정규식(NoOp)·LLM 어댑터에 각각 돌려 지표를 나란히 출력한다.
+ * **봉인 test 세트(dataset-15.jsonl)** 로 측정. 지표(Phase 0 §6): exceptionClass·title·severity exact/acceptable·
+ *   tag precision/core-coverage·빈 태그율. 이 하네스는 최종 UseCase 경로(사용자 체감면)를 잰다(§6.3).
  */
 @EnabledIfEnvironmentVariable(named = "LLM_API_KEY", matches = ".+")
 class DraftExtractionLlmEvalTest {
@@ -31,28 +32,32 @@ class DraftExtractionLlmEvalTest {
         val plainLlm = LlmDraftExtractionAdapter(plainProps, RestClientAnthropicCaller(plainProps), om)
         val fewShotLlm = LlmDraftExtractionAdapter(fewShotProps, RestClientAnthropicCaller(fewShotProps), om)
 
-        val base = DraftEval.run(NoOpDraftExtractionAdapter())
-        val ai = DraftEval.run(plainLlm)
-        val fs = DraftEval.run(fewShotLlm)
+        val samples = EvalDataset.test
+        val base = DraftEval.run(NoOpDraftExtractionAdapter(), samples)
+        val ai = DraftEval.run(plainLlm, samples)
+        val fs = DraftEval.run(fewShotLlm, samples)
 
-        fun row(label: String, a: Double, b: Double, c: Double) =
-            "  ${label.padEnd(22)} ${DraftEval.pct(a).padEnd(8)} ${DraftEval.pct(b).padEnd(8)} ${DraftEval.pct(c)}"
+        fun row(label: String, f: (DraftEval.Report) -> String) =
+            "  ${label.padEnd(24)} ${f(base).padEnd(12)} ${f(ai).padEnd(12)} ${f(fs)}"
 
         val report = buildString {
             appendLine()
-            appendLine("=== 정규식 vs LLM vs LLM+few-shot · model=$model · samples=${ai.n} ===")
-            appendLine("  ${"지표".padEnd(22)} ${"정규식".padEnd(8)} ${"LLM".padEnd(8)} LLM+FS")
-            appendLine(row("exceptionClass 정확도", base.exAcc, ai.exAcc, fs.exAcc))
-            appendLine(row("title 키워드 적중", base.titleRate, ai.titleRate, fs.titleRate))
-            appendLine(row("severity 정확도", base.sevAcc, ai.sevAcc, fs.sevAcc))
-            appendLine(row("tag precision", base.tagPrecision, ai.tagPrecision, fs.tagPrecision))
+            appendLine("=== 정규식 vs LLM vs LLM+few-shot · model=$model · test ${ai.n}건 ===")
+            appendLine("  ${"지표".padEnd(24)} ${"정규식".padEnd(12)} ${"LLM".padEnd(12)} LLM+FS")
+            appendLine(row("exceptionClass 정확도") { DraftEval.pct(it.exAcc) })
+            appendLine(row("title 키워드 적중") { DraftEval.pct(it.titleRate) })
+            appendLine(row("severity exact") { DraftEval.pct(it.sevExact) })
+            appendLine(row("severity acceptable") { DraftEval.pct(it.sevAcceptable) })
+            appendLine(row("tag precision") { DraftEval.pctN(it.tagPrecision) })
+            appendLine(row("tag core-coverage") { DraftEval.pct(it.tagCoverage) })
+            appendLine(row("빈 태그 출력율") { DraftEval.pct(it.emptyTagRate) })
             appendLine("--- LLM(plain) 표본별 ---")
             ai.lines.forEach { appendLine(it) }
             appendLine("--- LLM+few-shot 표본별 ---")
             fs.lines.forEach { appendLine(it) }
         }
         println(report)
-        // 콘솔 캡처가 환경마다 달라, 리포트를 파일로도 남긴다(build/eval-report.txt).
+        // 콘솔 캡처가 환경마다 달라 리포트를 파일로도 남긴다.
         java.io.File("build/eval-report.txt").apply { parentFile.mkdirs() }.writeText(report)
     }
 }

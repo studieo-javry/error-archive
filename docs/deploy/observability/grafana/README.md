@@ -7,12 +7,19 @@ DB VM(`10.0.0.183`)의 observability 스택(docker-compose: Prometheus·Loki·Gr
 ## 구성
 ```
 provisioning/
-  datasources/prometheus.yml     # Prometheus datasource + uid: prometheus (알림 룰이 참조)
+  datasources/prometheus.yml     # Prometheus datasource + uid: prometheus (알림/대시보드가 참조)
   alerting/
     contactpoints.yaml           # Slack contact point (webhook 은 <<SLACK_WEBHOOK_URL>> 자리표시자)
     policies.yaml                # 알림 그룹핑/타이밍(루트 정책)
     rules.yaml                   # LLM 알림 룰 4개 (룰별 receiver: slack-ea 직접 지정)
+  dashboards/
+    dashboards.yaml              # 대시보드 provider(폴더 LLM, path=json/)
+    json/llm-dashboard.json      # "LLM Draft 개요" 대시보드 (uid: llm-draft-overview)
 ```
+
+## 대시보드 (LLM Draft 개요, uid `llm-draft-overview`)
+Grafana → 폴더 **LLM**. 패널: CircuitBreaker(llm) 상태 · 오늘 호출/캡300 · 실패율 · 추정비용(오늘/월) ·
+호출 레이트(성공/실패) · 지연 p50/p95 · 토큰(입/출) · 누적비용. (무트래픽이면 비어 있음 — AI 기능 사용 시 채워짐)
 
 ## 알림 룰 (core-api LLM 메트릭 기반)
 | uid | 조건 | severity |

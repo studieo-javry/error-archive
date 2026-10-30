@@ -1,0 +1,77 @@
+{
+  "uid": "llm-draft-overview",
+  "title": "LLM Draft (AI 자동구조화) 개요",
+  "tags": ["llm", "core-api"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "CircuitBreaker(llm) 상태",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(resilience4j_circuitbreaker_state{name=\"llm\", state=\"open\"})", "instant": true } ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "mappings": [ { "type": "value", "options": { "0": { "text": "CLOSED (정상)", "color": "green" }, "1": { "text": "OPEN (폴백 중)", "color": "red" } } } ], "noValue": "데이터 없음(무트래픽)" }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "stat", "title": "오늘 호출 수 (캡 300)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_draft_api_calls_total[24h]))", "instant": true } ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 240 }, { "color": "red", "value": 300 } ] }, "noValue": "0" }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "stat", "title": "실패율 (최근 10분)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(llm_draft_api_calls_total{outcome=\"failure\"}[10m])) / clamp_min(sum(rate(llm_draft_api_calls_total[10m])), 1e-9)", "instant": true } ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.5 } ] }, "noValue": "0%" }, "overrides": [] }
+    },
+    {
+      "id": 4, "type": "stat", "title": "추정 비용 (오늘 / 월)",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_draft_estimated_cost_usd_total[24h]))", "instant": true, "legendFormat": "오늘" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(llm_draft_estimated_cost_usd_total[30d]))", "instant": true, "legendFormat": "월(30d)" }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 3, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 16 }, { "color": "red", "value": 20 } ] }, "noValue": "$0" }, "overrides": [] }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "호출 레이트 (성공/실패, req/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (outcome) (rate(llm_draft_api_calls_total[5m]))", "legendFormat": "{{outcome}}" } ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "호출 지연 (p50/p95, s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "llm_draft_api_latency_seconds{quantile=\"0.5\"}", "legendFormat": "p50" }, { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "llm_draft_api_latency_seconds{quantile=\"0.95\"}", "legendFormat": "p95" } ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "토큰 레이트 (입력/출력, tok/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (type) (rate(llm_draft_tokens_total[5m]))", "legendFormat": "{{type}}" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15 } }, "overrides": [] }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "추정 비용 누적 (USD)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(llm_draft_estimated_cost_usd_total)", "legendFormat": "누적 비용" } ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] }
+    }
+  ]
+}

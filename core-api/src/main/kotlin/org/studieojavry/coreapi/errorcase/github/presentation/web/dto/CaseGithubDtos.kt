@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActivityReader
+import org.studieojavry.coreapi.errorcase.github.application.usecase.IssuePullRequestBackfiller
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
@@ -46,13 +47,48 @@ data class CaseGithubLinkResponse(
     val linkSource: CaseGithubLink.LinkSource,
     val linkedAt: Instant,
     @field:Schema(description = "이번 요청으로 새로 붙었나(false = 이미 연결돼 있었음)") val created: Boolean,
+    @field:Schema(description = "Issue 를 붙였을 때 그 Issue 를 닫는 PR 소급 부착 결과. 응답 시점에 이미 끝나 있다. PR 연결이면 0/0")
+    val backfill: GithubBackfillResponse,
 ) {
     companion object {
-        fun of(link: CaseGithubLink, created: Boolean) = CaseGithubLinkResponse(
-            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created,
+        fun of(link: CaseGithubLink, created: Boolean, backfill: IssuePullRequestBackfiller.Result) = CaseGithubLinkResponse(
+            link.id!!, link.kind, link.repoId, link.number, link.linkSource, link.linkedAt, created, GithubBackfillResponse.of(backfill),
         )
     }
 }
+
+@Schema(description = "닫는 PR 소급 부착 결과 — 연결 요청 안에서 끝까지 돈 뒤 응답(비동기 아님)")
+data class GithubBackfillResponse(
+    @field:Schema(description = "함께 붙은 PR 수", example = "2") val attached: Int,
+    @field:Schema(
+        description = "GitHub 오류 등으로 확인하지 못한 후보 PR 수. 0 보다 크면 \"PR N건은 확인하지 못했어요\" 안내 — 나중에 그 PR 의 웹훅이 오면 붙을 수 있다",
+        example = "0",
+    )
+    val failed: Int,
+    @field:Schema(description = "함께 붙은 PR(연결 완료 안내에 표시). 길이 = attached") val pullRequests: List<GithubBackfilledPullRequestResponse>,
+    @field:Schema(description = "이 Issue 를 닫지만 전에 \"관련 없음\"으로 뗐던 탓에 다시 붙이지 않은 PR") val skipped: List<GithubBackfillSkippedResponse>,
+) {
+    companion object {
+        fun of(r: IssuePullRequestBackfiller.Result) = GithubBackfillResponse(
+            r.attached,
+            r.failed,
+            r.pullRequests.map { GithubBackfilledPullRequestResponse(it.repo, it.number, it.title, it.state) },
+            r.skipped.map { GithubBackfillSkippedResponse(it.repo, it.number) },
+        )
+    }
+}
+
+data class GithubBackfilledPullRequestResponse(
+    @field:Schema(example = "acme/payment-api") val repo: String,
+    @field:Schema(example = "61") val number: Int,
+    @field:Schema(example = "fix: 주문 이벤트 멱등 키로 중복 생성 방지") val title: String,
+    @field:Schema(description = "OPEN | CLOSED | MERGED", example = "MERGED") val state: String,
+)
+
+data class GithubBackfillSkippedResponse(
+    @field:Schema(example = "acme/payment-api") val repo: String,
+    @field:Schema(example = "62") val number: Int,
+)
 
 @Schema(
     description = "Case 의 GitHub 근거 화면 한 번에 — Issue ▸ 그 Issue 를 닫는 PR 관계형 근거(+CI) + GitHub 활동 첫 쪽. " +

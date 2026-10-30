@@ -72,6 +72,9 @@ class CaseGithubController(
             - GitHub 에서 최신 정보를 가져와 저장. PR 이면 최신 커밋의 CI 결과도 함께 가져온다.
             - 타임라인에 연결·PR 열림/머지/닫힘·CI 결과를 기록.
             - 이미 연결돼 있으면 200(created=false), "관련 없음"으로 뗐던 것이면 다시 붙이고 201.
+            - **Issue 를 붙이면 그 Issue 를 닫는 PR 도 함께 붙는다(소급)** — 이미 열려 있던 PR, GitHub 사이드바에서 연결한 PR 포함.
+              단순 언급만 한 PR 은 제외, "관련 없음"으로 뗐던 PR 은 다시 붙이지 않음. 결과는 `backfill.attached`(붙은 PR 목록 `backfill.pullRequests`, 뗐던 탓에 건너뛴 PR `backfill.skipped`),
+              GitHub 오류로 확인 못 한 후보는 `backfill.failed`. 소급 부착은 응답 전에 끝난다 — 응답 뒤 근거 조회 한 번이면 Issue 아래 PR 과 활동이 함께 보인다.
         """,
     )
     @ApiResponses(
@@ -90,7 +93,7 @@ class CaseGithubController(
     ): ResponseEntity<CaseGithubLinkResponse> {
         val result = translate { linkGithub.invoke(caseId, userId, request.url) }
         return ResponseEntity.status(if (result.created) HttpStatus.CREATED else HttpStatus.OK)
-            .body(CaseGithubLinkResponse.of(result.link, result.created))
+            .body(CaseGithubLinkResponse.of(result.link, result.created, result.backfill))
     }
 
     @Operation(

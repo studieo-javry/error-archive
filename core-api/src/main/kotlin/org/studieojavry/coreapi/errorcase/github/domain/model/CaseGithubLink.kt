@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.github.domain.model
 
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
 import java.time.Instant
 
@@ -43,6 +44,19 @@ class CaseGithubLink(
     }
 
     companion object {
+        fun create(
+            caseId: Long,
+            kind: GithubRefKind,
+            repoId: Long,
+            number: Int,
+            source: LinkSource,
+            userId: Long?,
+            viaIssue: GithubItemRef? = null,
+            at: Instant = Instant.now(),
+        ) = CaseGithubLink(
+            null, caseId, kind, repoId, number, source, viaIssue?.repoId, viaIssue?.number, userId, at, null, null,
+        )
+
         fun manual(caseId: Long, kind: GithubRefKind, repoId: Long, number: Int, userId: Long, at: Instant = Instant.now()) =
             CaseGithubLink(null, caseId, kind, repoId, number, LinkSource.MANUAL, null, null, userId, at, null, null)
     }

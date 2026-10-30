@@ -27,6 +27,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.usecase.ImportGithubIssueUseCase
+import org.studieojavry.coreapi.errorcase.github.presentation.web.GithubIssueImportController
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
@@ -214,6 +216,27 @@ class GithubCaseEvidenceIntegrationTest {
     private fun linkIdOf(uid: Long, caseId: Long, field: String, number: Int): Long =
         om.readTree(evidence(uid, caseId).andReturn().response.contentAsString)[field]
             .first { it["number"].asInt() == number }["linkId"].asLong()
+
+    // ── Issue 로 Case 만들기: 기본 꺼짐 ─────────────────────────
+    @Test
+    fun `Issue 로 Case 만들기는 기본 꺼짐 - 빈 없음, 미리보기·생성 요청이 성공하지 않고 GitHub 도 안 부름`() {
+        val me = 140L
+        val s = seedRepo(me, null)
+        assertTrue(context.getBeanNamesForType(ImportGithubIssueUseCase::class.java).isEmpty(), "유스케이스 빈 없음")
+        assertTrue(context.getBeanNamesForType(GithubIssueImportController::class.java).isEmpty(), "컨트롤러 빈 없음")
+        Mockito.clearInvocations(githubApi)
+
+        val url = "https://github.com/${s.fullName}/issues/42"
+        val preview = mvc.perform(get("/api/v1/error-cases/github-issue-preview").with(asUser(me)).param("url", url))
+            .andReturn().response.status
+        val create = mvc.perform(
+            post("/api/v1/error-cases/from-github-issue").with(asUser(me))
+                .contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(mapOf("url" to url, "visibility" to "PRIVATE"))),
+        ).andReturn().response.status
+        assertTrue(preview >= 400, "미리보기 $preview")
+        assertTrue(create >= 400, "생성 $create")
+        Mockito.verifyNoInteractions(githubApi)
+    }
 
     // ── 연결 ─────────────────────────────────────────────────
     @Test

@@ -39,7 +39,11 @@ interface GithubAppApiPort {
         val snapshot: GithubIssueSnapshot,
         val body: String?,
         val labels: List<String>,
+        /** Issue 타임라인에서 이 Issue 를 언급·연결한 PR(최대 50 이벤트) — "닫는 PR" 인지는 PR 쪽 closingIssuesReferences 로 확정. */
+        val pullRequestCandidates: List<PullRequestCandidate> = emptyList(),
     ) : GithubItem
+
+    data class PullRequestCandidate(val repoId: Long, val fullName: String, val number: Int)
 
     data class PullRequestItem(
         override val repoId: Long,

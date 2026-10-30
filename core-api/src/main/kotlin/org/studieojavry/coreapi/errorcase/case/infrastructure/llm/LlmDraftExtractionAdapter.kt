@@ -23,7 +23,10 @@ import org.studieojavry.coreapi.errorcase.case.config.LlmProperties
 class LlmDraftExtractionAdapter(
     private val props: LlmProperties,
     private val caller: AnthropicCaller,
-    private val om: ObjectMapper,
+    // Anthropic JSON 조립/파싱 전용(앱 설정 불필요). 앱 기본 직렬화는 Jackson 3(tools.jackson)이라
+    // Jackson 2 ObjectMapper 빈이 없으므로 **기본값으로 자체 생성** — Kotlin 옵셔널 파라미터라 Spring 은
+    // 빈이 없으면 이 기본값을 쓴다(= llm.enabled=true 기동 시 NoSuchBean 방지). 테스트는 om 을 직접 주입.
+    private val om: ObjectMapper = ObjectMapper(),
 ) : DraftExtractionPort {
 
     override fun extract(input: DraftExtractionPort.Input): DraftExtractionPort.Output? = runCatching {

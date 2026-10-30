@@ -28,6 +28,7 @@ configMapGenerator:
   - REDIS_HOST=redis
   - REDIS_PORT=6379
   - DEMO_ENABLED=true
+  - CORE_GITHUB_ENABLED=true
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
@@ -48,7 +49,7 @@ generatorOptions:
 images:
 - name: core-api
   newName: ghcr.io/studieo-javry/core-api
-  newTag: 790ce245433a172332abb0c8cf0a8624d283a3de
+  newTag: fce1d000dbd77b2165f2b32fea5d4973580f47e8
 - name: iam-api
   newName: ghcr.io/studieo-javry/iam-api
   newTag: 02f4afd7151123ef0032aad85662232ffa352c9e

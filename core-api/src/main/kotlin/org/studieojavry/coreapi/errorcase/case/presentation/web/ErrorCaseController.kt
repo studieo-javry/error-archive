@@ -123,7 +123,7 @@ class ErrorCaseController(
         ApiResponse(
             responseCode = "201", description = "생성됨",
             content = [Content(examples = [ExampleObject(value = """
-                {"id":15,"title":"NPE in OrderService","status":"OPEN","fingerprint":"a3f1...","snippetMarkerIds":["7a7d35e9"],"attachmentMarkerIds":[],"createdAt":"2026-05-27T19:42:00"}
+                {"id":15,"title":"NPE in OrderService","status":"OPEN","fingerprint":"a3f1...","snippetMarkerIds":["7a7d35e9"],"attachmentMarkerIds":[],"createdAt":"2026-05-27T19:42:00","severity":2}
             """)])]
         ),
         ApiResponse(
@@ -160,6 +160,7 @@ class ErrorCaseController(
                     tags = request.tags,
                     occurredAt = request.occurredAt,
                     visibility = request.visibility,
+                    severityCode = request.severity,
                 )
             )
         } catch (e: WorkspaceAccessDeniedException) {
@@ -175,7 +176,8 @@ class ErrorCaseController(
             fingerprint = result.fingerprint,
             snippetMarkerIds = result.snippetMarkerIds,
             attachmentMarkerIds = result.attachmentMarkerIds,
-            createdAt = result.createdAt
+            createdAt = result.createdAt,
+            severity = request.severity,
         )
     }
 
@@ -552,6 +554,7 @@ class ErrorCaseController(
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     status = request.status,
                     visibility = request.visibility,
+                    severity = request.severity,
                 )
             )
         } catch (e: ErrorCaseNotFoundException) {

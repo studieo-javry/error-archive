@@ -1,10 +1,11 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
-import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Severity
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 
 
@@ -44,4 +45,12 @@ data class CreateErrorCaseRequest(
         example = "PUBLIC"
     )
     val visibility: Visibility = Visibility.PUBLIC,
+
+    @field:Schema(
+        description = "심각도 코드. **선택**(미입력 시 미지정). 1=S1(장애/중단) · 2=S2(기능저하) · 3=S3(경미) · 4=S4(정보). AI 초안(`POST /error-cases/draft-suggestion`)이 제안한 값(severity.code)을 사용자가 검수해 함께 저장한다. (list/detail 과 동일하게 숫자 코드)",
+        example = "2"
+    )
+    @field:Min(1)
+    @field:Max(4)
+    val severity: Int? = null,
 )

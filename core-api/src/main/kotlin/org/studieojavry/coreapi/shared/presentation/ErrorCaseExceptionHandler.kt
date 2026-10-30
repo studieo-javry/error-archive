@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.studieojavry.coreapi.errorcase.case.application.usecase.DraftRateLimitExceededException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseAccessDeniedException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDeleteForbiddenException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
@@ -77,6 +78,20 @@ class ErrorCaseExceptionHandler(
         req: HttpServletRequest,
         res: HttpServletResponse,
     ): ProblemDetail = build(req, res, HttpStatus.SERVICE_UNAVAILABLE, "IAM_UNAVAILABLE", "Authorization service temporarily unavailable. Please retry.", retryable = true)
+
+    /**
+     * draft-suggestion 호출 한도 초과 — **429 Too Many Requests**. 재시도 가능 시점을 `Retry-After`(초) 헤더로 안내.
+     * 비용·남용 방어(사용자별 버스트/일일 쿼터). 전역 예산 소진은 여기로 오지 않고 degraded 폴백으로 처리됨.
+     */
+    @ExceptionHandler(DraftRateLimitExceededException::class)
+    fun handleDraftRateLimit(
+        ex: DraftRateLimitExceededException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail {
+        res.setHeader("Retry-After", ex.retryAfterSeconds.toString())
+        return build(req, res, HttpStatus.TOO_MANY_REQUESTS, "DRAFT_RATE_LIMITED", ex.message ?: "Too many requests.", retryable = true)
+    }
 
     private fun build(
         req: HttpServletRequest,

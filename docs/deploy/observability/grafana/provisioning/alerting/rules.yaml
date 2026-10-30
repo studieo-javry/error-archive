@@ -1,0 +1,178 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: llm-draft
+    folder: LLM
+    interval: 1m
+    rules:
+      # 1) CircuitBreaker("llm") OPEN 2분 지속 — Anthropic 장애/지연으로 AI 초안이 정규식 폴백 중.
+      - uid: llm_cb_open
+        title: LLM CircuitBreaker OPEN
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM circuit breaker OPEN (core-api)"
+          description: "LLM 호출 회로가 2분 이상 OPEN — AI 초안이 정규식 폴백(degraded) 중. Anthropic 상태/키/네트워크 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: 'max(resilience4j_circuitbreaker_state{name="llm", state="open"})'
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      # 2) 호출 실패율 >50% (최근 10분) — 키 만료·레이트리밋·업스트림 오류.
+      - uid: llm_fail_rate
+        title: LLM 호출 실패율 높음
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM 호출 실패율 >50% (core-api)"
+          description: "최근 10분 Anthropic 호출 실패 비중이 50%를 넘음. 401(키)·429(레이트리밋)·5xx 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: 'sum(rate(llm_draft_api_calls_total{outcome="failure"}[10m])) / clamp_min(sum(rate(llm_draft_api_calls_total[10m])), 1e-9)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0.5] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      # 3) 월 추정비용 > $16 (콘솔 월 한도 $20의 80%) — 하드 차단 전 사전 경고. 단가(LLM_PRICE_*) 설정 시 유효.
+      - uid: llm_monthly_cost
+        title: LLM 월 추정비용 임박
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM 추정 월 비용 > $16 (콘솔 한도 $20의 80%)"
+          description: "최근 30일 추정 LLM 비용이 월 한도의 80%를 넘음. 초과 시 콘솔이 400으로 하드 차단(→정규식 폴백)."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: 'increase(llm_draft_estimated_cost_usd_total[30d])'
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [16] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      # 4) 일일 호출 > 240 (전역 캡 300의 80%) — 그날 상한 도달 전 경고.
+      - uid: llm_daily_calls
+        title: LLM 일일 호출량 임박
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: info
+          service: core-api
+        annotations:
+          summary: "LLM 일일 호출 >240/300 (core-api)"
+          description: "최근 24h LLM 호출이 전역 일일 예산(300)의 80%를 넘음. 초과 시 그날 LLM off(정규식 폴백)."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: 'sum(increase(llm_draft_api_calls_total[24h]))'
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [240] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200

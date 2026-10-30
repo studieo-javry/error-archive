@@ -1,7 +1,10 @@
 package org.studieojavry.coreapi.shared.config
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics
 import io.github.resilience4j.timelimiter.TimeLimiterConfig
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JCircuitBreakerFactory
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JConfigBuilder
 import org.springframework.cloud.client.circuitbreaker.Customizer
@@ -72,4 +75,50 @@ class ResilienceConfig {
                 .build()
         }
     }
+
+    /**
+     * "llm" 인스턴스 전용 — LLM(생성형) 응답은 본래 느려서 기본 5s TimeLimiter 면 대부분 타임아웃 → 회로가
+     * 상시 OPEN 되는 오작동이 난다. 그래서 **caller 자체 read timeout(8s)보다 약간 긴 10s** 로 둔다
+     * (caller 가 먼저 끊고, TimeLimiter 는 백스톱). CircuitBreaker 임계치는 기본과 동일.
+     * 연속 실패/지연이 50% 를 넘으면 OPEN → 즉시 폴백, 30s 뒤 HALF_OPEN 탐침.
+     */
+    @Bean
+    fun llmCircuitBreakerCustomizer(): Customizer<Resilience4JCircuitBreakerFactory> = Customizer { factory ->
+        factory.configure(
+            { builder ->
+                builder
+                    .circuitBreakerConfig(
+                        CircuitBreakerConfig.custom()
+                            .slidingWindowSize(20)
+                            .failureRateThreshold(50f)
+                            .waitDurationInOpenState(Duration.ofSeconds(30))
+                            .permittedNumberOfCallsInHalfOpenState(3)
+                            .minimumNumberOfCalls(10)
+                            .build()
+                    )
+                    .timeLimiterConfig(
+                        TimeLimiterConfig.custom()
+                            .timeoutDuration(Duration.ofSeconds(10))
+                            .build()
+                    )
+                    .build()
+            },
+            "llm",
+        )
+    }
+
+    /**
+     * CircuitBreaker 상태/호출 메트릭을 Micrometer(Prometheus)로 노출.
+     * Spring Cloud CircuitBreaker 는 생성한 CB 를 MeterRegistry 에 자동 바인딩하지 않으므로 수동 바인딩한다.
+     * → `resilience4j_circuitbreaker_state{name="llm|iamApi|github|notiApi",state="open|closed|half_open"}`,
+     *   `resilience4j_circuitbreaker_calls_*`, `resilience4j_circuitbreaker_failure_rate` 등 노출.
+     * TaggedCircuitBreakerMetrics 는 이후 생성되는 CB(지연 생성 포함)도 이벤트로 받아 메트릭에 추가한다.
+     */
+    @Bean
+    fun circuitBreakerMetricsBinder(
+        circuitBreakerRegistry: CircuitBreakerRegistry,
+        meterRegistry: MeterRegistry,
+    ): TaggedCircuitBreakerMetrics =
+        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(circuitBreakerRegistry)
+            .also { it.bindTo(meterRegistry) }
 }

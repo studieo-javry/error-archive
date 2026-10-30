@@ -1,0 +1,80 @@
+# LLM(draft-suggestion) 운영 알림 규칙 — Prometheus rule_files 용.
+#
+# 전제 메트릭(core-api /internal/actuator/prometheus, Alloy 가 15s 스크레이프):
+#  - resilience4j_circuitbreaker_state{name="llm",state="open|closed|half_open"}  (ResilienceConfig 바인딩)
+#  - llm_draft_api_calls_total{outcome="success|failure"}                          (MeteredAnthropicCaller)
+#  - llm_draft_tokens_total{type="input|output"}
+#  - llm_draft_estimated_cost_usd_total   (단가 미설정 시 0 — 비용 알림은 LLM_PRICE_* 주입 후 유효)
+#
+# 설치(DB VM /home/ubuntu/observability):
+#  1) 이 파일을 prometheus/rules/llm-alerts.yml 로 복사
+#  2) prometheus.yml 에 추가:
+#       rule_files:
+#         - /etc/prometheus/rules/*.yml
+#  3) docker-compose.yml prometheus volumes 에 추가:
+#       - ./prometheus/rules:/etc/prometheus/rules:ro
+#  4) 컨테이너 재생성 후 설정 reload:
+#       docker compose up -d prometheus && curl -s -XPOST http://localhost:9090/-/reload
+#  ※ 알림 '발송'은 Alertmanager(미구축) 또는 Grafana 알림 필요 — 발송 채널은 별도 결정.
+
+groups:
+  - name: llm-draft
+    rules:
+      # 회로 OPEN 2분 지속 — Anthropic 장애/지연으로 LLM 제안이 정규식 폴백(degraded) 중.
+      - alert: LlmCircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{name="llm",state="open"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM circuit breaker OPEN (core-api)"
+          description: "LLM 호출 회로가 2분 이상 OPEN — AI 초안이 정규식 폴백으로 동작 중(사용자 영향: AI 제안 품질 저하). Anthropic 상태/키/네트워크 확인."
+
+      # 호출 실패율 높음 — 최근 10분 실패 비중 50% 초과(키 만료·레이트리밋·업스트림 오류 의심).
+      - alert: LlmHighFailureRate
+        expr: |
+          sum(rate(llm_draft_api_calls_total{outcome="failure"}[10m]))
+          /
+          clamp_min(sum(rate(llm_draft_api_calls_total[10m])), 1e-9) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM 호출 실패율 >50% (core-api)"
+          description: "최근 10분 Anthropic 호출 실패 비중이 50%를 넘음. 401(키)·429(레이트리밋)·5xx 확인."
+
+      # 일일 호출량이 전역 예산(300)의 80%(=240) 접근 — 그날 상한 도달 전 경고.
+      - alert: LlmDailyCallBudgetApproaching
+        expr: increase(llm_draft_api_calls_total[24h]) > 240
+        for: 5m
+        labels:
+          severity: info
+          service: core-api
+        annotations:
+          summary: "LLM 일일 호출량 예산 임박 (>240/300)"
+          description: "최근 24h LLM 호출이 전역 일일 예산(300)의 80%를 넘음. 초과 시 그날 LLM off(정규식 폴백)."
+
+      # 월 추정 비용이 콘솔 월 한도($20)의 80%($16) 접근 — 하드 차단(400) 전 사전 경고.
+      # (콘솔 월 한도를 바꾸면 이 임계도 그 80%로 맞출 것. 단가 LLM_PRICE_* 설정 시에만 유효.)
+      - alert: LlmMonthlyCostApproaching
+        expr: increase(llm_draft_estimated_cost_usd_total[30d]) > 16
+        for: 10m
+        labels:
+          severity: warning
+          service: core-api
+        annotations:
+          summary: "LLM 추정 월 비용 > $16 (콘솔 한도 $20의 80%)"
+          description: "최근 30일 추정 LLM 비용이 월 한도의 80%를 넘음. 초과 시 콘솔이 400으로 하드 차단(→정규식 폴백). 사용 패턴·한도 재검토."
+
+      # 하루가 비정상적으로 비싸짐(일일 캡 300회 꽉 채운 최악치 ~$1.7 수준). 단가 설정 시에만 유효.
+      - alert: LlmDailyCostSpike
+        expr: increase(llm_draft_estimated_cost_usd_total[24h]) > 1.5
+        for: 10m
+        labels:
+          severity: info
+          service: core-api
+        annotations:
+          summary: "LLM 추정 일일 비용 > $1.5 (core-api)"
+          description: "하루 추정 비용이 일일 캡 최악치 수준에 도달. 월 한도($20) 소진 속도 확인."

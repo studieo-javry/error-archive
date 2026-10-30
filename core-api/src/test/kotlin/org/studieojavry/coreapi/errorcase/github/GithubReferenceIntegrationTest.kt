@@ -213,6 +213,39 @@ class GithubReferenceIntegrationTest {
     }
 
     @Test
+    fun `검색 - 최근 목록에서 번호 앞자리(#9 → 95·96)·레포 이름·종류로 거르고, 오래된 번호는 그 번호 자체로 찾는다`() {
+        val me = 4131L
+        val w = 4931L
+        Mockito.`when`(workspaceQuery.getViewerRole(me, w)).thenReturn(WorkspaceRole.READ)
+        val (api, infra) = seedInstallation(me, w, "payment-api", "payment-infra")
+        Mockito.`when`(githubApi.listRecentItems(api.installationId, api.fullName.substringBefore('/'), "payment-api", 100)).thenReturn(
+            listOf(
+                GithubAppApiPort.SearchHit(api.fullName, 96, GithubRefKind.ISSUE, "결제 승인 중복", "OPEN"),
+                GithubAppApiPort.SearchHit(api.fullName, 95, GithubRefKind.PULL_REQUEST, "fix: 결제 재시도 중복 방지", "MERGED"),
+                GithubAppApiPort.SearchHit(api.fullName, 19, GithubRefKind.ISSUE, "로그 정리", "CLOSED"),
+            ),
+        )
+        Mockito.`when`(githubApi.listRecentItems(infra.installationId, infra.fullName.substringBefore('/'), "payment-infra", 100))
+            .thenThrow(org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException("boom"))
+        stubItem(api, 9, issue(api, 9, "초기 설정"))
+
+        // #9 → 9 자체 + 앞자리 9 인 95·96 (19 는 제외), 레포 실패는 그 레포만 빠짐
+        search(me, w, "9").andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(3))
+            .andExpect(jsonPath("$.items[0].number").value(9))
+            .andExpect(jsonPath("$.items[1].number").value(95))
+            .andExpect(jsonPath("$.items[2].number").value(96))
+        // # 만 → 최근 목록 전부(레포 → 번호 순), 검색 API 는 안 부름
+        search(me, w, "").andExpect(jsonPath("$.items.length()").value(3))
+            .andExpect(jsonPath("$.items[0].number").value(19))
+        // 종류(pull_request)·레포 이름(api)으로도 찾는다
+        search(me, w, "pull").andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].number").value(95))
+        search(me, w, "payment-api").andExpect(jsonPath("$.items.length()").value(3))
+        Mockito.verify(githubApi, Mockito.never()).searchItems(api.installationId, listOf(api.fullName, infra.fullName), "", 8)
+    }
+
+    @Test
     fun `검색 - 글자는 제목 검색만, 레포 0개면 GitHub 를 부르지 않고 빈 결과, GitHub 오류는 빈 결과`() {
         val me = 4121L
         val wEmpty = 4921L

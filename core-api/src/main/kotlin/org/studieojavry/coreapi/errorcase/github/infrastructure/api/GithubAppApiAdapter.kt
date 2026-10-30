@@ -157,6 +157,25 @@ class GithubAppApiAdapter(
         res?.data?.search?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit() }
     }
 
+    override fun listRecentItems(
+        installationId: Long,
+        owner: String,
+        name: String,
+        limit: Int,
+    ): List<GithubAppApiPort.SearchHit> = call("listRecentItems") {
+        val token = installationToken(installationId)
+        val res = api.post().uri("/graphql")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapOf("query" to RECENT_QUERY, "variables" to mapOf("owner" to owner, "name" to name, "n" to limit)))
+            .retrieve()
+            .body(RecentResponse::class.java)
+        val repo = res?.data?.repository ?: return@call emptyList()
+        val fullName = repo.nameWithOwner ?: "$owner/$name"
+        repo.issues?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.ISSUE) } +
+            repo.pullRequests?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.PULL_REQUEST) }
+    }
+
     /** installation 토큰 — 만료 5분 전까지 캐시 재사용. (설치 수가 적어 단순 맵으로 충분) */
     private fun installationToken(installationId: Long): String {
         val now = Instant.now()
@@ -332,6 +351,27 @@ class GithubAppApiAdapter(
 
     // ── GraphQL (Issue/PR 검색) ──────────────────────────────
     @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentResponse(val data: RecentData? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentData(val repository: RecentRepository? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentRepository(
+        val nameWithOwner: String? = null,
+        val issues: GraphqlNodes<RecentNode>? = null,
+        val pullRequests: GraphqlNodes<RecentNode>? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RecentNode(val number: Int? = null, val title: String? = null, val state: String? = null) {
+        fun toHit(repoFullName: String, kind: GithubRefKind): GithubAppApiPort.SearchHit? {
+            if (number == null || title == null || state == null) return null
+            return GithubAppApiPort.SearchHit(repoFullName, number, kind, title, state)
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private data class SearchResponse(val data: SearchData? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -405,6 +445,16 @@ class GithubAppApiAdapter(
                   ... on Issue { number title state repository { databaseId nameWithOwner } }
                   ... on PullRequest { number title state repository { databaseId nameWithOwner } }
                 }
+              }
+            }
+        """.trimIndent()
+
+        private val RECENT_QUERY = """
+            query(${'$'}owner: String!, ${'$'}name: String!, ${'$'}n: Int!) {
+              repository(owner: ${'$'}owner, name: ${'$'}name) {
+                nameWithOwner
+                issues(first: ${'$'}n, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number title state } }
+                pullRequests(first: ${'$'}n, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number title state } }
               }
             }
         """.trimIndent()

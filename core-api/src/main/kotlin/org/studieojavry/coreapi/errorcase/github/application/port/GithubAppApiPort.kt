@@ -39,6 +39,12 @@ interface GithubAppApiPort {
      */
     fun searchItems(installationId: Long, repoFullNames: List<String>, text: String, limit: Int): List<SearchHit>
 
+    /**
+     * 레포의 최근 생성 Issue [limit]개 + PR [limit]개 (GraphQL, 생성 역순). `#9` → `#95` 같은 번호 앞자리 찾기용 —
+     * GitHub 검색은 번호 앞자리를 못 찾아서 최근 목록을 받아 호출 쪽에서 거른다. 레포가 없으면 빈 목록.
+     */
+    fun listRecentItems(installationId: Long, owner: String, name: String, limit: Int): List<SearchHit>
+
     sealed interface GithubItem { val repoId: Long }
 
     /** 검색 결과 한 줄 — [state] 는 Issue `OPEN|CLOSED`, PR `OPEN|CLOSED|MERGED`. */

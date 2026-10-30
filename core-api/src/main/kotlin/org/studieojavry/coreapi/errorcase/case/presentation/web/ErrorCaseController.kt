@@ -554,6 +554,7 @@ class ErrorCaseController(
                     attachmentMarkerIds = request.attachmentMarkerIds,
                     status = request.status,
                     visibility = request.visibility,
+                    severity = request.severity,
                 )
             )
         } catch (e: ErrorCaseNotFoundException) {

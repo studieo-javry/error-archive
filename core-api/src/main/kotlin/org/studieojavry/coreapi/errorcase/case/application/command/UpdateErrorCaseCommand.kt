@@ -27,4 +27,7 @@ data class UpdateErrorCaseCommand(
      * WORKSPACE 로 변경 시 workspaceId 가 null 이면 400 (도메인 invariant).
      */
     val visibility: org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility? = null,
+
+    /** 심각도 코드(1..4) 변경. null=유지(기존 값 보존). 값이 오면 그 코드로 교체. */
+    val severity: Int? = null,
 )

@@ -67,7 +67,8 @@ class UpdateErrorCaseUseCase(
 
         val newMeta = Meta.create(
             workspaceId = errorCase.meta.workspaceId, // 워크스페이스 이동은 불가(범위 밖)
-            severityCode = errorCase.meta.severity?.code, // MVP1: severity 유지만, 변경 X
+            // severity: 값(1..4)이 오면 그 코드로 교체, null=유지(생성 후 심각도 검수·수정 지원).
+            severityCode = command.severity ?: errorCase.meta.severity?.code,
         )
         val newSnapshot = if (command.paste != null) buildSnapshot(command.paste) else errorCase.snapshot
 

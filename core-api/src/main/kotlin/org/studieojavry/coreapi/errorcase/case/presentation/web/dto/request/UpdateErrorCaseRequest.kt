@@ -1,6 +1,8 @@
 package org.studieojavry.coreapi.errorcase.case.presentation.web.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Size
 
 /**
@@ -52,4 +54,12 @@ data class UpdateErrorCaseRequest(
         example = "PUBLIC"
     )
     val visibility: org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility? = null,
+
+    @field:Schema(
+        description = "심각도 코드 변경. **null=유지**. 1=S1(장애/중단) · 2=S2(기능저하) · 3=S3(경미) · 4=S4(정보). 생성 시 지정한 심각도를 작성 후 검수·수정할 때 사용. (list/detail/create 와 동일한 숫자 코드)",
+        example = "2"
+    )
+    @field:Min(1)
+    @field:Max(4)
+    val severity: Int? = null,
 )

@@ -381,7 +381,7 @@ class GithubActivityCursorIntegrationTest {
 
     // ── 실행 계획 ────────────────────────────────────────────
     @Test
-    fun `EXPLAIN - 첫 쪽·커서 쪽 모두 ix_case_github_event_cursor 역방향 스캔, 정렬 없이 LIMIT 만큼만 읽음`() {
+    fun `EXPLAIN - 첫 쪽·커서 쪽 모두 ix_case_github_event_cursor 역방향 스캔, 정렬 없이 커서 위치부터 LIMIT 만큼만 읽음`() {
         val me = 312L
         val s = seedRepo(me, null)
         val report = StringBuilder("\n[activity-explain] Testcontainers postgres:16-alpine 기준 — 절대값보다 계획 모양을 본다\n")
@@ -405,9 +405,10 @@ class GithubActivityCursorIntegrationTest {
                 caseId, n / 2,
             )
             val firstSql = "SELECT * FROM case_github_event WHERE case_id = $caseId ORDER BY occurred_at DESC, id DESC LIMIT 21"
+            // CaseGithubEventJpaRepository.findOlderThan 과 같은 조건
             val cursorSql = """
                 SELECT * FROM case_github_event WHERE case_id = $caseId
-                   AND (occurred_at < '${mid["occurred_at"]}' OR (occurred_at = '${mid["occurred_at"]}' AND id < ${mid["id"]}))
+                   AND occurred_at <= '${mid["occurred_at"]}' AND (occurred_at < '${mid["occurred_at"]}' OR id < ${mid["id"]})
                  ORDER BY occurred_at DESC, id DESC LIMIT 9
             """.trimIndent()
             val countSql = "SELECT count(*) FROM case_github_event WHERE case_id = $caseId"
@@ -420,6 +421,8 @@ class GithubActivityCursorIntegrationTest {
                     assertFalse(Regex("""(?m)^\s*(->\s*)?Sort\b""").containsMatchIn(text), "n=$n $name 정렬 노드 없음:\n$text")
                     val rows = Regex("""Index Scan Backward.*?actual time=[\d.]+\.\.[\d.]+ rows=(\d+)""").find(text)!!.groupValues[1].toInt()
                     assertTrue(rows <= 21, "n=$n $name 읽은 행 $rows ≤ LIMIT")
+                    val removed = Regex("""Rows Removed by Filter: (\d+)""").find(text)?.groupValues?.get(1)?.toInt() ?: 0
+                    assertTrue(removed <= 3, "n=$n $name 커서 위치부터 읽음 — 걸러 버린 행 $removed:\n$text")
                 }
             }
         }

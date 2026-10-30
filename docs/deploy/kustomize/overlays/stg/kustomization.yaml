@@ -34,6 +34,10 @@ configMapGenerator:
   # 전역 상한은 콘솔 spend limit 과 이중 백스톱. (llm.rate-limit.global-per-day ← relaxed binding)
   - LLM_ENABLED=true
   - LLM_RATE_LIMIT_GLOBAL_PER_DAY=300
+  # 비용 메트릭(llm_draft_estimated_cost_usd_total) 추정 단가(USD/1M tokens). Haiku $1/$5 기준 추정치 —
+  # 과금이 아니라 알림용 추정이라 ±오차 허용. 실단가는 콘솔 Usage(비용÷토큰)로 역산해 조정 가능.
+  - LLM_PRICE_INPUT_PER_MTOK=1
+  - LLM_PRICE_OUTPUT_PER_MTOK=5
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod

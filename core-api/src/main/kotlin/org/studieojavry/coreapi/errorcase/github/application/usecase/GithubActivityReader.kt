@@ -54,8 +54,8 @@ class GithubActivityReader(
                     EventView(e.id!!, e.type, e.occurredAt, e.kind, repos[e.repoId]?.fullName, e.number, masked = false,
                         issue = issue, data = e.data - RELATED_ISSUE_KEYS)
                 } else {
-                    // 외부인에게는 "언제 무슨 일이 있었나"만. CI 는 결과(통과/실패)까지만, 실패 job 이름·sha 는 제외.
-                    val data = if (e.type == CaseGithubEvent.Type.CI_COMPLETED) e.data.filterKeys { it == "conclusion" } else emptyMap()
+                    // 외부인에게는 "언제 무슨 일이 있었나"만. CI 는 결과(통과/실패)·머지 후 여부까지만, 실패 job 이름·sha 는 제외.
+                    val data = if (e.type == CaseGithubEvent.Type.CI_COMPLETED) e.data.filterKeys { it in MASKED_CI_KEYS } else emptyMap()
                     EventView(e.id!!, e.type, e.occurredAt, e.kind, null, null, masked = true, issue = null, data = data)
                 }
             },
@@ -98,5 +98,6 @@ class GithubActivityReader(
         const val ISSUE_REPO_ID = "issueRepoId"
         const val ISSUE_NUMBER = "issueNumber"
         private val RELATED_ISSUE_KEYS = setOf(ISSUE_REPO_ID, ISSUE_NUMBER)
+        private val MASKED_CI_KEYS = setOf("conclusion", "source")
     }
 }

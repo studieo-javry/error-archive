@@ -29,6 +29,9 @@ class CaseGithubEvent(
         CI_COMPLETED, REF_REMOVED, LINK_DETACHED,
     }
 
+    /** CI 를 돌린 커밋 — PR head 커밋인가, 머지 커밋인가. */
+    enum class CiSource { HEAD, MERGE }
+
     companion object {
         private fun ref(repoId: Long, number: Int) = "$repoId#$number"
 
@@ -89,11 +92,14 @@ class CaseGithubEvent(
             "REF_REMOVED:${ref(pr.repoId, pr.number)}>${ref(issue.repoId, issue.number)}@${at.toEpochMilli()}",
         )
 
-        fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant) = CaseGithubEvent(
+        /**
+         * [source] HEAD = PR head 커밋 CI, MERGE = 머지 커밋 CI("머지 후 CI").
+         */
+        fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant, source: CiSource = CiSource.HEAD) = CaseGithubEvent(
             caseId, Type.CI_COMPLETED, GithubRefKind.PULL_REQUEST, repoId, prNumber, ci.completedAt ?: at,
             mapOf(
                 "sha" to ci.sha, "conclusion" to ci.conclusion.name, "total" to ci.total,
-                "passed" to ci.passed, "failed" to ci.failedNames,
+                "passed" to ci.passed, "failed" to ci.failedNames, "source" to source.name,
             ),
             "CI:$repoId:$prNumber:${ci.sha}",
             replaceable = true,

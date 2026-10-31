@@ -10,7 +10,6 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPo
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink.LinkSource
-import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
@@ -35,6 +34,7 @@ class LinkGithubToCaseUseCase(
     private val githubApi: GithubAppApiPort,
     private val recorder: GithubEvidenceRecorder,
     private val backfiller: IssuePullRequestBackfiller,
+    private val ciFetcher: PullRequestCiFetcher,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = KotlinLogging.logger {}
@@ -59,7 +59,7 @@ class LinkGithubToCaseUseCase(
 
         return when (item) {
             is GithubAppApiPort.PullRequestItem -> {
-                val ci = fetchCi(installation.installationId, owner, name, item.snapshot)
+                val ci = ciFetcher.fetch(installation.installationId, owner, name, item.snapshot)
                 tx.execute { linkPullRequest(caseId, requesterUserId, item, ci) }!!
             }
             is GithubAppApiPort.IssueItem -> {
@@ -68,14 +68,6 @@ class LinkGithubToCaseUseCase(
                 result.copy(backfill = backfiller.backfill(errorCase, issueRef, item.pullRequestCandidates))
             }
         }
-    }
-
-    /** CI 는 부가 정보 — 조회 실패해도 연결은 진행. 다음 check_suite 웹훅(P1-d)이 채운다. */
-    private fun fetchCi(installationId: Long, owner: String, name: String, pr: GithubPullRequestSnapshot): CiSummary? {
-        if (pr.headSha.isBlank()) return null
-        return runCatching { CiSummary.of(pr.headSha, githubApi.fetchCommitCheckRuns(installationId, owner, name, pr.headSha)) }
-            .onFailure { log.warn { "github ci fetch failed: repo=$owner/$name pr=${pr.number} cause=${it.message}" } }
-            .getOrNull()
     }
 
     private fun linkPullRequest(caseId: Long, userId: Long, item: GithubAppApiPort.PullRequestItem, ci: CiSummary?): Result {

@@ -77,6 +77,7 @@ class GithubEvidenceRepositoryAdapter(
                 pr.createdAtGh, pr.mergedAtGh, pr.closedAtGh, pr.sourceUpdatedAt,
                 ci?.sha, ci?.conclusion?.name, ci?.total, ci?.passed,
                 ci?.let { objectMapper.writeValueAsString(it.failedNames) }, ci?.completedAt,
+                pr.mergeCommitSha,
             ),
         )
     }
@@ -204,6 +205,7 @@ class GithubEvidenceRepositoryAdapter(
     private fun GithubPullRequestEntity.toDomain() = GithubPullRequestSnapshot(
         repoId, number, title, url, state, isDraft, authorLogin, headSha, baseRef, additions, deletions, changedFiles,
         createdAtGh, mergedAtGh, closedAtGh, sourceUpdatedAt,
+        mergeCommitSha = mergeCommitSha,
         ci = ciHeadSha?.let { sha ->
             CiSummary(
                 sha = sha,

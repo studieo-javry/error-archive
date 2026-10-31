@@ -267,6 +267,9 @@ class GithubAppApiAdapter(
     private data class GraphqlName(val name: String? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class GraphqlOid(val oid: String? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private data class GraphqlLogin(val login: String? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -295,6 +298,7 @@ class GithubAppApiAdapter(
         val isDraft: Boolean? = null,
         val mergedAt: Instant? = null,
         val headRefOid: String? = null,
+        val mergeCommit: GraphqlOid? = null,
         val baseRefName: String? = null,
         val additions: Int? = null,
         val deletions: Int? = null,
@@ -309,6 +313,7 @@ class GithubAppApiAdapter(
                     repo.databaseId, number, title, url, state, isDraft ?: false, author?.login,
                     headRefOid.orEmpty(), baseRefName, additions, deletions, changedFiles,
                     createdAt, mergedAt, closedAt, updatedAt,
+                    mergeCommitSha = mergeCommit?.oid,
                 ),
                 body = body,
                 defaultBranch = repo.defaultBranchRef?.name,
@@ -430,6 +435,7 @@ class GithubAppApiAdapter(
                     number title url state body createdAt updatedAt closedAt mergedAt isDraft
                     author { login }
                     headRefOid baseRefName additions deletions changedFiles
+                    mergeCommit { oid }
                     closingIssuesReferences(first: 20) { nodes { number repository { databaseId } } }
                   }
                 }

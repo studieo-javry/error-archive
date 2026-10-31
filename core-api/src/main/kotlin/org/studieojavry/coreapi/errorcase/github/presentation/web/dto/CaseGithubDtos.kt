@@ -144,7 +144,11 @@ data class GithubEvidenceItemResponse(
     )
     val closesIssues: List<GetCaseGithubEvidenceUseCase.ClosingIssueView>?,
     val diff: GetCaseGithubEvidenceUseCase.DiffView?,
-    @field:Schema(description = "PR 최신 head 커밋의 CI 요약. stale=true 면 새 커밋 CI 대기 중") val ci: GetCaseGithubEvidenceUseCase.CiView?,
+    @field:Schema(
+        description = "PR CI 요약(status SUCCESS|FAILURE|PENDING). head 커밋 검사가 우선이고, head 에 검사가 없는 머지된 PR 은 " +
+            "머지 커밋 검사(source=MERGE, \"머지 후 CI\" — 빌드·배포 단계가 섞일 수 있음). stale=true 면 새 커밋 CI 대기 중. sha 는 검사한 커밋",
+    )
+    val ci: GetCaseGithubEvidenceUseCase.CiView?,
     @field:Schema(
         description = "이 근거가 꼬리표로 붙은 Step id(빈 배열 = Case 전체 근거). 가려진 항목에도 내려간다. " +
             "Solution 의 근거는 Solution 의 stepIds 와 이 값을 맞춰 FE 가 계산한다.",

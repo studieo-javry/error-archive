@@ -52,6 +52,11 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
+  # X-Forwarded-For 를 믿을 TCP 피어 대역 = OCI 로드밸런서가 있는 서브넷(ErrorArchive_subnet).
+  # ⚠️ 게이트웨이 Service 가 externalTrafficPolicy: Local 이어야 동작한다(ClientIpResolver 참고).
+  client-ip:
+    trusted-proxies:
+      - 10.0.0.0/24
   # 분산 rate limit — Redis 공유 버킷(RedisRateLimiter).
   ratelimit:
     backend: redis

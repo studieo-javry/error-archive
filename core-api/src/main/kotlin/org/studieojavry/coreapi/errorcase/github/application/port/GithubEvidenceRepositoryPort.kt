@@ -52,8 +52,14 @@ interface GithubEvidenceRepositoryPort {
     fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>
     fun saveLink(link: CaseGithubLink): CaseGithubLink
 
-    /** 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀. */
+    /**
+     * 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀.
+     * 줄이 새로 생기거나 내용이 바뀌면 그 Case 의 활동 리비전을 +1.
+     */
     fun recordEvent(event: CaseGithubEvent)
+
+    /** Case 의 GitHub 활동 리비전 — 활동이 생기거나 바뀔 때마다 오른다. 기록이 없으면 0. */
+    fun activityRevision(caseId: Long): Long
 
     /** 타임라인 한 쪽 — 최신순(occurredAt↓, id↓). [before] 가 있으면 그보다 오래된 것만. */
     fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent>

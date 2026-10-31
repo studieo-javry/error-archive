@@ -22,7 +22,8 @@ import java.time.Instant
  *  - CI 집계 upsert 가 occurredAt 을 옮기면 같은 id 가 다시 나오거나(FE 는 id 로 합침) 아직 안 받은 구간에서 빠질 수 있다.
  *  - 이미 받은 줄의 내용·시각이 바뀐 것(CI upsert — id·건수 그대로)은 건수로는 알 수 없다. 첫 쪽 재조회 범위 안이면 id 로 합치며 갱신된다.
  *  빠진 줄의 단서는 **끝까지 받은 뒤** 고유 id 수 < totalCount 일 때뿐(넘기는 도중엔 모름) — 그때 FE 가 처음부터 다시 받아야 한다.
- *  바뀐 줄까지 알아내려면 Case 별 활동 리비전이 필요(후속, P1-d 와 함께). 동작은 GithubActivityCursorIntegrationTest 에 기록.
+ *  바뀐 줄까지는 쪽마다 실어 보내는 **활동 리비전**([ActivityPage.revision])으로 안다 — 줄이 생기거나 내용이 바뀌면 오르므로,
+ *  받는 도중 값이 달라지면 FE 는 처음부터 다시 받는다. 동작은 GithubActivityCursorIntegrationTest 에 기록.
  */
 @Component
 @ConditionalOnGithubEnabled
@@ -36,6 +37,8 @@ class GithubActivityReader(
         val before = cursor?.let { GithubEventCursor.decode(it) ?: throw GithubEventCursorInvalidException("잘못된 커서: $it") }
         val limit = size.coerceIn(1, MAX_SIZE)
 
+        // 리비전은 줄보다 먼저 읽는다 — 읽는 사이 바뀌면 다음 쪽에서 값이 달라져 FE 가 다시 받는다(늦게 읽으면 바뀐 걸 놓칠 수 있음)
+        val revision = evidence.activityRevision(caseId)
         // 한 건 더 읽어 다음 쪽이 있는지 판단
         val fetched = evidence.findEventsBefore(caseId, before, limit + 1)
         val page = fetched.take(limit)
@@ -62,6 +65,7 @@ class GithubActivityReader(
             nextCursor = if (hasNext) page.last().let { GithubEventCursor(it.occurredAt, it.id!!).encode() } else null,
             // 가려진 줄도 지우지 않고 masked 로 내려가므로 전체 건수 = 이 사람이 넘겨볼 수 있는 줄 수
             totalCount = evidence.countEvents(caseId),
+            revision = revision,
         )
     }
 
@@ -75,6 +79,8 @@ class GithubActivityReader(
         /** 더 오래된 쪽을 받을 커서. 없으면 끝. */
         val nextCursor: String?,
         val totalCount: Long,
+        /** Case 의 활동 리비전 — 이 쪽을 읽기 직전 값. */
+        val revision: Long,
     )
 
     data class EventView(

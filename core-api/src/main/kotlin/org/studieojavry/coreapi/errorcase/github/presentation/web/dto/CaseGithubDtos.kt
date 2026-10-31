@@ -178,10 +178,16 @@ data class GithubActivityResponse(
     val hasNext: Boolean,
     @field:Schema(description = "이 Case 의 GitHub 활동 전체 건수. 가려진 줄도 masked 로 내려가므로 넘겨볼 수 있는 줄 수와 같다. 빠진 줄 단서(끝까지 받은 고유 id 수와 비교)일 뿐 내용 변경은 알려주지 않음", example = "124")
     val totalCount: Long,
+    @field:Schema(
+        description = "이 Case 의 GitHub 활동 리비전 — 활동 줄이 생기거나 내용이 바뀔(CI 결과 갱신 등) 때마다 오른다. " +
+            "쪽을 이어 받는 도중 값이 처음 받은 값과 달라지면 처음부터 다시 받는다. 기록이 없으면 0",
+        example = "37",
+    )
+    val revision: Long,
 ) {
     companion object {
         fun of(p: GithubActivityReader.ActivityPage) = GithubActivityResponse(
-            p.events.map(GithubEvidenceEventResponse::of), p.nextCursor, p.nextCursor != null, p.totalCount,
+            p.events.map(GithubEvidenceEventResponse::of), p.nextCursor, p.nextCursor != null, p.totalCount, p.revision,
         )
     }
 }

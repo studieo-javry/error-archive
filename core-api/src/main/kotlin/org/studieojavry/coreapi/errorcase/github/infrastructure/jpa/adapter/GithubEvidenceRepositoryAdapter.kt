@@ -150,12 +150,16 @@ class GithubEvidenceRepositoryAdapter(
     override fun recordEvent(event: CaseGithubEvent) {
         val data = if (event.data.isEmpty()) null else objectMapper.writeValueAsString(event.data)
         val now = Instant.now()
-        if (event.replaceable) {
+        val changed = if (event.replaceable) {
             events.upsert(event.caseId, event.type.name, event.kind.name, event.repoId, event.number, event.occurredAt, data, event.dedupeKey, now)
         } else {
             events.insertIfAbsent(event.caseId, event.type.name, event.kind.name, event.repoId, event.number, event.occurredAt, data, event.dedupeKey, now)
         }
+        // 새 줄이 생겼거나 내용이 바뀐 경우에만 — 같은 사건을 다시 기록(dedupe)하면 그대로
+        if (changed > 0) events.bumpRevision(event.caseId, now)
     }
+
+    override fun activityRevision(caseId: Long): Long = events.findRevision(caseId) ?: 0L
 
     override fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent> =
         (before?.let { events.findOlderThan(caseId, it.occurredAt, it.id, Limit.of(limit)) }
@@ -200,6 +204,7 @@ class GithubEvidenceRepositoryAdapter(
     override fun deleteAllByCaseId(caseId: Long) {
         stepLinks.deleteAllByCaseId(caseId)
         events.deleteAllByCaseId(caseId)
+        events.deleteRevision(caseId)
         links.deleteAllByCaseId(caseId)
     }
 

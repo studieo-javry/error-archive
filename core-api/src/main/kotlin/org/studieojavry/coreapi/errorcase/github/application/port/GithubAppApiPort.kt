@@ -80,5 +80,10 @@ interface GithubAppApiPort {
     data class RepositoryInfo(val id: Long, val fullName: String, val isPrivate: Boolean)
 }
 
-class GithubApiException(message: String, val clientError: Boolean = false, cause: Throwable? = null) :
-    RuntimeException(message, cause)
+/** [retryAfter] 가 있으면 호출 한도 초과(403/429) — 그 시간 뒤에 다시 시도하면 된다(웹훅 inbox 는 시도 횟수를 쓰지 않고 미룬다). */
+class GithubApiException(
+    message: String,
+    val clientError: Boolean = false,
+    cause: Throwable? = null,
+    val retryAfter: java.time.Duration? = null,
+) : RuntimeException(message, cause)

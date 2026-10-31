@@ -215,9 +215,10 @@ class GithubAppApiAdapter(
             try {
                 block()
             } catch (ex: RestClientResponseException) {
-                val client = ex.statusCode.is4xxClientError
-                log.warn { "github api $op failed: status=${ex.statusCode}" }
-                throw GithubApiException("GitHub API $op 실패: ${ex.statusCode}", clientError = client, cause = ex)
+                val retryAfter = rateLimitRetryAfter(ex)
+                val client = ex.statusCode.is4xxClientError && retryAfter == null
+                log.warn { "github api $op failed: status=${ex.statusCode} retryAfter=$retryAfter" }
+                throw GithubApiException("GitHub API $op 실패: ${ex.statusCode}", clientError = client, cause = ex, retryAfter = retryAfter)
             }
         },
         { throwable ->
@@ -226,6 +227,22 @@ class GithubAppApiAdapter(
                 ?: GithubApiException("GitHub API $op 사용 불가", cause = throwable)
         },
     )
+
+    /**
+     * 호출 한도 초과면 기다릴 시간, 아니면 null. GitHub 는 429 또는 403 으로 알린다 —
+     * 2차 한도는 `Retry-After`(초), 1차 한도는 `x-ratelimit-remaining: 0` + `x-ratelimit-reset`(epoch 초).
+     */
+    private fun rateLimitRetryAfter(ex: RestClientResponseException): Duration? {
+        val code = ex.statusCode.value()
+        if (code != 403 && code != 429) return null
+        val headers = ex.responseHeaders ?: return if (code == 429) DEFAULT_RATE_LIMIT_WAIT else null
+        headers.getFirst("Retry-After")?.toLongOrNull()?.let { return Duration.ofSeconds(it) }
+        if (headers.getFirst("x-ratelimit-remaining") == "0") {
+            val reset = headers.getFirst("x-ratelimit-reset")?.toLongOrNull()?.let(Instant::ofEpochSecond)
+            return reset?.let { Duration.between(Instant.now(), it) }?.takeIf { !it.isNegative } ?: DEFAULT_RATE_LIMIT_WAIT
+        }
+        return if (code == 429) DEFAULT_RATE_LIMIT_WAIT else null
+    }
 
     private data class CachedToken(val value: String, val expiresAt: Instant)
 
@@ -497,5 +514,6 @@ class GithubAppApiAdapter(
         private const val PAGE_SIZE = 100
         private const val MAX_PAGES = 10
         private val REFRESH_MARGIN: Duration = Duration.ofMinutes(5)
+        private val DEFAULT_RATE_LIMIT_WAIT: Duration = Duration.ofMinutes(1)
     }
 }

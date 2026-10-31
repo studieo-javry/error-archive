@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ProcessGithubWebhookEventUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.config.GithubAppProperties
@@ -19,6 +20,7 @@ import java.time.Instant
  * - `@SchedulerLock`: 다중 인스턴스 중 하나만 실행.
  * - **건별 트랜잭션**: 처리(도메인 변경) + DONE 표시가 한 트랜잭션 → 같이 커밋/롤백. 한 건 실패가 배치 전체를 깨지 않는다.
  * - 실패: 별도 트랜잭션에서 attempts++ · backoff(2^n·base, 상한) · 최대 횟수 넘으면 FAILED(수동 재처리 대상).
+ * - GitHub 호출 한도 초과(403/429, [GithubApiException.retryAfter]): 처리 실패가 아니므로 시도 횟수를 쓰지 않고 한도가 풀릴 때까지 미룬다.
  */
 @Component
 @ConditionalOnGithubEnabled
@@ -58,9 +60,15 @@ class GithubWebhookInboxProcessor(
 
     private fun recordFailure(deliveryId: String, ex: Exception) {
         val reason = ex.message ?: ex.javaClass.simpleName
+        val rateLimited = generateSequence<Throwable>(ex) { it.cause }.filterIsInstance<GithubApiException>()
+            .firstNotNullOfOrNull { it.retryAfter }
         tx.executeWithoutResult {
             val row = inboxRepo.findById(deliveryId).orElse(null) ?: return@executeWithoutResult
-            if (row.attempts + 1 >= properties.inbox.maxAttempts) {
+            if (rateLimited != null) {
+                val wait = rateLimited.coerceIn(MIN_RATE_LIMIT_WAIT, MAX_RATE_LIMIT_WAIT)
+                row.defer(reason, wait)
+                log.info { "github webhook deferred (rate limit): delivery=$deliveryId event=${row.event} wait=$wait" }
+            } else if (row.attempts + 1 >= properties.inbox.maxAttempts) {
                 row.markFailed(reason)
                 log.warn(ex) { "github webhook FAILED: delivery=$deliveryId event=${row.event} attempts=${row.attempts}" }
             } else {
@@ -69,5 +77,10 @@ class GithubWebhookInboxProcessor(
                 log.debug { "github webhook retry: delivery=$deliveryId attempt=${row.attempts}" }
             }
         }
+    }
+
+    companion object {
+        private val MIN_RATE_LIMIT_WAIT: Duration = Duration.ofSeconds(1)
+        private val MAX_RATE_LIMIT_WAIT: Duration = Duration.ofHours(1)
     }
 }

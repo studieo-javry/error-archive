@@ -45,7 +45,7 @@ class GithubEvidenceRecorder(
         if (issue.state == "CLOSED") listOf(CaseGithubEvent.issueClosed(caseId, issue)) else emptyList()
 
     /**
-     * PR 의 지금 상태를 타임라인 사건들로 — 열림, 머지/닫힘, 최신 CI. dedupe 로 몇 번 불러도 한 번만 남는다.
+     * PR 의 지금 상태를 타임라인 사건들로 — 열림, 머지/닫힘, 최신 CI(최종 결과일 때만). dedupe 로 몇 번 불러도 한 번만 남는다.
      * 오래된 커밋의 CI(stale)는 남기지 않는다 — 그 커밋 CI 는 이미 그때 기록됐거나, 지금 PR 과는 무관한 과거라서.
      */
     fun pullRequestStateEvents(caseId: Long, pr: GithubPullRequestSnapshot, now: Instant): List<CaseGithubEvent> = buildList {
@@ -57,8 +57,9 @@ class GithubEvidenceRecorder(
         pr.ci?.takeIf { !pr.isCiStale }?.let { ciEvent(caseId, pr, it, now) }?.let(::add)
     }
 
-    /** 이 PR 의 커밋 CI 한 줄 — head 커밋 검사면 HEAD, 머지 커밋 검사면 MERGE("머지 후 CI"). */
+    /** 이 PR 의 커밋 CI 한 줄 — 진행 중이면 null(최종 결과만 남긴다). */
     fun ciEvent(caseId: Long, pr: GithubPullRequestSnapshot, ci: CiSummary, now: Instant): CaseGithubEvent? {
+        if (ci.conclusion == CiSummary.CiConclusion.PENDING) return null
         val source = if (ci.sha != pr.headSha && ci.sha == pr.mergeCommitSha) CaseGithubEvent.CiSource.MERGE else CaseGithubEvent.CiSource.HEAD
         return CaseGithubEvent.ciCompleted(caseId, pr.repoId, pr.number, ci, now, source)
     }

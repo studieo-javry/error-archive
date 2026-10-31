@@ -199,7 +199,8 @@ data class GithubEvidenceEventResponse(
     val masked: Boolean,
     @field:Schema(description = "함께 가리키는 Issue — PR_LINKED(그 Issue 를 닫는 PR 이라 자동 연결)·REF_REMOVED(그 Issue 를 더 이상 닫지 않음). 가려지면 없음")
     val issue: GetCaseGithubEvidenceUseCase.RefView?,
-    @field:Schema(description = "종류별 부가 정보. CI_COMPLETED: sha·conclusion·total·passed·failed (가려지면 conclusion 만)")
+    @field:Schema(description = "종류별 부가 정보. CI_COMPLETED: sha·conclusion(SUCCESS|FAILURE — 진행 중은 기록하지 않음)·total·passed·failed·" +
+            "source(HEAD=PR 커밋 검사, MERGE=머지 커밋 검사 \"머지 후 CI\") (가려지면 conclusion·source 만)")
     val data: Map<String, Any?>,
 ) {
     companion object {

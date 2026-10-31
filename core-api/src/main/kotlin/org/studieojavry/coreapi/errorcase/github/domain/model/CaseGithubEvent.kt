@@ -93,6 +93,7 @@ class CaseGithubEvent(
         )
 
         /**
+         * 최종 결과(통과/실패)만 — 진행 중(PENDING)은 타임라인에 남기지 않는다(카드 요약에만). 호출 쪽이 거른다.
          * [source] HEAD = PR head 커밋 CI, MERGE = 머지 커밋 CI("머지 후 CI").
          */
         fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant, source: CiSource = CiSource.HEAD) = CaseGithubEvent(

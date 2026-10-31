@@ -34,6 +34,12 @@ interface GithubAppApiPort {
     fun fetchCommitCheckRuns(installationId: Long, owner: String, name: String, sha: String): List<CiSummary.Run>
 
     /**
+     * 이 커밋이 들어 있는 PR 번호들 (`GET /repos/{o}/{r}/commits/{sha}/pulls`) — 머지 커밋도 해당 PR 로 찾아진다.
+     * check_suite 웹훅의 `pull_requests` 가 비어 오는 push(머지) CI 를 PR 에 잇는 데 쓴다.
+     */
+    fun listPullRequestNumbersForCommit(installationId: Long, owner: String, name: String, sha: String): List<Int>
+
+    /**
      * 설치 안 레포들에서 Issue·PR 제목 검색 (GraphQL `search`, type ISSUE). [text] 가 비면 최근 갱신순.
      * GitHub 검색은 설치 토큰 기준 분당 호출 한도가 있어 호출 쪽에서 캐시한다.
      */

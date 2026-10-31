@@ -68,6 +68,9 @@ class GithubEvidenceRepositoryAdapter(
         if (refs.isEmpty()) emptyList()
         else pullRequests.findAllById(refs.map { GithubItemKey(it.repoId, it.number) }).map { it.toDomain() }
 
+    override fun findPullRequestsByCommit(repoId: Long, sha: String): List<GithubPullRequestSnapshot> =
+        pullRequests.findAllByCommit(repoId, sha).map { it.toDomain() }
+
     override fun savePullRequest(pr: GithubPullRequestSnapshot) {
         val ci = pr.ci
         pullRequests.save(
@@ -120,6 +123,9 @@ class GithubEvidenceRepositoryAdapter(
 
     override fun hasAnyLink(kind: GithubRefKind, ref: GithubItemRef): Boolean =
         links.existsByKindAndRepoIdAndNumber(kind.name, ref.repoId, ref.number)
+
+    override fun hasActivePullRequestLinkInRepo(repoId: Long): Boolean =
+        links.existsByKindAndRepoIdAndDetachedAtIsNull(GithubRefKind.PULL_REQUEST.name, repoId)
 
     override fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long> =
         links.findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind.name, ref.repoId, ref.number).map { it.caseId }

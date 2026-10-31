@@ -20,6 +20,9 @@ interface GithubEvidenceRepositoryPort {
     fun findPullRequests(refs: Collection<GithubItemRef>): List<GithubPullRequestSnapshot>
     fun savePullRequest(pr: GithubPullRequestSnapshot)
 
+    /** 이 커밋이 head 또는 머지 커밋인 PR 들(check_suite 웹훅이 PR 을 찾을 때). */
+    fun findPullRequestsByCommit(repoId: Long, sha: String): List<GithubPullRequestSnapshot>
+
     /** 이 PR 이 닫는 Issue 목록을 [source] 출처분만 통째로 교체. */
     fun replaceClosingRefs(pr: GithubItemRef, issues: Collection<GithubItemRef>, source: ClosingRefSource)
 
@@ -41,6 +44,9 @@ interface GithubEvidenceRepositoryPort {
 
     /** 어떤 Case 에든 연결된 적이 있나(뗀 것 포함) — 웹훅 사전 필터용. */
     fun hasAnyLink(kind: GithubRefKind, ref: GithubItemRef): Boolean
+
+    /** 이 레포의 PR 이 어떤 Case 에든 붙어 있나 — check_suite 웹훅 사전 필터(GitHub 를 부르기 전에). */
+    fun hasActivePullRequestLinkInRepo(repoId: Long): Boolean
 
     /** 이 Issue/PR 이 붙어 있는(떼지 않은) Case id 들. */
     fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>

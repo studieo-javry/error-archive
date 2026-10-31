@@ -140,6 +140,17 @@ class GithubAppApiAdapter(
                 .map { CiSummary.Run(it.name, it.status, it.conclusion, it.completedAt) }
         }
 
+    override fun listPullRequestNumbersForCommit(installationId: Long, owner: String, name: String, sha: String): List<Int> =
+        call("listPullRequestsForCommit") {
+            val token = installationToken(installationId)
+            api.get().uri("/repos/{o}/{r}/commits/{sha}/pulls?per_page={n}", owner, name, sha, PAGE_SIZE)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+                .retrieve()
+                .body(Array<CommitPullResponse>::class.java)
+                .orEmpty()
+                .map { it.number }
+        }
+
     override fun searchItems(
         installationId: Long,
         repoFullNames: List<String>,
@@ -408,6 +419,9 @@ class GithubAppApiAdapter(
         val conclusion: String? = null,
         @JsonProperty("completed_at") val completedAt: Instant? = null,
     )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class CommitPullResponse(val number: Int)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class CheckRunsResponse(@JsonProperty("check_runs") val checkRuns: List<CheckRun> = emptyList())

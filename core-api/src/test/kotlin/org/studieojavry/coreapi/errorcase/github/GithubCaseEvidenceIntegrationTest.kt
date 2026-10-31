@@ -8,7 +8,9 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.core.io.ClassPathResource
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.ActiveProfiles
@@ -100,6 +102,7 @@ class GithubCaseEvidenceIntegrationTest {
     @Autowired private lateinit var stepLinkRepo: CaseStepGithubLinkJpaRepository
     @Autowired private lateinit var evidencePort: GithubEvidenceRepositoryPort
     @Autowired private lateinit var txManager: PlatformTransactionManager
+    @Autowired private lateinit var jdbc: JdbcTemplate
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -145,13 +148,13 @@ class GithubCaseEvidenceIntegrationTest {
 
     private fun prItem(
         s: Seeded, number: Int, closes: Int?, state: String = "MERGED", title: String = "fix: close ResultSet",
-        alsoCloses: List<GithubItemRef> = emptyList(),
+        alsoCloses: List<GithubItemRef> = emptyList(), headSha: String = "sha-$number",
     ) =
         GithubAppApiPort.PullRequestItem(
             s.repoId,
             GithubPullRequestSnapshot(
                 s.repoId, number, title, "https://github.com/${s.fullName}/pull/$number", state, false, "jin",
-                "sha-$number", "main", 12, 3, 2, t0.plusSeconds(3600),
+                headSha, "main", 12, 3, 2, t0.plusSeconds(3600),
                 if (state == "MERGED") t0.plusSeconds(7200) else null, if (state != "OPEN") t0.plusSeconds(7200) else null,
                 t0.plusSeconds(7200),
             ),
@@ -281,6 +284,62 @@ class GithubCaseEvidenceIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.created").value(false))
         assertEquals(4, eventRepo.findAllByCaseIdOrderByOccurredAtAscIdAsc(caseId).size, "재연결해도 이벤트 중복 없음")
+    }
+
+    @Test
+    fun `같은 HEAD 커밋을 쓰는 PR 둘 - CI 이력이 PR 마다 따로 남고, 같은 PR 의 재실행은 그 줄만 갱신`() {
+        val me = 103L
+        val s = seedRepo(me, null)
+        val caseId = createCase(me, "PRIVATE")
+        stubItem(s, 48, prItem(s, 48, closes = null, headSha = "sha-shared"))
+        stubItem(s, 61, prItem(s, 61, closes = null, headSha = "sha-shared"))
+        stubChecks(s, "sha-shared", "build" to "success")
+
+        link(me, caseId, "https://github.com/${s.fullName}/pull/48").andExpect(status().isCreated)
+        link(me, caseId, "https://github.com/${s.fullName}/pull/61").andExpect(status().isCreated)
+
+        fun ciRows() = eventRepo.findAllByCaseIdOrderByOccurredAtAscIdAsc(caseId).filter { it.type == "CI_COMPLETED" }
+        assertEquals(listOf(48, 61), ciRows().map { it.number }.sorted(), "PR 마다 CI 한 줄 — 뒤 PR 의 CI 가 앞 PR 줄에 합쳐지면 안 됨")
+        assertEquals(
+            setOf("CI:${s.repoId}:48:sha-shared", "CI:${s.repoId}:61:sha-shared"),
+            ciRows().map { it.dedupeKey }.toSet(),
+        )
+        events(me, caseId)
+            .andExpect(jsonPath("$.events[?(@.type=='CI_COMPLETED')].number").value(org.hamcrest.Matchers.containsInAnyOrder(48, 61)))
+
+        // 같은 PR·같은 커밋 CI 재실행(실패로 바뀜) → 새 줄 없이 그 PR 줄만 최신 결과로
+        val rerun = CiSummary.of("sha-shared", listOf(CiSummary.Run("build", "completed", "failure", t0.plusSeconds(9000))))!!
+        recordEvent(CaseGithubEvent.ciCompleted(caseId, s.repoId, 61, rerun, Instant.now()))
+        val after = ciRows()
+        assertEquals(2, after.size, "재실행은 줄을 늘리지 않음")
+        assertEquals("FAILURE", om.readTree(after.single { it.number == 61 }.data)["conclusion"].asText())
+        assertEquals("SUCCESS", om.readTree(after.single { it.number == 48 }.data)["conclusion"].asText(), "다른 PR 줄은 그대로")
+    }
+
+    @Test
+    fun `V8 - 옛 CI 키(CI_repo_sha)를 PR 번호 포함 키로 바꾸고, 다른 이벤트·이미 새 키인 줄은 그대로, 다시 돌려도 같음`() {
+        val me = 104L
+        val caseId = createCase(me, "PRIVATE")
+        val repoId = seq.incrementAndGet()
+        fun insert(type: String, number: Int, data: String, key: String) = jdbc.update(
+            """
+            INSERT INTO case_github_event (case_id, type, kind, repo_id, number, occurred_at, data, dedupe_key, created_at)
+            VALUES (?, ?, 'PULL_REQUEST', ?, ?, now(), ?::jsonb, ?, now())
+            """.trimIndent(),
+            caseId, type, repoId, number, data, key,
+        )
+        insert("CI_COMPLETED", 48, """{"sha":"abc123","conclusion":"SUCCESS"}""", "CI:$repoId:abc123")
+        insert("CI_COMPLETED", 61, """{"sha":"def456","conclusion":"SUCCESS"}""", "CI:$repoId:61:def456")
+        insert("PR_OPENED", 48, "{}", "PR_OPENED:$repoId#48")
+
+        val script = ClassPathResource("db/migration/V8__case_github_event_ci_key_per_pr.sql").getContentAsString(Charsets.UTF_8)
+        repeat(2) { jdbc.execute(script) }
+
+        val keys = jdbc.queryForList("SELECT dedupe_key FROM case_github_event WHERE case_id = ?", String::class.java, caseId)
+        assertEquals(
+            setOf("CI:$repoId:48:abc123", "CI:$repoId:61:def456", "PR_OPENED:$repoId#48"),
+            keys.filterNotNull().toSet(),
+        )
     }
 
     @Test

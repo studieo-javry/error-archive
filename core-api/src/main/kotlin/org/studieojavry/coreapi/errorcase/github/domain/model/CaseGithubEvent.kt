@@ -7,7 +7,8 @@ import java.time.Instant
 
 /**
  * Case 근거 타임라인 한 줄. [dedupeKey] 가 (case, 사건) 단위 중복 방지 키 — 생성 규칙은 이 파일의 팩토리에만 둔다.
- * CI 는 커밋(sha)당 한 줄이고, CI 앱이 여러 개라 결과가 여러 번 와도 같은 키를 최신 집계로 덮어쓴다([replaceable]).
+ * CI 는 PR·커밋(sha)당 한 줄이고, CI 앱이 여러 개라 결과가 여러 번 와도 같은 키를 최신 집계로 덮어쓴다([replaceable]).
+ * 같은 커밋을 HEAD 로 쓰는 PR 이 둘이면 PR 마다 따로 남아야 하므로 키에 PR 번호를 넣는다(덮어쓸 때 number 는 안 바뀜).
  */
 class CaseGithubEvent(
     val caseId: Long,
@@ -94,7 +95,7 @@ class CaseGithubEvent(
                 "sha" to ci.sha, "conclusion" to ci.conclusion.name, "total" to ci.total,
                 "passed" to ci.passed, "failed" to ci.failedNames,
             ),
-            "CI:$repoId:${ci.sha}",
+            "CI:$repoId:$prNumber:${ci.sha}",
             replaceable = true,
         )
     }

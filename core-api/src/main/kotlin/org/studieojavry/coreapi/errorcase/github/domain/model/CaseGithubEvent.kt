@@ -62,6 +62,11 @@ class CaseGithubEvent(
             emptyMap(), "ISSUE_CLOSED:${ref(issue.repoId, issue.number)}@${(issue.closedAtGh ?: issue.sourceUpdatedAt).toEpochMilli()}",
         )
 
+        fun issueReopened(caseId: Long, issue: GithubIssueSnapshot, at: Instant) = CaseGithubEvent(
+            caseId, Type.ISSUE_REOPENED, GithubRefKind.ISSUE, issue.repoId, issue.number, at,
+            emptyMap(), "ISSUE_REOPENED:${ref(issue.repoId, issue.number)}@${at.toEpochMilli()}",
+        )
+
         fun prOpened(caseId: Long, pr: GithubPullRequestSnapshot) = CaseGithubEvent(
             caseId, Type.PR_OPENED, GithubRefKind.PULL_REQUEST, pr.repoId, pr.number, pr.createdAtGh,
             mapOf("author" to pr.authorLogin), "PR_OPENED:${ref(pr.repoId, pr.number)}",

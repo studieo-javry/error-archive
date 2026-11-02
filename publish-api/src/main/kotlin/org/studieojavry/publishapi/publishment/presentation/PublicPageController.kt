@@ -134,6 +134,49 @@ class PublicPageController(
             .build()
     }
 
+    /**
+     * 검색엔진 sitemap — PUBLIC+LIVE 발행물의 공개 URL(절대) 목록. 무인증 공개(게이트웨이 permitAll + 라우트).
+     * 별도 인덱스 없이 live 쿼리라 visibility 를 UNLISTED 로 바꾸면 다음 조회부터 자동 제외.
+     * 발행물이 sitemap URL 상한(50k)에 근접하면 sitemap index 로 분할 필요.
+     */
+    @Operation(summary = "sitemap.xml (공개 발행물 discovery)")
+    @GetMapping("/sitemap.xml", produces = [MediaType.APPLICATION_XML_VALUE])
+    fun sitemap(): ResponseEntity<String> {
+        val base = pageProps.publicBaseUrl.trimEnd('/')
+        val urls = listPublicUseCase.invokeAll().joinToString("\n") { p ->
+            "  <url><loc>${xmlEscape("$base/p/${p.slug}")}</loc><lastmod>${p.publishedAt.toLocalDate()}</lastmod></url>"
+        }
+        val xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n" +
+            (if (urls.isEmpty()) "" else "$urls\n") +
+            "</urlset>\n"
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "application/xml; charset=UTF-8")
+            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+            .body(xml)
+    }
+
+    /**
+     * robots.txt — 크롤러에 sitemap 위치를 알리고 공개 페이지(/p/)만 크롤 허용, API 경로는 Disallow.
+     */
+    @Operation(summary = "robots.txt")
+    @GetMapping("/robots.txt", produces = [MediaType.TEXT_PLAIN_VALUE])
+    fun robots(): ResponseEntity<String> {
+        val base = pageProps.publicBaseUrl.trimEnd('/')
+        val body = "User-agent: *\n" +
+            "Allow: /p/\n" +
+            "Disallow: /api/\n" +
+            "Sitemap: $base/sitemap.xml\n"
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "text/plain; charset=UTF-8")
+            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+            .body(body)
+    }
+
+    private fun xmlEscape(s: String): String = s
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace("'", "&apos;")
+
     private fun lookup(slug: String) = try {
         getBySlugUseCase.invoke(slug, viewerUserId = null)
     } catch (e: PublishmentNotFoundException) {

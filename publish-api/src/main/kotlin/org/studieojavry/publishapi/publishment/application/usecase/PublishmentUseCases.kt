@@ -480,6 +480,13 @@ class ListPublicPublishmentsUseCase(
         return Result(items = page, nextCursor = nextCursor, hasNext = hasNext)
     }
 
+    /**
+     * sitemap 용 — PUBLIC+LIVE 전체(페이징 없음). 별도 인덱스 없이 live 쿼리라 visibility 변경이
+     * 즉시 반영된다. 발행물이 50k(sitemap URL 상한)에 근접하면 sitemap index 분할이 필요.
+     */
+    @Transactional(readOnly = true)
+    fun invokeAll(): List<CasePublishment> = repository.listPublicDiscoverable()
+
     companion object {
         private const val DEFAULT_LIMIT = 20
         private const val MAX_LIMIT = 100

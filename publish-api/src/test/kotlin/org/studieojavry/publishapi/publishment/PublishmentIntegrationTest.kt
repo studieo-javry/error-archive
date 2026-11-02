@@ -1,6 +1,7 @@
 package org.studieojavry.publishapi.publishment
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyLong
@@ -203,5 +204,27 @@ class PublishmentIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.items").isArray)
             .andExpect(jsonPath("$.items[0].slug").isNotEmpty)
+    }
+
+    @Test
+    fun `sitemap 은 PUBLIC 발행물의 공개 URL 을 담고 robots 는 sitemap 을 가리킨다`() {
+        val slug = objectMapper.readTree(
+            mvc.perform(publish(ownerId, caseId = 1010L, idemKey = "k-1010"))
+                .andExpect(status().isCreated).andReturn().response.contentAsString,
+        ).get("slug").asText()
+
+        // sitemap.xml: 무인증(permitAll 대상) 으로 200 XML, 방금 발행 slug 의 공개 URL 포함.
+        mvc.perform(get("/sitemap.xml"))
+            .andExpect(status().isOk)
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_XML))
+            .andExpect(content().string(containsString("<urlset")))
+            .andExpect(content().string(containsString("/p/$slug</loc>")))
+
+        // robots.txt: sitemap 위치를 가리키고 공개 페이지 크롤 허용.
+        mvc.perform(get("/robots.txt"))
+            .andExpect(status().isOk)
+            .andExpect(content().string(containsString("Sitemap:")))
+            .andExpect(content().string(containsString("/sitemap.xml")))
+            .andExpect(content().string(containsString("Allow: /p/")))
     }
 }

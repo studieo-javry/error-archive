@@ -114,4 +114,6 @@ configure<AllOpenExtension> {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  // 테스트별 Spring 컨텍스트가 캐시에 쌓여 기본 512m 로는 힙이 모자람
+  maxHeapSize = "1g"
 }

@@ -58,6 +58,7 @@ class GithubPullRequestEntity(
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "ci_failed_names", columnDefinition = "jsonb") var ciFailedNames: String?,
     @Column(name = "ci_completed_at") var ciCompletedAt: Instant?,
+    @Column(name = "merge_commit_sha", length = 40) var mergeCommitSha: String?,
 )
 
 data class GithubPrIssueRefKey(

@@ -18,7 +18,11 @@ import java.time.Instant
 
 interface GithubIssueJpaRepository : JpaRepository<GithubIssueEntity, GithubItemKey>
 
-interface GithubPullRequestJpaRepository : JpaRepository<GithubPullRequestEntity, GithubItemKey>
+interface GithubPullRequestJpaRepository : JpaRepository<GithubPullRequestEntity, GithubItemKey> {
+    /** 이 커밋이 head 또는 머지 커밋인 PR — ix_github_pr_head / ix_github_pr_merge_commit. */
+    @Query("SELECT p FROM GithubPullRequestEntity p WHERE p.repoId = :repoId AND (p.headSha = :sha OR p.mergeCommitSha = :sha)")
+    fun findAllByCommit(@Param("repoId") repoId: Long, @Param("sha") sha: String): List<GithubPullRequestEntity>
+}
 
 interface GithubPrIssueRefJpaRepository : JpaRepository<GithubPrIssueRefEntity, GithubPrIssueRefKey> {
     fun findAllByPrRepoIdAndPrNumber(prRepoId: Long, prNumber: Int): List<GithubPrIssueRefEntity>
@@ -31,6 +35,7 @@ interface CaseGithubLinkJpaRepository : JpaRepository<CaseGithubLinkEntity, Long
     fun findAllByCaseIdOrderByLinkedAt(caseId: Long): List<CaseGithubLinkEntity>
     fun findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind: String, repoId: Long, number: Int): List<CaseGithubLinkEntity>
     fun existsByKindAndRepoIdAndNumber(kind: String, repoId: Long, number: Int): Boolean
+    fun existsByKindAndRepoIdAndDetachedAtIsNull(kind: String, repoId: Long): Boolean
 
     @Modifying
     @Query("DELETE FROM CaseGithubLinkEntity l WHERE l.caseId = :caseId")
@@ -93,13 +98,15 @@ interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Lo
         @Param("data") data: String?, @Param("dedupeKey") dedupeKey: String, @Param("createdAt") createdAt: Instant,
     ): Int
 
-    /** 같은 키면 최신 내용으로 덮어씀 — 커밋 단위 CI 집계용. */
+    /** 같은 키면 최신 내용으로 덮어씀 — 커밋 단위 CI 집계용. 내용이 같으면 손대지 않음(0 — 리비전도 그대로). */
     @Modifying
     @Query(
         value = """
         INSERT INTO case_github_event (case_id, type, kind, repo_id, number, occurred_at, data, dedupe_key, created_at)
         VALUES (:caseId, :type, :kind, :repoId, :number, :occurredAt, CAST(:data AS jsonb), :dedupeKey, :createdAt)
         ON CONFLICT (case_id, dedupe_key) DO UPDATE SET data = EXCLUDED.data, occurred_at = EXCLUDED.occurred_at
+         WHERE case_github_event.data IS DISTINCT FROM EXCLUDED.data
+            OR case_github_event.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
         """,
         nativeQuery = true,
     )
@@ -108,4 +115,22 @@ interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Lo
         @Param("repoId") repoId: Long, @Param("number") number: Int, @Param("occurredAt") occurredAt: Instant,
         @Param("data") data: String?, @Param("dedupeKey") dedupeKey: String, @Param("createdAt") createdAt: Instant,
     ): Int
+
+    // ── 활동 리비전(case_github_activity_revision — 엔티티 없이 이 저장소에서 다룸) ──
+    @Modifying
+    @Query(
+        value = """
+        INSERT INTO case_github_activity_revision (case_id, revision, updated_at) VALUES (:caseId, 1, :now)
+        ON CONFLICT (case_id) DO UPDATE SET revision = case_github_activity_revision.revision + 1, updated_at = EXCLUDED.updated_at
+        """,
+        nativeQuery = true,
+    )
+    fun bumpRevision(@Param("caseId") caseId: Long, @Param("now") now: Instant): Int
+
+    @Query(value = "SELECT revision FROM case_github_activity_revision WHERE case_id = :caseId", nativeQuery = true)
+    fun findRevision(@Param("caseId") caseId: Long): Long?
+
+    @Modifying
+    @Query(value = "DELETE FROM case_github_activity_revision WHERE case_id = :caseId", nativeQuery = true)
+    fun deleteRevision(@Param("caseId") caseId: Long): Int
 }

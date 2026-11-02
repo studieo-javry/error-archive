@@ -68,6 +68,9 @@ class GithubEvidenceRepositoryAdapter(
         if (refs.isEmpty()) emptyList()
         else pullRequests.findAllById(refs.map { GithubItemKey(it.repoId, it.number) }).map { it.toDomain() }
 
+    override fun findPullRequestsByCommit(repoId: Long, sha: String): List<GithubPullRequestSnapshot> =
+        pullRequests.findAllByCommit(repoId, sha).map { it.toDomain() }
+
     override fun savePullRequest(pr: GithubPullRequestSnapshot) {
         val ci = pr.ci
         pullRequests.save(
@@ -77,6 +80,7 @@ class GithubEvidenceRepositoryAdapter(
                 pr.createdAtGh, pr.mergedAtGh, pr.closedAtGh, pr.sourceUpdatedAt,
                 ci?.sha, ci?.conclusion?.name, ci?.total, ci?.passed,
                 ci?.let { objectMapper.writeValueAsString(it.failedNames) }, ci?.completedAt,
+                pr.mergeCommitSha,
             ),
         )
     }
@@ -120,6 +124,9 @@ class GithubEvidenceRepositoryAdapter(
     override fun hasAnyLink(kind: GithubRefKind, ref: GithubItemRef): Boolean =
         links.existsByKindAndRepoIdAndNumber(kind.name, ref.repoId, ref.number)
 
+    override fun hasActivePullRequestLinkInRepo(repoId: Long): Boolean =
+        links.existsByKindAndRepoIdAndDetachedAtIsNull(GithubRefKind.PULL_REQUEST.name, repoId)
+
     override fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long> =
         links.findAllByKindAndRepoIdAndNumberAndDetachedAtIsNull(kind.name, ref.repoId, ref.number).map { it.caseId }
 
@@ -143,12 +150,16 @@ class GithubEvidenceRepositoryAdapter(
     override fun recordEvent(event: CaseGithubEvent) {
         val data = if (event.data.isEmpty()) null else objectMapper.writeValueAsString(event.data)
         val now = Instant.now()
-        if (event.replaceable) {
+        val changed = if (event.replaceable) {
             events.upsert(event.caseId, event.type.name, event.kind.name, event.repoId, event.number, event.occurredAt, data, event.dedupeKey, now)
         } else {
             events.insertIfAbsent(event.caseId, event.type.name, event.kind.name, event.repoId, event.number, event.occurredAt, data, event.dedupeKey, now)
         }
+        // 새 줄이 생겼거나 내용이 바뀐 경우에만 — 같은 사건을 다시 기록(dedupe)하면 그대로
+        if (changed > 0) events.bumpRevision(event.caseId, now)
     }
+
+    override fun activityRevision(caseId: Long): Long = events.findRevision(caseId) ?: 0L
 
     override fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent> =
         (before?.let { events.findOlderThan(caseId, it.occurredAt, it.id, Limit.of(limit)) }
@@ -193,6 +204,7 @@ class GithubEvidenceRepositoryAdapter(
     override fun deleteAllByCaseId(caseId: Long) {
         stepLinks.deleteAllByCaseId(caseId)
         events.deleteAllByCaseId(caseId)
+        events.deleteRevision(caseId)
         links.deleteAllByCaseId(caseId)
     }
 
@@ -204,6 +216,7 @@ class GithubEvidenceRepositoryAdapter(
     private fun GithubPullRequestEntity.toDomain() = GithubPullRequestSnapshot(
         repoId, number, title, url, state, isDraft, authorLogin, headSha, baseRef, additions, deletions, changedFiles,
         createdAtGh, mergedAtGh, closedAtGh, sourceUpdatedAt,
+        mergeCommitSha = mergeCommitSha,
         ci = ciHeadSha?.let { sha ->
             CiSummary(
                 sha = sha,

@@ -20,6 +20,9 @@ interface GithubEvidenceRepositoryPort {
     fun findPullRequests(refs: Collection<GithubItemRef>): List<GithubPullRequestSnapshot>
     fun savePullRequest(pr: GithubPullRequestSnapshot)
 
+    /** 이 커밋이 head 또는 머지 커밋인 PR 들(check_suite 웹훅이 PR 을 찾을 때). */
+    fun findPullRequestsByCommit(repoId: Long, sha: String): List<GithubPullRequestSnapshot>
+
     /** 이 PR 이 닫는 Issue 목록을 [source] 출처분만 통째로 교체. */
     fun replaceClosingRefs(pr: GithubItemRef, issues: Collection<GithubItemRef>, source: ClosingRefSource)
 
@@ -42,12 +45,21 @@ interface GithubEvidenceRepositoryPort {
     /** 어떤 Case 에든 연결된 적이 있나(뗀 것 포함) — 웹훅 사전 필터용. */
     fun hasAnyLink(kind: GithubRefKind, ref: GithubItemRef): Boolean
 
+    /** 이 레포의 PR 이 어떤 Case 에든 붙어 있나 — check_suite 웹훅 사전 필터(GitHub 를 부르기 전에). */
+    fun hasActivePullRequestLinkInRepo(repoId: Long): Boolean
+
     /** 이 Issue/PR 이 붙어 있는(떼지 않은) Case id 들. */
     fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>
     fun saveLink(link: CaseGithubLink): CaseGithubLink
 
-    /** 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀. */
+    /**
+     * 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀.
+     * 줄이 새로 생기거나 내용이 바뀌면 그 Case 의 활동 리비전을 +1.
+     */
     fun recordEvent(event: CaseGithubEvent)
+
+    /** Case 의 GitHub 활동 리비전 — 활동이 생기거나 바뀔 때마다 오른다. 기록이 없으면 0. */
+    fun activityRevision(caseId: Long): Long
 
     /** 타임라인 한 쪽 — 최신순(occurredAt↓, id↓). [before] 가 있으면 그보다 오래된 것만. */
     fun findEventsBefore(caseId: Long, before: GithubEventCursor?, limit: Int): List<CaseGithubEvent>

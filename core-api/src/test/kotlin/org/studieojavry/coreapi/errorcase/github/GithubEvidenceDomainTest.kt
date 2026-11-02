@@ -78,6 +78,25 @@ class GithubEvidenceDomainTest {
     }
 
     @Test
+    fun `머지 후 CI - head 검사가 없을 때만 머지 커밋 검사를 받고, head 검사가 오면 그걸로 바꿈`() {
+        val t1 = Instant.parse("2026-10-28T01:00:00Z")
+        val pr = GithubPullRequestSnapshot(
+            1, 100, "fix", "u", "MERGED", false, "jin", "head-1", "alpha", 1, 1, 1, t1, t1, t1, t1,
+            mergeCommitSha = "merge-1",
+        )
+        assertTrue(pr.recordCi(CiSummary("merge-1", CiConclusion.SUCCESS, 4, 4, emptyList(), t1)))
+        assertTrue(pr.isMergeCi)
+        assertFalse(pr.isCiStale, "머지 후 CI 는 '새 커밋 대기 중'이 아님")
+
+        assertTrue(pr.recordCi(CiSummary("head-1", CiConclusion.FAILURE, 1, 0, listOf("it"), t1)))
+        assertFalse(pr.isMergeCi)
+        assertFalse(pr.recordCi(CiSummary("merge-1", CiConclusion.SUCCESS, 4, 4, emptyList(), t1)), "head 검사가 있으면 머지 커밋 것으로 덮지 않음")
+        assertEquals("head-1", pr.ci?.sha)
+        assertFalse(pr.recordCi(CiSummary("other", CiConclusion.SUCCESS, 1, 1, emptyList(), t1)))
+        assertTrue(pr.ownsCommit("merge-1") && pr.ownsCommit("head-1") && !pr.ownsCommit("other"))
+    }
+
+    @Test
     fun `Step 꼬리표 맞추기 - 가려진 근거는 요청과 무관하게 지금 상태 유지, 응답엔 보이는 것만`() {
         val r = org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase.nextLinks(
             wanted = listOf(1L, 3L), hidden = setOf(2L, 3L), current = listOf(2L, 4L),

@@ -11,8 +11,6 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidence
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink.LinkSource
-import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
-import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
@@ -35,6 +33,7 @@ class IssuePullRequestBackfiller(
     private val evidence: GithubEvidenceRepositoryPort,
     private val recorder: GithubEvidenceRecorder,
     private val scopeGuard: GithubScopeGuard,
+    private val ciFetcher: PullRequestCiFetcher,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = KotlinLogging.logger {}
@@ -139,7 +138,7 @@ class IssuePullRequestBackfiller(
             return Outcome.None
         }
 
-        val ci = fetchCi(installation.installationId, owner, name, item.snapshot)
+        val ci = ciFetcher.fetch(installation.installationId, owner, name, item.snapshot)
         val created = tx.execute {
             val now = Instant.now()
             val pr = recorder.savePullRequest(item, ci)
@@ -151,12 +150,6 @@ class IssuePullRequestBackfiller(
         if (!created) return Outcome.None
         val snapshot = item.snapshot
         return Outcome.Attached(AttachedPullRequest(repo.fullName, snapshot.number, snapshot.title, snapshot.state))
-    }
-
-    private fun fetchCi(installationId: Long, owner: String, name: String, pr: GithubPullRequestSnapshot): CiSummary? {
-        if (pr.headSha.isBlank()) return null
-        return runCatching { CiSummary.of(pr.headSha, githubApi.fetchCommitCheckRuns(installationId, owner, name, pr.headSha)) }
-            .getOrNull()
     }
 
     companion object {

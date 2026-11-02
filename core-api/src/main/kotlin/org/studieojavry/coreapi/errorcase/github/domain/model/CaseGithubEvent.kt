@@ -29,6 +29,9 @@ class CaseGithubEvent(
         CI_COMPLETED, REF_REMOVED, LINK_DETACHED,
     }
 
+    /** CI 를 돌린 커밋 — PR head 커밋인가, 머지 커밋인가. */
+    enum class CiSource { HEAD, MERGE }
+
     companion object {
         private fun ref(repoId: Long, number: Int) = "$repoId#$number"
 
@@ -57,6 +60,11 @@ class CaseGithubEvent(
         fun issueClosed(caseId: Long, issue: GithubIssueSnapshot) = CaseGithubEvent(
             caseId, Type.ISSUE_CLOSED, GithubRefKind.ISSUE, issue.repoId, issue.number, issue.closedAtGh ?: issue.sourceUpdatedAt,
             emptyMap(), "ISSUE_CLOSED:${ref(issue.repoId, issue.number)}@${(issue.closedAtGh ?: issue.sourceUpdatedAt).toEpochMilli()}",
+        )
+
+        fun issueReopened(caseId: Long, issue: GithubIssueSnapshot, at: Instant) = CaseGithubEvent(
+            caseId, Type.ISSUE_REOPENED, GithubRefKind.ISSUE, issue.repoId, issue.number, at,
+            emptyMap(), "ISSUE_REOPENED:${ref(issue.repoId, issue.number)}@${at.toEpochMilli()}",
         )
 
         fun prOpened(caseId: Long, pr: GithubPullRequestSnapshot) = CaseGithubEvent(
@@ -89,11 +97,15 @@ class CaseGithubEvent(
             "REF_REMOVED:${ref(pr.repoId, pr.number)}>${ref(issue.repoId, issue.number)}@${at.toEpochMilli()}",
         )
 
-        fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant) = CaseGithubEvent(
+        /**
+         * 최종 결과(통과/실패)만 — 진행 중(PENDING)은 타임라인에 남기지 않는다(카드 요약에만). 호출 쪽이 거른다.
+         * [source] HEAD = PR head 커밋 CI, MERGE = 머지 커밋 CI("머지 후 CI").
+         */
+        fun ciCompleted(caseId: Long, repoId: Long, prNumber: Int, ci: CiSummary, at: Instant, source: CiSource = CiSource.HEAD) = CaseGithubEvent(
             caseId, Type.CI_COMPLETED, GithubRefKind.PULL_REQUEST, repoId, prNumber, ci.completedAt ?: at,
             mapOf(
                 "sha" to ci.sha, "conclusion" to ci.conclusion.name, "total" to ci.total,
-                "passed" to ci.passed, "failed" to ci.failedNames,
+                "passed" to ci.passed, "failed" to ci.failedNames, "source" to source.name,
             ),
             "CI:$repoId:$prNumber:${ci.sha}",
             replaceable = true,

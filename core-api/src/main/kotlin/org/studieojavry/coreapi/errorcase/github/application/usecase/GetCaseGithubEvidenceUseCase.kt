@@ -8,6 +8,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotF
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
+import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
@@ -144,7 +145,13 @@ class GetCaseGithubEvidenceUseCase(
         // 이 PR 이 지금 닫는 Issue(GitHub 판정 + 비기본 브랜치 키워드). 경유 Issue 가 여기 없으면 "더 이상 닫지 않음".
         closesIssues = closes.filter { visible(it.repoId) }.map { ClosingIssueView(repos[it.repoId]?.fullName, it.number, it in issueLinkRefs) },
         diff = DiffView(pr.additions, pr.deletions, pr.changedFiles),
-        ci = pr.ci?.let { CiView(it.conclusion, it.passed, it.total, it.failedNames, "${pr.url}/checks", pr.isCiStale) },
+        ci = pr.ci?.let {
+            CiView(
+                it.conclusion, it.passed, it.total, it.failedNames, "${pr.url}/checks", pr.isCiStale,
+                source = if (pr.isMergeCi) CaseGithubEvent.CiSource.MERGE else CaseGithubEvent.CiSource.HEAD,
+                sha = it.sha,
+            )
+        },
     )
 
 
@@ -201,5 +208,9 @@ class GetCaseGithubEvidenceUseCase(
         val url: String,
         /** 최신 CI 가 지금 head 커밋 것이 아님 — 새 커밋의 CI 대기 중. */
         val stale: Boolean,
+        /** HEAD = PR head 커밋 검사, MERGE = head 에 검사가 없어 머지 커밋 검사를 대신 보여 줌("머지 후 CI"). */
+        val source: CaseGithubEvent.CiSource,
+        /** 검사한 커밋 sha. */
+        val sha: String,
     )
 }

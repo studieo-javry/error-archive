@@ -144,7 +144,11 @@ data class GithubEvidenceItemResponse(
     )
     val closesIssues: List<GetCaseGithubEvidenceUseCase.ClosingIssueView>?,
     val diff: GetCaseGithubEvidenceUseCase.DiffView?,
-    @field:Schema(description = "PR 최신 head 커밋의 CI 요약. stale=true 면 새 커밋 CI 대기 중") val ci: GetCaseGithubEvidenceUseCase.CiView?,
+    @field:Schema(
+        description = "PR CI 요약(status SUCCESS|FAILURE|PENDING). head 커밋 검사가 우선이고, head 에 검사가 없는 머지된 PR 은 " +
+            "머지 커밋 검사(source=MERGE, \"머지 후 CI\" — 빌드·배포 단계가 섞일 수 있음). stale=true 면 새 커밋 CI 대기 중. sha 는 검사한 커밋",
+    )
+    val ci: GetCaseGithubEvidenceUseCase.CiView?,
     @field:Schema(
         description = "이 근거가 꼬리표로 붙은 Step id(빈 배열 = Case 전체 근거). 가려진 항목에도 내려간다. " +
             "Solution 의 근거는 Solution 의 stepIds 와 이 값을 맞춰 FE 가 계산한다.",
@@ -174,10 +178,16 @@ data class GithubActivityResponse(
     val hasNext: Boolean,
     @field:Schema(description = "이 Case 의 GitHub 활동 전체 건수. 가려진 줄도 masked 로 내려가므로 넘겨볼 수 있는 줄 수와 같다. 빠진 줄 단서(끝까지 받은 고유 id 수와 비교)일 뿐 내용 변경은 알려주지 않음", example = "124")
     val totalCount: Long,
+    @field:Schema(
+        description = "이 Case 의 GitHub 활동 리비전 — 활동 줄이 생기거나 내용이 바뀔(CI 결과 갱신 등) 때마다 오른다. " +
+            "쪽을 이어 받는 도중 값이 처음 받은 값과 달라지면 처음부터 다시 받는다. 기록이 없으면 0",
+        example = "37",
+    )
+    val revision: Long,
 ) {
     companion object {
         fun of(p: GithubActivityReader.ActivityPage) = GithubActivityResponse(
-            p.events.map(GithubEvidenceEventResponse::of), p.nextCursor, p.nextCursor != null, p.totalCount,
+            p.events.map(GithubEvidenceEventResponse::of), p.nextCursor, p.nextCursor != null, p.totalCount, p.revision,
         )
     }
 }
@@ -195,7 +205,8 @@ data class GithubEvidenceEventResponse(
     val masked: Boolean,
     @field:Schema(description = "함께 가리키는 Issue — PR_LINKED(그 Issue 를 닫는 PR 이라 자동 연결)·REF_REMOVED(그 Issue 를 더 이상 닫지 않음). 가려지면 없음")
     val issue: GetCaseGithubEvidenceUseCase.RefView?,
-    @field:Schema(description = "종류별 부가 정보. CI_COMPLETED: sha·conclusion·total·passed·failed (가려지면 conclusion 만)")
+    @field:Schema(description = "종류별 부가 정보. CI_COMPLETED: sha·conclusion(SUCCESS|FAILURE — 진행 중은 기록하지 않음)·total·passed·failed·" +
+            "source(HEAD=PR 커밋 검사, MERGE=머지 커밋 검사 \"머지 후 CI\") (가려지면 conclusion·source 만)")
     val data: Map<String, Any?>,
 ) {
     companion object {

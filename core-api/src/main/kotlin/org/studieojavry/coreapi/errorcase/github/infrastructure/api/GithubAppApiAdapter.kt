@@ -140,6 +140,17 @@ class GithubAppApiAdapter(
                 .map { CiSummary.Run(it.name, it.status, it.conclusion, it.completedAt) }
         }
 
+    override fun listPullRequestNumbersForCommit(installationId: Long, owner: String, name: String, sha: String): List<Int> =
+        call("listPullRequestsForCommit") {
+            val token = installationToken(installationId)
+            api.get().uri("/repos/{o}/{r}/commits/{sha}/pulls?per_page={n}", owner, name, sha, PAGE_SIZE)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+                .retrieve()
+                .body(Array<CommitPullResponse>::class.java)
+                .orEmpty()
+                .map { it.number }
+        }
+
     override fun searchItems(
         installationId: Long,
         repoFullNames: List<String>,
@@ -204,9 +215,10 @@ class GithubAppApiAdapter(
             try {
                 block()
             } catch (ex: RestClientResponseException) {
-                val client = ex.statusCode.is4xxClientError
-                log.warn { "github api $op failed: status=${ex.statusCode}" }
-                throw GithubApiException("GitHub API $op 실패: ${ex.statusCode}", clientError = client, cause = ex)
+                val retryAfter = rateLimitRetryAfter(ex)
+                val client = ex.statusCode.is4xxClientError && retryAfter == null
+                log.warn { "github api $op failed: status=${ex.statusCode} retryAfter=$retryAfter" }
+                throw GithubApiException("GitHub API $op 실패: ${ex.statusCode}", clientError = client, cause = ex, retryAfter = retryAfter)
             }
         },
         { throwable ->
@@ -215,6 +227,22 @@ class GithubAppApiAdapter(
                 ?: GithubApiException("GitHub API $op 사용 불가", cause = throwable)
         },
     )
+
+    /**
+     * 호출 한도 초과면 기다릴 시간, 아니면 null. GitHub 는 429 또는 403 으로 알린다 —
+     * 2차 한도는 `Retry-After`(초), 1차 한도는 `x-ratelimit-remaining: 0` + `x-ratelimit-reset`(epoch 초).
+     */
+    private fun rateLimitRetryAfter(ex: RestClientResponseException): Duration? {
+        val code = ex.statusCode.value()
+        if (code != 403 && code != 429) return null
+        val headers = ex.responseHeaders ?: return if (code == 429) DEFAULT_RATE_LIMIT_WAIT else null
+        headers.getFirst("Retry-After")?.toLongOrNull()?.let { return Duration.ofSeconds(it) }
+        if (headers.getFirst("x-ratelimit-remaining") == "0") {
+            val reset = headers.getFirst("x-ratelimit-reset")?.toLongOrNull()?.let(Instant::ofEpochSecond)
+            return reset?.let { Duration.between(Instant.now(), it) }?.takeIf { !it.isNegative } ?: DEFAULT_RATE_LIMIT_WAIT
+        }
+        return if (code == 429) DEFAULT_RATE_LIMIT_WAIT else null
+    }
 
     private data class CachedToken(val value: String, val expiresAt: Instant)
 
@@ -267,6 +295,9 @@ class GithubAppApiAdapter(
     private data class GraphqlName(val name: String? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class GraphqlOid(val oid: String? = null)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private data class GraphqlLogin(val login: String? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -295,6 +326,7 @@ class GithubAppApiAdapter(
         val isDraft: Boolean? = null,
         val mergedAt: Instant? = null,
         val headRefOid: String? = null,
+        val mergeCommit: GraphqlOid? = null,
         val baseRefName: String? = null,
         val additions: Int? = null,
         val deletions: Int? = null,
@@ -309,6 +341,7 @@ class GithubAppApiAdapter(
                     repo.databaseId, number, title, url, state, isDraft ?: false, author?.login,
                     headRefOid.orEmpty(), baseRefName, additions, deletions, changedFiles,
                     createdAt, mergedAt, closedAt, updatedAt,
+                    mergeCommitSha = mergeCommit?.oid,
                 ),
                 body = body,
                 defaultBranch = repo.defaultBranchRef?.name,
@@ -405,6 +438,9 @@ class GithubAppApiAdapter(
     )
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class CommitPullResponse(val number: Int)
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private data class CheckRunsResponse(@JsonProperty("check_runs") val checkRuns: List<CheckRun> = emptyList())
 
     companion object {
@@ -430,6 +466,7 @@ class GithubAppApiAdapter(
                     number title url state body createdAt updatedAt closedAt mergedAt isDraft
                     author { login }
                     headRefOid baseRefName additions deletions changedFiles
+                    mergeCommit { oid }
                     closingIssuesReferences(first: 20) { nodes { number repository { databaseId } } }
                   }
                 }
@@ -477,5 +514,6 @@ class GithubAppApiAdapter(
         private const val PAGE_SIZE = 100
         private const val MAX_PAGES = 10
         private val REFRESH_MARGIN: Duration = Duration.ofMinutes(5)
+        private val DEFAULT_RATE_LIMIT_WAIT: Duration = Duration.ofMinutes(1)
     }
 }

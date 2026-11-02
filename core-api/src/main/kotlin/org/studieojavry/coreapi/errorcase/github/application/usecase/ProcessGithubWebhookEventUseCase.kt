@@ -13,12 +13,14 @@ import java.time.Instant
 /**
  * inbox 에 쌓인 웹훅 1건 처리 — 호출자(inbox 처리기)의 트랜잭션 안에서 실행된다.
  *
- * 설치/레포 동기화(P0) + PR 자동 부착(P1-c).
+ * 설치/레포 동기화(P0) + PR 자동 부착(P1-c) + CI·Issue 상태(P1-d).
  *  - `installation`            : deleted / suspend / unsuspend → 설치 상태
  *  - `installation_repositories`: added / removed → 설치 대상 레포
  *  - `repository`              : renamed / transferred / privatized / publicized / deleted → 레포 메타(is_private 가 노출 정책 기준)
  *  - `pull_request`            : [PullRequestWebhookHandler] — 닫는 PR 자동 부착·상태 기록 (P1-c)
- *  - `ping` 및 그 외(issues / check_suite 는 P1-d) → SKIPPED
+ *  - `check_suite`             : [CheckSuiteWebhookHandler] — 커밋 CI 결과(머지 커밋 포함) → PR CI 요약·타임라인 (P1-d)
+ *  - `issues`                  : [IssueWebhookHandler] — 붙은 Issue 스냅샷·닫힘/다시 열림 (P1-d)
+ *  - `ping` 및 그 외 → SKIPPED
  *
  * 우리 쪽에 연결되지 않은 설치의 이벤트는 SKIPPED — 연결은 반드시 [CompleteGithubInstallationUseCase] 로만.
  */
@@ -28,6 +30,8 @@ class ProcessGithubWebhookEventUseCase(
     private val repository: GithubInstallationRepositoryPort,
     private val objectMapper: ObjectMapper,
     private val pullRequests: PullRequestWebhookHandler,
+    private val checkSuites: CheckSuiteWebhookHandler,
+    private val issues: IssueWebhookHandler,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -40,6 +44,8 @@ class ProcessGithubWebhookEventUseCase(
             "installation_repositories" -> onInstallationRepositories(action, installationId, root)
             "repository" -> onRepository(action, installationId, root)
             "pull_request" -> if (pullRequests.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
+            "check_suite" -> if (checkSuites.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
+            "issues" -> if (issues.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
             else -> Result.SKIPPED
         }
     }

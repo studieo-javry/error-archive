@@ -70,6 +70,12 @@ class GithubWebhookInboxEntity(
         nextRetryAt = Instant.now().plus(backoff)
     }
 
+    /** 시도 횟수를 쓰지 않고 [wait] 뒤로 미룸 — 실패가 아닌 일시 사유(GitHub 호출 한도). */
+    fun defer(reason: String, wait: Duration) {
+        lastError = reason.take(2000)
+        nextRetryAt = Instant.now().plus(wait)
+    }
+
     fun markFailed(error: String) {
         attempts += 1
         lastError = error.take(2000)

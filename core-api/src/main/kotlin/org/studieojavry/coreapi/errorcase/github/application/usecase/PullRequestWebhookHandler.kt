@@ -27,7 +27,9 @@ import java.time.Instant
  * 5. 닫는 Issue 가 붙은 Case 마다 VIA_ISSUE 로 부착 — 범위 불일치·"관련 없음"으로 뗀 PR 은 건너뜀
  * 6. 장부에서 빠진 Issue 경유로 붙어 있던 Case 에 REF_REMOVED(연결은 유지)
  * 7. 붙어 있는 모든 Case 에 상태 기록(열림·머지·닫힘·다시 열림). 새 커밋(synchronize)은 head sha 만 갱신(옛 CI 는 stale 로 보임),
- *    머지되면 머지 커밋 sha 도 저장. CI 는 여기서 조회하지 않는다 — check_suite 웹훅([CheckSuiteWebhookHandler])이 채운다
+ *    머지되면 머지 커밋 sha 도 저장. CI 는 원칙적으로 check_suite 웹훅([CheckSuiteWebhookHandler])이 채운다 —
+ *    단, 이번에 **새로 붙인** PR 인데 CI 를 한 번도 본 적 없으면 그 자리에서 한 번 조회한다(카드가 "CI 정보 없음"으로 남지 않게).
+ *    진행 중이면 카드에만 보이고 타임라인은 최종 결과만(진행 중은 [GithubEvidenceRecorder.ciEvent] 가 거른다)
  *
  * inbox 처리기의 건별 트랜잭션 안에서 실행된다(처리 + DONE 표시를 함께 커밋). GitHub 조회 실패는 예외로 올려 inbox 재시도에 맡긴다.
  */
@@ -40,6 +42,7 @@ class PullRequestWebhookHandler(
     private val recorder: GithubEvidenceRecorder,
     private val scopeGuard: GithubScopeGuard,
     private val errorCases: ErrorCaseRepositoryPort,
+    private val ciFetcher: PullRequestCiFetcher,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -87,6 +90,10 @@ class PullRequestWebhookHandler(
                 )
                 if (outcome.created) attached++
             }
+        }
+        if (attached > 0 && pr.ci == null) {
+            ciFetcher.fetch(installation.installationId, owner, name, pr)
+                ?.let { if (pr.recordCi(it)) evidence.savePullRequest(pr) }
         }
 
         val removed = ledgerBefore - closing

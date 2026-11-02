@@ -32,6 +32,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxJpaRepository
@@ -153,6 +154,18 @@ class GithubPullRequestWebhookIntegrationTest {
         Mockito.`when`(githubApi.fetchItem(s.installationId, owner, name, number)).thenReturn(item)
     }
 
+    private fun stubRuns(s: Seeded, sha: String, vararg runs: Pair<String, String?>) {
+        val (owner, name) = s.fullName.split('/')
+        Mockito.`when`(githubApi.fetchCommitCheckRuns(s.installationId, owner, name, sha)).thenReturn(
+            runs.map { (n, c) -> CiSummary.Run(n, if (c == null) "in_progress" else "completed", c, if (c == null) null else t0.plusSeconds(5400)) },
+        )
+    }
+
+    private fun verifyRunsFetched(s: Seeded, sha: String, times: Int) {
+        val (owner, name) = s.fullName.split('/')
+        Mockito.verify(githubApi, Mockito.times(times)).fetchCommitCheckRuns(s.installationId, owner, name, sha)
+    }
+
     private fun link(uid: Long, caseId: Long, url: String) = mvc.perform(
         post("/api/v1/error-cases/$caseId/github/links").with(asUser(uid))
             .contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(mapOf("url" to url))),
@@ -218,6 +231,47 @@ class GithubPullRequestWebhookIntegrationTest {
         assertTrue(Type.PR_MERGED in types)
         assertEquals(1, types.count { it == Type.PR_LINKED }, "두 번째 웹훅에서 다시 붙지 않음")
         assertEquals(1, types.count { it == Type.PR_OPENED }, "열림은 한 줄")
+    }
+
+    @Test
+    fun `새로 자동 부착된 PR - CI 를 한 번 조회해 카드에 진행 중으로 보이고, 타임라인에는 남기지 않음`() {
+        val me = 308L
+        val s = seedRepo(me)
+        val caseId = caseWithIssue(me, s, 190)
+        val issue = GithubItemRef(s.repoId, 190)
+        stubItem(s, 570, prItem(s, 570, closes = listOf(issue), body = "Fixes #190"))
+        stubRuns(s, "sha-570", "build" to "success", "test" to null)
+
+        assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 570, body = "Fixes #190"))
+
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.status").value("PENDING"))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.sha").value("sha-570"))
+        assertTrue(Type.CI_COMPLETED !in eventTypes(caseId), "진행 중은 타임라인에 남지 않음")
+
+        assertEquals(InboxStatus.DONE, prWebhook(s, "edited", 570, body = "Fixes #190"))
+        verifyRunsFetched(s, "sha-570", times = 1)
+    }
+
+    @Test
+    fun `새로 자동 부착된 PR - CI 가 이미 끝났으면 카드와 타임라인에 결과, 이미 붙은 PR 의 웹훅은 다시 조회하지 않음`() {
+        val me = 309L
+        val s = seedRepo(me)
+        val caseId = caseWithIssue(me, s, 191)
+        val issue = GithubItemRef(s.repoId, 191)
+        stubItem(s, 571, prItem(s, 571, closes = listOf(issue), body = "Fixes #191"))
+        stubRuns(s, "sha-571", "build" to "success", "test" to "success")
+
+        assertEquals(InboxStatus.DONE, prWebhook(s, "opened", 571, body = "Fixes #191"))
+
+        evidence(me, caseId)
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.status").value("SUCCESS"))
+            .andExpect(jsonPath("$.issues[0].pullRequests[0].ci.passed").value(2))
+        assertEquals(1, eventTypes(caseId).count { it == Type.CI_COMPLETED })
+
+        assertEquals(InboxStatus.DONE, prWebhook(s, "edited", 571, body = "Fixes #191"))
+        verifyRunsFetched(s, "sha-571", times = 1)
+        assertEquals(1, eventTypes(caseId).count { it == Type.CI_COMPLETED })
     }
 
     @Test

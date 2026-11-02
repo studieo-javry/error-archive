@@ -126,3 +126,15 @@ class CaseGithubEventEntity(
     @Column(name = "dedupe_key", nullable = false, length = 160) var dedupeKey: String,
     @Column(name = "created_at", nullable = false) var createdAt: Instant,
 )
+
+/**
+ * Case 별 GitHub 활동 리비전(V11). 값은 저장소의 네이티브 쿼리로만 다룬다(ON CONFLICT 로 +1).
+ * 엔티티는 Flyway 를 끄는 테스트(H2 create-drop)에도 테이블이 생기게 하려고 둔다.
+ */
+@Entity
+@Table(name = "case_github_activity_revision")
+class CaseGithubActivityRevisionEntity(
+    @Id @Column(name = "case_id") var caseId: Long,
+    @Column(name = "revision", nullable = false) var revision: Long,
+    @Column(name = "updated_at", nullable = false) var updatedAt: Instant,
+)

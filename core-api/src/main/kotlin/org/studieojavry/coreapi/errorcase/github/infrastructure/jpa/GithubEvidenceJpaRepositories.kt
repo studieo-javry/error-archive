@@ -116,7 +116,7 @@ interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Lo
         @Param("data") data: String?, @Param("dedupeKey") dedupeKey: String, @Param("createdAt") createdAt: Instant,
     ): Int
 
-    // ── 활동 리비전(case_github_activity_revision — 엔티티 없이 이 저장소에서 다룸) ──
+    // ── 활동 리비전(case_github_activity_revision — 값은 이 저장소의 네이티브 쿼리로만 다룸) ──
     @Modifying
     @Query(
         value = """

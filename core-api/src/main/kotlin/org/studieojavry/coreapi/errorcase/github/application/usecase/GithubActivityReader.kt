@@ -20,7 +20,9 @@ import java.time.Instant
  *  - 이미 지나간 구간에 늦게 기록된 과거 이벤트(예: Issue 연결 때 소급 저장된 PR 열림)는 이어 받는 커서로는 안 나오고,
  *    첫 쪽 재조회에서도 20건 밖이면 안 보인다.
  *  - CI 집계 upsert 가 occurredAt 을 옮기면 같은 id 가 다시 나오거나(FE 는 id 로 합침) 아직 안 받은 구간에서 빠질 수 있다.
- *  단서는 totalCount 와 받은 고유 id 수의 차이 — FE 는 이를 보고 처음부터 다시 받는다. 동작은 GithubActivityCursorIntegrationTest 에 기록.
+ *  - 이미 받은 줄의 내용·시각이 바뀐 것(CI upsert — id·건수 그대로)은 건수로는 알 수 없다. 첫 쪽 재조회 범위 안이면 id 로 합치며 갱신된다.
+ *  빠진 줄의 단서는 **끝까지 받은 뒤** 고유 id 수 < totalCount 일 때뿐(넘기는 도중엔 모름) — 그때 FE 가 처음부터 다시 받아야 한다.
+ *  바뀐 줄까지 알아내려면 Case 별 활동 리비전이 필요(후속, P1-d 와 함께). 동작은 GithubActivityCursorIntegrationTest 에 기록.
  */
 @Component
 @ConditionalOnGithubEnabled

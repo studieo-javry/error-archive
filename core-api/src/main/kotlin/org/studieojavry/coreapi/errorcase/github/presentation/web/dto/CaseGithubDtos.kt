@@ -172,7 +172,7 @@ data class GithubActivityResponse(
     @field:Schema(description = "더 오래된 활동을 받을 커서. 없으면(null) 마지막 쪽", example = "MjAyNi0xMC0yMFQwMTowMDowMFp8NDI")
     val nextCursor: String?,
     val hasNext: Boolean,
-    @field:Schema(description = "이 Case 의 GitHub 활동 전체 건수. 가려진 줄도 masked 로 내려가므로 넘겨볼 수 있는 줄 수와 같다", example = "124")
+    @field:Schema(description = "이 Case 의 GitHub 활동 전체 건수. 가려진 줄도 masked 로 내려가므로 넘겨볼 수 있는 줄 수와 같다. 빠진 줄 단서(끝까지 받은 고유 id 수와 비교)일 뿐 내용 변경은 알려주지 않음", example = "124")
     val totalCount: Long,
 ) {
     companion object {

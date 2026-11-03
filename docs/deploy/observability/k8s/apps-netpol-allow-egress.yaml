@@ -1,0 +1,65 @@
+# apps ns 파드가 나갈 수 있는 곳 — kubectl 로 직접 관리(ArgoCD 대상 아님). 적용: kubectl apply -f
+# DB VM(10.0.0.183): 5432 Postgres, 9092 Kafka, 9411 Tempo(추적 수신)
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "kind": "NetworkPolicy",
+  "metadata": {
+    "name": "allow-egress",
+    "namespace": "apps"
+  },
+  "spec": {
+    "egress": [
+      {
+        "ports": [
+          {
+            "port": 53,
+            "protocol": "UDP"
+          },
+          {
+            "port": 53,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "namespaceSelector": {}
+          }
+        ]
+      },
+      {
+        "to": [
+          {
+            "podSelector": {}
+          }
+        ]
+      },
+      {
+        "ports": [
+          {
+            "port": 5432,
+            "protocol": "TCP"
+          },
+          {
+            "port": 9092,
+            "protocol": "TCP"
+          },
+          {
+            "port": 9411,
+            "protocol": "TCP"
+          }
+        ],
+        "to": [
+          {
+            "ipBlock": {
+              "cidr": "10.0.0.183/32"
+            }
+          }
+        ]
+      }
+    ],
+    "podSelector": {},
+    "policyTypes": [
+      "Egress"
+    ]
+  }
+}

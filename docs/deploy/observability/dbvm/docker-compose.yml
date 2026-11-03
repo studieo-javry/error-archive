@@ -1,0 +1,80 @@
+# DB VM(10.0.0.183) /home/ubuntu/observability/docker-compose.yml 사본. 설정 파일 경로는 이 디렉터리 구조와 같다
+# (grafana/provisioning 은 ../grafana/provisioning). 반영: 파일 교체 후 docker compose up -d, 단일 파일 마운트(prometheus.yml 등)는 restart 필요.
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: obs-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+  loki:
+    image: grafana/loki:3.1.2
+    container_name: obs-loki
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - lokidata:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: obs-grafana
+    environment:
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+  # 분산 추적 저장소 — 앱이 Zipkin 형식으로 보낸 span 을 받는다. 수신 포트는 사설 IP 에만(파드 → 10.0.0.183:9411).
+  # 조회(3200)는 compose 망 안에서 Grafana 만.
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: obs-tempo
+    command: -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempodata:/var/tempo
+    ports:
+      - "10.0.0.183:9411:9411"
+    restart: unless-stopped
+  # 바깥에서 사이트 확인 — 공개 주소를 실제로 호출해 응답·지연·TLS 만료일을 Prometheus 가 1분마다 긁는다.
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: obs-blackbox
+    command: --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+  # 이 VM(DB·Kafka·관측 스택) 자체의 CPU·메모리·디스크. 호스트망 대신 /proc·/sys·/ 를 읽어 compose 망으로만 노출
+  # (호스트 9100 은 iptables INPUT 이 막음).
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    container_name: obs-node-exporter
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|host/root/(dev|proc|sys|run|var/lib/docker/.+))($|/)
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    restart: unless-stopped
+volumes:
+  promdata: {}
+  tempodata: {}
+  lokidata: {}
+  grafanadata: {}

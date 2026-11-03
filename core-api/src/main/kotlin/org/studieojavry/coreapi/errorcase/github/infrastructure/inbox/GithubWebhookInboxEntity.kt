@@ -76,6 +76,15 @@ class GithubWebhookInboxEntity(
         nextRetryAt = Instant.now().plus(wait)
     }
 
+    /** 처음 받은 상태로 되돌림 — 운영자 재처리. 처리는 멱등(타임라인 dedupe·스냅샷 최신만 반영)이라 끝난 건을 다시 돌려도 안전. */
+    fun requeue(at: Instant = Instant.now()) {
+        status = InboxStatus.PENDING
+        attempts = 0
+        lastError = null
+        processedAt = null
+        nextRetryAt = at
+    }
+
     fun markFailed(error: String) {
         attempts += 1
         lastError = error.take(2000)

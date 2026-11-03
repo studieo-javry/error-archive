@@ -30,6 +30,10 @@ noti:
     mode: http
 
 core:
+  # 놓친 웹훅 재동기화 주기 실행 끔 — 목(GitHub API) 호출 검증과 섞이지 않게. 테스트는 GithubEvidenceReconciler 를 직접 부른다.
+  github:
+    reconcile:
+      enabled: false
   # base yml 이 core.attachment.s3.* 의 기본값을 없애(fail-fast) → test 는 여기서 concrete 값 제공.
   # 실제 스토리지 접속 없이 contextLoads(빈 바인딩)만 통과시키면 되므로 더미 값이면 충분.
   attachment:

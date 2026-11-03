@@ -11,6 +11,7 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
@@ -20,6 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -34,6 +36,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapsho
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
+import org.studieojavry.coreapi.errorcase.github.infrastructure.api.GithubRateLimitTracker
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxProcessor
@@ -92,6 +95,7 @@ class GithubCiIssueWebhookIntegrationTest {
     @Autowired private lateinit var inboxRepo: GithubWebhookInboxJpaRepository
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var issueRepo: GithubIssueJpaRepository
+    @Autowired private lateinit var rateLimits: GithubRateLimitTracker
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -338,6 +342,104 @@ class GithubCiIssueWebhookIntegrationTest {
         assertEquals(InboxStatus.PENDING, row.status)
         assertEquals(0, row.attempts, "한도 초과는 실패 횟수에 넣지 않음")
         assertTrue(row.nextRetryAt.isAfter(before.plus(Duration.ofMinutes(9))), "${row.nextRetryAt}")
+    }
+
+    @Test
+    fun `호출 한도 예비분 - 잔량이 한도의 20퍼센트 이하면 GitHub 를 부르는 웹훅은 처리하지 않고 리셋까지 미룸(시도 횟수 그대로)`() {
+        val me = 411L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 170, prItem(s, 170, head = "c170"))
+        stubRuns(s, "c170")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/170").andExpect(status().isCreated)
+
+        val reset = Instant.now().plusSeconds(1200)
+        rateLimits.record(s.installationId, HttpHeaders().apply {
+            add("x-ratelimit-limit", "5000"); add("x-ratelimit-remaining", "700")
+            add("x-ratelimit-reset", reset.epochSecond.toString()); add("x-ratelimit-resource", "graphql")
+        })
+        Mockito.clearInvocations(githubApi)
+        val delivery = checkSuite(s, "c170", listOf(170))
+
+        val row = inboxRepo.findById(delivery).orElseThrow()
+        assertEquals(InboxStatus.PENDING, row.status)
+        assertEquals(0, row.attempts)
+        assertTrue(row.nextRetryAt.isAfter(Instant.now().plusSeconds(1100)), "${row.nextRetryAt}")
+        Mockito.verify(githubApi, Mockito.never()).fetchCommitCheckRuns(anyLong(), anyString(), anyString(), anyString())
+        Mockito.verifyNoInteractions(githubApi)
+    }
+
+    @Test
+    fun `사용자 API - GitHub 호출 한도 초과는 429 + Retry-After(올림 초), 그 밖의 GitHub 장애는 503`() {
+        val me = 410L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        Mockito.`when`(githubApi.fetchItem(s.installationId, s.owner, s.name, 160))
+            .thenThrow(GithubApiException("rate limited", retryAfter = Duration.ofMillis(89_500)))
+        Mockito.`when`(githubApi.fetchItem(s.installationId, s.owner, s.name, 161))
+            .thenThrow(GithubApiException("GitHub API fetchItem 실패: 502"))
+
+        link(me, caseId, "https://github.com/${s.fullName}/pull/160")
+            .andExpect(status().isTooManyRequests)
+            .andExpect(header().string("Retry-After", "90"))
+            .andExpect(jsonPath("$.code").value("GITHUB_RATE_LIMITED"))
+            .andExpect(jsonPath("$.retryable").value(true))
+        link(me, caseId, "https://github.com/${s.fullName}/pull/161").andExpect(status().isServiceUnavailable)
+    }
+
+    // ── 운영: FAILED 재처리 ─────────────────────────────────
+    @Test
+    fun `운영 API - FAILED 목록·한 건 재처리·FAILED 전부 재처리, 끝난 건은 force 일 때만`() {
+        val me = 412L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 180, prItem(s, 180, head = "c180"))
+        stubRuns(s, "c180")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/180").andExpect(status().isCreated)
+
+        // GitHub 장애로 끝내 실패한 웹훅 2건(시도 횟수를 다 쓴 상태로 만듦)
+        Mockito.`when`(githubApi.fetchCommitCheckRuns(s.installationId, s.owner, s.name, "c180")).thenThrow(GithubApiException("GitHub API 실패: 502"))
+        val failed = listOf(checkSuite(s, "c180", listOf(180)), checkSuite(s, "c180", listOf(180)))
+        failed.forEach { id -> inboxRepo.save(inboxRepo.findById(id).orElseThrow().apply { markFailed("GitHub API 실패: 502") }) }
+
+        val listed = om.readTree(
+            mvc.perform(get("/internal/admin/github/webhooks").with(asUser(me)).param("status", "FAILED").param("limit", "500"))
+                .andExpect(status().isOk).andReturn().response.contentAsString,
+        )
+        val mine = listed.filter { it["deliveryId"].asText() in failed }
+        assertEquals(2, mine.size)
+        assertTrue(mine.all { it["status"].asText() == "FAILED" && it["lastError"].asText().contains("502") && !it.has("payload") })
+
+        // 원인 해소 → 한 건 재처리 → 처리기가 가져가 DONE
+        Mockito.reset(githubApi)
+        stubItem(s, 180, prItem(s, 180, head = "c180"))
+        stubRuns(s, "c180", "build" to "success")
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andExpect(jsonPath("$.attempts").value(0))
+        processor.processOne(failed[0])
+        assertEquals(InboxStatus.DONE, status(failed[0]))
+        assertEquals(1, ciRows(caseId).size)
+
+        // 끝난 건은 force 없이 409, force 면 다시 처리(멱등 — 줄이 늘지 않음)
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me))).andExpect(status().isConflict)
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me)).param("force", "true"))
+            .andExpect(status().isOk)
+        processor.processOne(failed[0])
+        assertEquals(InboxStatus.DONE, status(failed[0]))
+        assertEquals(1, ciRows(caseId).size)
+
+        // 나머지 FAILED 전부
+        val requeued = om.readTree(
+            mvc.perform(post("/internal/admin/github/webhooks/retry-failed").with(asUser(me)))
+                .andExpect(status().isOk).andReturn().response.contentAsString,
+        )["requeued"].asInt()
+        assertTrue(requeued >= 1)
+        assertEquals(InboxStatus.PENDING, status(failed[1]))
+        assertEquals(0, inboxRepo.findById(failed[1]).orElseThrow().attempts)
+
+        mvc.perform(post("/internal/admin/github/webhooks/nope/retry").with(asUser(me))).andExpect(status().isNotFound)
     }
 
     // ── issues ──────────────────────────────────────────────

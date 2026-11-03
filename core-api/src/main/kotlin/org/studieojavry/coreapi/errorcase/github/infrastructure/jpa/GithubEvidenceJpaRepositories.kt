@@ -11,6 +11,8 @@ import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseS
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseStepGithubLinkKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubIssueEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemKey
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemReconcileEntity
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemReconcileKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubPrIssueRefEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubPrIssueRefKey
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubPullRequestEntity
@@ -133,4 +135,42 @@ interface CaseGithubEventJpaRepository : JpaRepository<CaseGithubEventEntity, Lo
     @Modifying
     @Query(value = "DELETE FROM case_github_activity_revision WHERE case_id = :caseId", nativeQuery = true)
     fun deleteRevision(@Param("caseId") caseId: Long): Int
+}
+
+interface GithubItemReconcileJpaRepository : JpaRepository<GithubItemReconcileEntity, GithubItemReconcileKey> {
+    /**
+     * 재동기화 대상 (kind, repo_id, number) — 떼지 않은 연결이 있고, 끝나지 않았거나(열림·CI 진행 중) [recentSince] 이후 바뀐 Issue/PR 중
+     * [checkedBefore] 이후 확인하지 않은 것. 한 번도 확인 안 한 것 → 오래전에 확인한 것 순.
+     * 지워진 Issue 와 스냅샷이 없는 대상은 고르지 않는다(다시 조회할 근거가 없음).
+     */
+    @Query(
+        value = """
+        SELECT t.kind, t.repo_id, t.number
+          FROM (SELECT DISTINCT l.kind, l.repo_id, l.number FROM case_github_link l WHERE l.detached_at IS NULL) t
+          LEFT JOIN github_issue i ON t.kind = 'ISSUE' AND i.repo_id = t.repo_id AND i.number = t.number
+          LEFT JOIN github_pull_request p ON t.kind = 'PULL_REQUEST' AND p.repo_id = t.repo_id AND p.number = t.number
+          LEFT JOIN github_item_reconcile r ON r.kind = t.kind AND r.repo_id = t.repo_id AND r.number = t.number
+         WHERE (r.checked_at IS NULL OR r.checked_at < :checkedBefore)
+           AND ((t.kind = 'ISSUE' AND i.deleted = FALSE AND (i.state = 'OPEN' OR i.source_updated_at >= :recentSince))
+             OR (t.kind = 'PULL_REQUEST' AND (p.state = 'OPEN' OR p.source_updated_at >= :recentSince OR p.ci_conclusion = 'PENDING')))
+         ORDER BY r.checked_at NULLS FIRST, t.repo_id, t.number
+         LIMIT :limit
+        """,
+        nativeQuery = true,
+    )
+    fun findDue(
+        @Param("checkedBefore") checkedBefore: Instant,
+        @Param("recentSince") recentSince: Instant,
+        @Param("limit") limit: Int,
+    ): List<Array<Any>>
+
+    @Modifying
+    @Query(
+        value = """
+        INSERT INTO github_item_reconcile (kind, repo_id, number, checked_at) VALUES (:kind, :repoId, :number, :at)
+        ON CONFLICT (kind, repo_id, number) DO UPDATE SET checked_at = EXCLUDED.checked_at
+        """,
+        nativeQuery = true,
+    )
+    fun markChecked(@Param("kind") kind: String, @Param("repoId") repoId: Long, @Param("number") number: Int, @Param("at") at: Instant): Int
 }

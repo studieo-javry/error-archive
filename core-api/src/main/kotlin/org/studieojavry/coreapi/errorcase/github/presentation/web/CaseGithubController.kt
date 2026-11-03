@@ -28,6 +28,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActiv
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubEventCursorInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubStepLinkInvalidException
@@ -83,6 +84,7 @@ class CaseGithubController(
         ApiResponse(responseCode = "400", description = "지원하지 않는 주소", content = [Content()]),
         ApiResponse(responseCode = "403", description = "케이스 쓰기 권한 없음 / 워크스페이스를 떠난 소유자 / 레포가 GitHub 연결에 없음 / 레포 범위와 Case 범위가 다름", content = [Content()]),
         ApiResponse(responseCode = "404", description = "케이스 없음 / GitHub 에 Issue·PR 없음", content = [Content()]),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도", content = [Content()]),
         ApiResponse(responseCode = "503", description = "GitHub API 사용 불가", content = [Content()]),
     )
     @PostMapping("/links")
@@ -225,6 +227,6 @@ class CaseGithubController(
     } catch (e: CaseGithubLinkNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
     } catch (e: GithubApiException) {
-        throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
+        throw e.retryAfter?.let { GithubRateLimitedException(it, e) } ?: ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
     }
 }

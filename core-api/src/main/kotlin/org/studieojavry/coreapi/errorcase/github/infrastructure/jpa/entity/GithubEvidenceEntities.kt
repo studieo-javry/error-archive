@@ -138,3 +138,19 @@ class CaseGithubActivityRevisionEntity(
     @Column(name = "revision", nullable = false) var revision: Long,
     @Column(name = "updated_at", nullable = false) var updatedAt: Instant,
 )
+
+data class GithubItemReconcileKey(var kind: String = "", var repoId: Long = 0, var number: Int = 0) : Serializable
+
+/**
+ * 붙은 Issue/PR 을 마지막으로 GitHub 에 다시 확인한 시각(V12) — 놓친 웹훅 재동기화가 오래 확인 안 한 것부터 고르는 데 쓴다.
+ * 값은 저장소의 네이티브 쿼리로 다룬다(ON CONFLICT). 엔티티는 H2 create-drop 테스트에도 테이블이 생기게 하려고 둔다.
+ */
+@Entity
+@Table(name = "github_item_reconcile")
+@IdClass(GithubItemReconcileKey::class)
+class GithubItemReconcileEntity(
+    @Id @Column(name = "kind", length = 20) var kind: String,
+    @Id @Column(name = "repo_id") var repoId: Long,
+    @Id @Column(name = "number") var number: Int,
+    @Column(name = "checked_at", nullable = false) var checkedAt: Instant,
+)

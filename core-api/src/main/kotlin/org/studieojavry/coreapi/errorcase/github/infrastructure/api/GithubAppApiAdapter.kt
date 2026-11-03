@@ -21,6 +21,8 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestS
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
+import org.studieojavry.coreapi.errorcase.github.infrastructure.api.GithubRateLimitTracker.Companion.RESOURCE_CORE
+import org.studieojavry.coreapi.errorcase.github.infrastructure.api.GithubRateLimitTracker.Companion.RESOURCE_GRAPHQL
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -32,12 +34,15 @@ import java.util.concurrent.ConcurrentHashMap
  *  - 사용자 토큰: 설치 소유 검증(`/user/installations`) 1회용
  *
  * 모든 호출은 circuit breaker `github` 로 감싼다. 4xx 는 사용자/설정 오류라 그대로 [GithubApiException](clientError) 로.
+ * installation 토큰 호출은 응답의 호출 한도 헤더를 [GithubRateLimitTracker] 에 남기고, 그 자원 한도가 바닥났으면 GitHub 를 부르지 않고
+ * 바로 한도 초과([GithubApiException.retryAfter])로 돌려준다.
  */
 @Component
 @ConditionalOnGithubEnabled
 class GithubAppApiAdapter(
     private val properties: GithubAppProperties,
     cbFactory: CircuitBreakerFactory<*, *>,
+    private val rateLimits: GithubRateLimitTracker,
 ) : GithubAppApiPort {
 
     private val log = KotlinLogging.logger {}
@@ -57,6 +62,9 @@ class GithubAppApiAdapter(
         .defaultHeader(HttpHeaders.ACCEPT, "application/vnd.github+json")
         .defaultHeader("X-GitHub-Api-Version", API_VERSION)
         .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
+        .requestInterceptor { request, body, execution ->
+            execution.execute(request, body).also { res -> CURRENT_INSTALLATION.get()?.let { rateLimits.record(it, res.headers) } }
+        }
         .build()
 
     private val web: RestClient = RestClient.builder()
@@ -102,8 +110,7 @@ class GithubAppApiAdapter(
     }
 
     override fun listInstallationRepositories(installationId: Long): List<GithubAppApiPort.RepositoryInfo> =
-        call("listInstallationRepositories") {
-            val token = installationToken(installationId)
+        installationCall("listInstallationRepositories", installationId, RESOURCE_CORE) { token ->
             paginate { page ->
                 api.get().uri("/installation/repositories?per_page={n}&page={p}", PAGE_SIZE, page)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
@@ -115,8 +122,7 @@ class GithubAppApiAdapter(
         }
 
     override fun fetchItem(installationId: Long, owner: String, name: String, number: Int): GithubAppApiPort.GithubItem? =
-        call("fetchItem") {
-            val token = installationToken(installationId)
+        installationCall("fetchItem", installationId, RESOURCE_GRAPHQL) { token ->
             val res = api.post().uri("/graphql")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -124,14 +130,13 @@ class GithubAppApiAdapter(
                 .retrieve()
                 .body(GraphqlResponse::class.java)
             // GraphQL 은 없는 대상도 200 + errors(NOT_FOUND) 로 준다 → repository/item 이 null 이면 "없음".
-            val repo = res?.data?.repository ?: return@call null
-            val item = repo.issueOrPullRequest ?: return@call null
+            val repo = res?.data?.repository ?: return@installationCall null
+            val item = repo.issueOrPullRequest ?: return@installationCall null
             item.toDomain(repo)
         }
 
     override fun fetchCommitCheckRuns(installationId: Long, owner: String, name: String, sha: String): List<CiSummary.Run> =
-        call("fetchCommitCheckRuns") {
-            val token = installationToken(installationId)
+        installationCall("fetchCommitCheckRuns", installationId, RESOURCE_CORE) { token ->
             api.get().uri("/repos/{o}/{r}/commits/{sha}/check-runs?per_page={n}", owner, name, sha, PAGE_SIZE)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
                 .retrieve()
@@ -141,8 +146,7 @@ class GithubAppApiAdapter(
         }
 
     override fun listPullRequestNumbersForCommit(installationId: Long, owner: String, name: String, sha: String): List<Int> =
-        call("listPullRequestsForCommit") {
-            val token = installationToken(installationId)
+        installationCall("listPullRequestsForCommit", installationId, RESOURCE_CORE) { token ->
             api.get().uri("/repos/{o}/{r}/commits/{sha}/pulls?per_page={n}", owner, name, sha, PAGE_SIZE)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
                 .retrieve()
@@ -156,9 +160,7 @@ class GithubAppApiAdapter(
         repoFullNames: List<String>,
         text: String,
         limit: Int,
-    ): List<GithubAppApiPort.SearchHit> = call("searchItems") {
-        if (repoFullNames.isEmpty()) return@call emptyList()
-        val token = installationToken(installationId)
+    ): List<GithubAppApiPort.SearchHit> = if (repoFullNames.isEmpty()) emptyList() else installationCall("searchItems", installationId, RESOURCE_GRAPHQL) { token ->
         val res = api.post().uri("/graphql")
             .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
             .contentType(MediaType.APPLICATION_JSON)
@@ -173,15 +175,14 @@ class GithubAppApiAdapter(
         owner: String,
         name: String,
         limit: Int,
-    ): List<GithubAppApiPort.SearchHit> = call("listRecentItems") {
-        val token = installationToken(installationId)
+    ): List<GithubAppApiPort.SearchHit> = installationCall("listRecentItems", installationId, RESOURCE_GRAPHQL) { token ->
         val res = api.post().uri("/graphql")
             .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
             .contentType(MediaType.APPLICATION_JSON)
             .body(mapOf("query" to RECENT_QUERY, "variables" to mapOf("owner" to owner, "name" to name, "n" to limit)))
             .retrieve()
             .body(RecentResponse::class.java)
-        val repo = res?.data?.repository ?: return@call emptyList()
+        val repo = res?.data?.repository ?: return@installationCall emptyList()
         val fullName = repo.nameWithOwner ?: "$owner/$name"
         repo.issues?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.ISSUE) } +
             repo.pullRequests?.nodes.orEmpty().filterNotNull().mapNotNull { it.toHit(fullName, GithubRefKind.PULL_REQUEST) }
@@ -208,6 +209,26 @@ class GithubAppApiAdapter(
             if (items.size < PAGE_SIZE) break
         }
         return all
+    }
+
+    /**
+     * installation 토큰으로 부르는 호출. [resource] 한도가 바닥났으면 부르지 않고 한도 초과로. 토큰 발급(App JWT, 한도 따로)이 끝난 뒤의
+     * 실제 호출 응답만 한도 추적에 남도록 그 구간에만 설치 id 를 건다(circuit breaker 작업 스레드 안이라 thread-local 로 충분).
+     */
+    private fun <T> installationCall(op: String, installationId: Long, resource: String, block: (token: String) -> T): T {
+        rateLimits.exhaustedWait(installationId, resource)?.let { wait ->
+            log.info { "github api $op held: installation=$installationId resource=$resource exhausted, retryAfter=$wait" }
+            throw GithubApiException("GitHub API $op 보류: 호출 한도 소진($resource)", retryAfter = wait)
+        }
+        return call(op) {
+            val token = installationToken(installationId)
+            CURRENT_INSTALLATION.set(installationId)
+            try {
+                block(token)
+            } finally {
+                CURRENT_INSTALLATION.remove()
+            }
+        }
     }
 
     private fun <T> call(op: String, block: () -> T): T = cb.run(
@@ -515,5 +536,6 @@ class GithubAppApiAdapter(
         private const val MAX_PAGES = 10
         private val REFRESH_MARGIN: Duration = Duration.ofMinutes(5)
         private val DEFAULT_RATE_LIMIT_WAIT: Duration = Duration.ofMinutes(1)
+        private val CURRENT_INSTALLATION = ThreadLocal<Long>()
     }
 }

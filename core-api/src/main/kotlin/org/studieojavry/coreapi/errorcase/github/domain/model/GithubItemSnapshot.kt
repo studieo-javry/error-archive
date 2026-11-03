@@ -31,6 +31,11 @@ class GithubIssueSnapshot(
         deleted = false
         return true
     }
+
+    companion object {
+        const val STATE_OPEN = "OPEN"
+        const val STATE_CLOSED = "CLOSED"
+    }
 }
 
 /**
@@ -99,10 +104,15 @@ class GithubPullRequestSnapshot(
         return accept
     }
 
+    /** 닫히지(머지 없이) 않았는데 CI 가 끝나지 않음 — 없음·진행 중·새 커밋 대기. 놓친 웹훅 보충이 CI 를 다시 볼지 정할 때. */
+    val isCiUnsettled: Boolean
+        get() = state != STATE_CLOSED && (ci == null || isCiStale || ci?.conclusion == CiSummary.CiConclusion.PENDING)
+
     /** 이 커밋이 이 PR 의 지금 head 또는 머지 커밋인가 — 그 밖의 커밋 CI 는 기록하지 않는다. */
     fun ownsCommit(sha: String): Boolean = sha == headSha || sha == mergeCommitSha
 
     companion object {
+        const val STATE_OPEN = "OPEN"
         const val STATE_MERGED = "MERGED"
         const val STATE_CLOSED = "CLOSED"
     }

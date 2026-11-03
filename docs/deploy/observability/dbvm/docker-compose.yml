@@ -73,6 +73,20 @@ services:
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
     restart: unless-stopped
+  # Kafka 소비 지연(lag)·토픽 적재량 — 브로커에 직접 붙어 읽음(앱 코드 무관, 앱이 죽어도 밀림이 보임).
+  # ea-kafka 는 ea-db compose 망에 있어 그 망에 같이 붙고, 서비스명 리스너(ea-kafka:9095)로 접속.
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: obs-kafka-exporter
+    command:
+      - --kafka.server=ea-kafka:9095
+      - --web.listen-address=:9308
+    networks: [default, eadb]
+    restart: unless-stopped
+networks:
+  eadb:
+    external: true
+    name: ea-db_default
 volumes:
   promdata: {}
   tempodata: {}

@@ -18,6 +18,10 @@ scrape_configs:
     static_configs:
       - targets: ["node-exporter:9100"]
         labels: { instance: "dbvm-10.0.0.183" }
+  - job_name: kafka-exporter
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
   # 외부 헬스체크 — blackbox 가 대신 호출. instance = 확인한 주소.
   - job_name: blackbox-http
     scrape_interval: 60s

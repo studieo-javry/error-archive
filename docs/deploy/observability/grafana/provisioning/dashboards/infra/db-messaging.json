@@ -800,7 +800,7 @@
       "gridPos": {
         "x": 4,
         "y": 37,
-        "w": 8,
+        "w": 6,
         "h": 5
       },
       "datasource": {
@@ -863,11 +863,11 @@
       "id": 18,
       "type": "stat",
       "title": "지금 밀린 메시지",
-      "description": "토픽에 쌓였지만 아직 소비자가 처리하지 않은 메시지 수.",
+      "description": "토픽에 쌓였지만 아직 소비자가 처리하지 않은 메시지 수. 100 넘게 10분 이어지면 'Kafka 소비 지연 많음' 알림.",
       "gridPos": {
-        "x": 12,
+        "x": 10,
         "y": 37,
-        "w": 12,
+        "w": 7,
         "h": 5
       },
       "datasource": {
@@ -903,11 +903,11 @@
               },
               {
                 "color": "orange",
-                "value": 100
+                "value": 10
               },
               {
                 "color": "red",
-                "value": 1000
+                "value": 100
               }
             ]
           },
@@ -932,6 +932,74 @@
     },
     {
       "id": 19,
+      "type": "stat",
+      "title": "밀린 그룹의 최근 15분 처리량",
+      "description": "밀린 메시지가 있는 그룹·토픽만 보임. 0 인 채 10분 이어지면 'Kafka 소비 멈춤' 알림(15분 동안 하나도 처리 못 함).",
+      "gridPos": {
+        "x": 17,
+        "y": 37,
+        "w": 7,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (consumergroup, topic) (delta(kafka_consumergroup_current_offset_sum[15m])) and on (consumergroup, topic) (sum by (consumergroup, topic) (kafka_consumergroup_lag_sum) > 0)",
+          "legendFormat": "{{consumergroup}} · {{topic}}",
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "decimals": 0,
+          "noValue": "밀린 메시지 없음"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 20,
       "type": "timeseries",
       "title": "밀린 메시지 추이",
       "description": "계속 올라가면 처리가 못 따라감, 0 이 아닌 채 평평하면 소비가 멈춤(알림 있음).",
@@ -986,7 +1054,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 21,
       "type": "timeseries",
       "title": "토픽별 들어오는 메시지 (분당)",
       "description": "",

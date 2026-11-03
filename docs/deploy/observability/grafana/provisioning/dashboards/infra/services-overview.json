@@ -30,7 +30,7 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 8,
+        "w": 6,
         "h": 5
       },
       "datasource": {
@@ -108,12 +108,79 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "재시작 횟수 (선택한 기간)",
-      "description": "",
+      "title": "모자란 파드 (배포별)",
+      "description": "원하는 파드 수 - Ready 파드 수. 0 보다 큰 채 5분 이어지면 '배포 파드 부족(서비스 다운)' 알림. 배포 중에는 잠깐 1 이 될 수 있음.",
       "gridPos": {
-        "x": 8,
+        "x": 6,
         "y": 0,
-        "w": 8,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum by (namespace, deployment) (kube_deployment_spec_replicas{namespace=~\"apps|platform|observability\"}) - sum by (namespace, deployment) (kube_deployment_status_replicas_available{namespace=~\"apps|platform|observability\"})",
+          "legendFormat": "{{namespace}}/{{deployment}}",
+          "editorMode": "code",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "재시작 횟수 (선택한 기간)",
+      "description": "화면에서 고른 기간 기준. 알림 '파드 재시작 반복'은 최근 15분에 3번 이상일 때.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
         "h": 5
       },
       "datasource": {
@@ -177,14 +244,14 @@
       }
     },
     {
-      "id": 3,
+      "id": 4,
       "type": "stat",
       "title": "가동 시간",
       "description": "마지막 배포·재시작 이후 시간.",
       "gridPos": {
-        "x": 16,
+        "x": 18,
         "y": 0,
-        "w": 8,
+        "w": 6,
         "h": 5
       },
       "datasource": {
@@ -239,7 +306,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 5,
       "type": "row",
       "title": "요청 (헬스체크·메트릭 수집 요청 제외)",
       "collapsed": false,
@@ -252,7 +319,7 @@
       "panels": []
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "timeseries",
       "title": "초당 요청 수",
       "description": "",
@@ -306,7 +373,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "timeseries",
       "title": "5xx 비율",
       "description": "5% 넘게(5분, 최소 5건) 이어지면 '서버 오류(5xx) 비율 높음' 알림.",
@@ -360,7 +427,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 8,
       "type": "timeseries",
       "title": "평균 응답 시간",
       "description": "p95 는 앱에서 히스토그램을 켜야 볼 수 있음(지금은 평균·최대만).",
@@ -414,7 +481,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 9,
       "type": "timeseries",
       "title": "최대 응답 시간",
       "description": "최근 집계 구간(약 2분)에서 가장 느렸던 요청 하나.",
@@ -468,7 +535,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 10,
       "type": "timeseries",
       "title": "상태 코드별 요청",
       "description": "",
@@ -526,7 +593,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 11,
       "type": "table",
       "title": "느린 엔드포인트 Top 10 (선택한 기간 평균)",
       "gridPos": {
@@ -593,7 +660,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 12,
       "type": "row",
       "title": "자원",
       "collapsed": false,
@@ -606,7 +673,7 @@
       "panels": []
     },
     {
-      "id": 12,
+      "id": 13,
       "type": "timeseries",
       "title": "CPU 사용률 (JVM 프로세스)",
       "description": "",
@@ -660,7 +727,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 14,
       "type": "timeseries",
       "title": "힙 사용량",
       "description": "90% 넘게 15분 이어지면 'JVM 힙 사용 90% 초과' 알림.",
@@ -714,7 +781,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 15,
       "type": "timeseries",
       "title": "처리 중인 요청 스레드",
       "description": "",

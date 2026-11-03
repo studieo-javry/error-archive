@@ -387,6 +387,61 @@ class GithubCiIssueWebhookIntegrationTest {
         link(me, caseId, "https://github.com/${s.fullName}/pull/161").andExpect(status().isServiceUnavailable)
     }
 
+    // ── 운영: FAILED 재처리 ─────────────────────────────────
+    @Test
+    fun `운영 API - FAILED 목록·한 건 재처리·FAILED 전부 재처리, 끝난 건은 force 일 때만`() {
+        val me = 412L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 180, prItem(s, 180, head = "c180"))
+        stubRuns(s, "c180")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/180").andExpect(status().isCreated)
+
+        // GitHub 장애로 끝내 실패한 웹훅 2건(시도 횟수를 다 쓴 상태로 만듦)
+        Mockito.`when`(githubApi.fetchCommitCheckRuns(s.installationId, s.owner, s.name, "c180")).thenThrow(GithubApiException("GitHub API 실패: 502"))
+        val failed = listOf(checkSuite(s, "c180", listOf(180)), checkSuite(s, "c180", listOf(180)))
+        failed.forEach { id -> inboxRepo.save(inboxRepo.findById(id).orElseThrow().apply { markFailed("GitHub API 실패: 502") }) }
+
+        val listed = om.readTree(
+            mvc.perform(get("/internal/admin/github/webhooks").with(asUser(me)).param("status", "FAILED").param("limit", "500"))
+                .andExpect(status().isOk).andReturn().response.contentAsString,
+        )
+        val mine = listed.filter { it["deliveryId"].asText() in failed }
+        assertEquals(2, mine.size)
+        assertTrue(mine.all { it["status"].asText() == "FAILED" && it["lastError"].asText().contains("502") && !it.has("payload") })
+
+        // 원인 해소 → 한 건 재처리 → 처리기가 가져가 DONE
+        Mockito.reset(githubApi)
+        stubItem(s, 180, prItem(s, 180, head = "c180"))
+        stubRuns(s, "c180", "build" to "success")
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andExpect(jsonPath("$.attempts").value(0))
+        processor.processOne(failed[0])
+        assertEquals(InboxStatus.DONE, status(failed[0]))
+        assertEquals(1, ciRows(caseId).size)
+
+        // 끝난 건은 force 없이 409, force 면 다시 처리(멱등 — 줄이 늘지 않음)
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me))).andExpect(status().isConflict)
+        mvc.perform(post("/internal/admin/github/webhooks/${failed[0]}/retry").with(asUser(me)).param("force", "true"))
+            .andExpect(status().isOk)
+        processor.processOne(failed[0])
+        assertEquals(InboxStatus.DONE, status(failed[0]))
+        assertEquals(1, ciRows(caseId).size)
+
+        // 나머지 FAILED 전부
+        val requeued = om.readTree(
+            mvc.perform(post("/internal/admin/github/webhooks/retry-failed").with(asUser(me)))
+                .andExpect(status().isOk).andReturn().response.contentAsString,
+        )["requeued"].asInt()
+        assertTrue(requeued >= 1)
+        assertEquals(InboxStatus.PENDING, status(failed[1]))
+        assertEquals(0, inboxRepo.findById(failed[1]).orElseThrow().attempts)
+
+        mvc.perform(post("/internal/admin/github/webhooks/nope/retry").with(asUser(me))).andExpect(status().isNotFound)
+    }
+
     // ── issues ──────────────────────────────────────────────
     @Test
     fun `issues 웹훅 - 붙은 Issue 가 닫히면 ISSUE_CLOSED, 다시 열리면 ISSUE_REOPENED, 지워지면 삭제 표시`() {

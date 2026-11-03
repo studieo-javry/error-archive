@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -35,6 +36,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.infrastructure.api.GithubRateLimitTracker
+import org.studieojavry.coreapi.errorcase.github.infrastructure.reconcile.GithubReconcileScheduler
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.internalauth.InternalAuthentication
@@ -193,6 +195,27 @@ class GithubReconcileIntegrationTest {
         reconciler.reconcileDue(limit = 500)
         assertEquals(calls, fetchCount(s, 10), "방금 확인한 대상은 min-interval(1h) 안에 다시 부르지 않음")
         assertEquals(types, eventTypes(caseId))
+    }
+
+    @Test
+    fun `주기 실행 지표 - 한 번 돌면 결과별 건수가 쌓이고 마지막 실행 시각이 남음`() {
+        val me = 509L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 90, prItem(s, 90, head = "c90"))
+        stubRuns(s, "c90", "build" to null)
+        link(me, caseId, "https://github.com/${s.fullName}/pull/90").andExpect(status().isCreated)
+
+        val registry = SimpleMeterRegistry()
+        val scheduler = GithubReconcileScheduler(reconciler, registry)
+        val lastRun = { registry.get(GithubReconcileScheduler.METRIC_LAST_RUN).gauge().value() }
+        fun items(result: String) = registry.find(GithubReconcileScheduler.METRIC_ITEMS).tag("result", result).counter()?.count() ?: 0.0
+        assertEquals(0.0, lastRun(), "아직 돈 적 없음")
+
+        val before = Instant.now().epochSecond
+        scheduler.tick()
+        assertTrue(items("checked") >= 1.0, "방금 붙인 열린 PR 은 재동기화 대상")
+        assertTrue(lastRun() >= before.toDouble())
     }
 
     @Test

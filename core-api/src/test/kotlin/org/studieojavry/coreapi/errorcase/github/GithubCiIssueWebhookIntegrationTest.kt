@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
@@ -43,6 +44,7 @@ import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebh
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEventJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubIssueJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubItemKey
+import org.studieojavry.coreapi.errorcase.github.infrastructure.metrics.GithubSyncMetrics
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
@@ -96,6 +98,8 @@ class GithubCiIssueWebhookIntegrationTest {
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var issueRepo: GithubIssueJpaRepository
     @Autowired private lateinit var rateLimits: GithubRateLimitTracker
+    @Autowired private lateinit var meterRegistry: MeterRegistry
+    @Autowired private lateinit var syncMetrics: GithubSyncMetrics
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -440,6 +444,55 @@ class GithubCiIssueWebhookIntegrationTest {
         assertEquals(0, inboxRepo.findById(failed[1]).orElseThrow().attempts)
 
         mvc.perform(post("/internal/admin/github/webhooks/nope/retry").with(asUser(me))).andExpect(status().isNotFound)
+    }
+
+    // ── 운영 지표 ───────────────────────────────────────────
+    private fun processed(event: String, outcome: String) =
+        meterRegistry.find(GithubWebhookInboxProcessor.METRIC_PROCESSED).tags("event", event, "outcome", outcome).counter()?.count() ?: 0.0
+    private fun gauge(name: String, vararg tags: String) = meterRegistry.find(name).tags(*tags).gauge()?.value()
+
+    @Test
+    fun `운영 지표 - 처리 결과별 카운터, 받은 편지함 FAILED·PENDING 건수와 나이, 설치별 호출 한도 잔량`() {
+        val me = 413L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 190, prItem(s, 190, head = "c190"))
+        stubRuns(s, "c190", "build" to "success")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/190").andExpect(status().isCreated)
+
+        val done0 = processed("check_suite", "done")
+        val skipped0 = processed("check_suite", "skipped")
+        val retry0 = processed("check_suite", "retry")
+        assertEquals(InboxStatus.DONE, status(checkSuite(s, "c190", listOf(190))))
+        assertEquals(InboxStatus.SKIPPED, status(deliver("check_suite", "requested", s, mapOf("check_suite" to mapOf("head_sha" to "c190")))))
+        Mockito.`when`(githubApi.fetchCommitCheckRuns(s.installationId, s.owner, s.name, "c190")).thenThrow(GithubApiException("GitHub API 실패: 502"))
+        val retried = checkSuite(s, "c190", listOf(190))
+        assertEquals(InboxStatus.PENDING, status(retried))
+        assertEquals(done0 + 1, processed("check_suite", "done"))
+        assertEquals(skipped0 + 1, processed("check_suite", "skipped"))
+        assertEquals(retry0 + 1, processed("check_suite", "retry"))
+
+        // 재시도 대기 중인 건이 있으니 PENDING 은 1건 이상, 나이는 0 이상 / FAILED 로 바꾸면 FAILED 건수에 잡힘
+        assertTrue(gauge(GithubSyncMetrics.METRIC_PENDING)!! >= 1.0)
+        assertTrue(gauge(GithubSyncMetrics.METRIC_PENDING_OLDEST_AGE)!! >= 0.0)
+        val failed0 = gauge(GithubSyncMetrics.METRIC_FAILED)!!
+        inboxRepo.save(inboxRepo.findById(retried).orElseThrow().apply { markFailed("GitHub API 실패: 502") })
+        assertEquals(failed0 + 1, gauge(GithubSyncMetrics.METRIC_FAILED))
+
+        // 호출 한도 — 받은 응답 헤더 그대로, 리셋이 지난 창은 빠짐
+        val inst = s.installationId.toString()
+        rateLimits.record(s.installationId, HttpHeaders().apply {
+            add("x-ratelimit-limit", "5000"); add("x-ratelimit-remaining", "4321")
+            add("x-ratelimit-reset", Instant.now().plusSeconds(600).epochSecond.toString()); add("x-ratelimit-resource", "core")
+        })
+        rateLimits.record(s.installationId, HttpHeaders().apply {
+            add("x-ratelimit-limit", "5000"); add("x-ratelimit-remaining", "1")
+            add("x-ratelimit-reset", Instant.now().minusSeconds(5).epochSecond.toString()); add("x-ratelimit-resource", "graphql")
+        })
+        syncMetrics.refreshRateLimits()
+        assertEquals(4321.0, gauge(GithubSyncMetrics.METRIC_RATE_REMAINING, "installation", inst, "resource", "core"))
+        assertEquals(5000.0, gauge(GithubSyncMetrics.METRIC_RATE_LIMIT, "installation", inst, "resource", "core"))
+        assertEquals(null, gauge(GithubSyncMetrics.METRIC_RATE_REMAINING, "installation", inst, "resource", "graphql"))
     }
 
     // ── issues ──────────────────────────────────────────────

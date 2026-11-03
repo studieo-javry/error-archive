@@ -34,6 +34,7 @@ data class GithubAppProperties(
     val stateTtl: Duration = Duration.ofMinutes(10),
     val inbox: Inbox = Inbox(),
     val rateLimit: RateLimit = RateLimit(),
+    val reconcile: Reconcile = Reconcile(),
 ) {
     /** 웹훅 inbox 처리기 파라미터. backoff = min(2^attempts * base, max). */
     data class Inbox(
@@ -50,6 +51,19 @@ data class GithubAppProperties(
      */
     data class RateLimit(
         val backgroundReserveRatio: Double = 0.2,
+    )
+
+    /**
+     * 놓친 웹훅 재동기화 — GitHub 는 전달에 실패한 웹훅을 다시 보내지 않으므로, 붙은 Issue/PR 을 주기적으로 다시 조회해 맞춘다.
+     * [pollDelayMs] 마다 최대 [batchSize] 개, 같은 대상은 [minInterval] 에 한 번. 대상 = 열림·CI 진행 중이거나 [recentWindow] 안에 바뀐 것.
+     */
+    data class Reconcile(
+        val enabled: Boolean = true,
+        val initialDelayMs: Long = 120_000,
+        val pollDelayMs: Long = 900_000,
+        val batchSize: Int = 30,
+        val minInterval: Duration = Duration.ofHours(1),
+        val recentWindow: Duration = Duration.ofDays(7),
     )
 
     @AssertTrue(

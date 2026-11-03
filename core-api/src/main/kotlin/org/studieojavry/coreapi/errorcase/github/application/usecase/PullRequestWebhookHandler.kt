@@ -10,6 +10,9 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstalla
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink.LinkSource
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.ClosingKeywords
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
@@ -32,6 +35,7 @@ import java.time.Instant
  *    진행 중이면 카드에만 보이고 타임라인은 최종 결과만(진행 중은 [GithubEvidenceRecorder.ciEvent] 가 거른다)
  *
  * inbox 처리기의 건별 트랜잭션 안에서 실행된다(처리 + DONE 표시를 함께 커밋). GitHub 조회 실패는 예외로 올려 inbox 재시도에 맡긴다.
+ * 놓친 웹훅 보충([reconcile])도 같은 처리를 쓴다.
  */
 @Component
 @ConditionalOnGithubEnabled
@@ -65,6 +69,37 @@ class PullRequestWebhookHandler(
             ClosingKeywords.contains(prNode.path("body").textOrNull())
         if (!interesting) return false
 
+        val reopenedAt = if (action == "reopened") prNode.path("updated_at").textOrNull()?.let(Instant::parse) ?: Instant.now() else null
+        return sync(installation, repo, number, ledgerBefore, action.orEmpty()) { reopenedAt }
+    }
+
+    /**
+     * 놓친 웹훅 보충([GithubEvidenceReconciler]) — 붙어 있는 PR 을 다시 조회해 웹훅과 같은 처리를 한다.
+     * 웹훅이 알려 주던 것은 스냅샷 비교로 대신한다: 닫혀 있던 PR 이 열려 있으면 다시 열림(시각 = GitHub 갱신 시각),
+     * 닫히지 않은 PR 의 CI 가 끝나지 않았으면(없음·진행 중·새 커밋 대기) CI 도 다시 조회한다(check_suite 를 놓쳤을 수 있어서).
+     * 호출자가 트랜잭션을 연다. GitHub 조회 실패는 예외로 올린다.
+     */
+    fun reconcile(installation: GithubInstallation, repo: GithubRepository, number: Int): Boolean {
+        val prRef = GithubItemRef(repo.repoId, number)
+        val before = evidence.findPullRequest(prRef)
+        return sync(installation, repo, number, evidence.findClosingIssues(prRef).toSet(), "reconcile", refreshCi = true) { pr ->
+            pr.sourceUpdatedAt.takeIf {
+                before?.state == GithubPullRequestSnapshot.STATE_CLOSED && pr.state == GithubPullRequestSnapshot.STATE_OPEN
+            }
+        }
+    }
+
+    /** PR 을 다시 조회해 스냅샷·장부·자동 부착·상태 기록. [reopenedAt] 은 갱신된 스냅샷을 보고 다시 열림 시각을 정한다(null = 아님). */
+    private fun sync(
+        installation: GithubInstallation,
+        repo: GithubRepository,
+        number: Int,
+        ledgerBefore: Set<GithubItemRef>,
+        trigger: String,
+        refreshCi: Boolean = false,
+        reopenedAt: (GithubPullRequestSnapshot) -> Instant?,
+    ): Boolean {
+        val prRef = GithubItemRef(repo.repoId, number)
         val owner = repo.fullName.substringBefore('/')
         val name = repo.fullName.substringAfter('/')
         val item = githubApi.fetchItem(installation.installationId, owner, name, number)
@@ -91,23 +126,23 @@ class PullRequestWebhookHandler(
                 if (outcome.created) attached++
             }
         }
-        if (attached > 0 && pr.ci == null) {
+        if ((attached > 0 && pr.ci == null) || (refreshCi && pr.isCiUnsettled)) {
             ciFetcher.fetch(installation.installationId, owner, name, pr)
                 ?.let { if (pr.recordCi(it)) evidence.savePullRequest(pr) }
         }
 
         val removed = ledgerBefore - closing
-        val reopenedAt = if (action == "reopened") prNode.path("updated_at").textOrNull()?.let(Instant::parse) ?: now else null
+        val reopened = reopenedAt(pr)
         val linked = evidence.findActiveLinks(GithubRefKind.PULL_REQUEST, prRef)
         for (link in linked) {
             val via = link.viaIssueRepoId?.let { r -> link.viaIssueNumber?.let { GithubItemRef(r, it) } }
             if (via != null && via in removed) evidence.recordEvent(CaseGithubEvent.refRemoved(link.caseId, pr, via, now))
             recorder.pullRequestStateEvents(link.caseId, pr, now).forEach(evidence::recordEvent)
-            reopenedAt?.let { evidence.recordEvent(CaseGithubEvent.prReopened(link.caseId, pr, it)) }
+            reopened?.let { evidence.recordEvent(CaseGithubEvent.prReopened(link.caseId, pr, it)) }
         }
 
         log.info {
-            "[github] pull_request $action pr=${repo.fullName}#$number closing=${closing.size} " +
+            "[github] pull_request $trigger pr=${repo.fullName}#$number closing=${closing.size} " +
                 "attached=$attached linkedCases=${linked.size} removedRefs=${removed.size}"
         }
         return true

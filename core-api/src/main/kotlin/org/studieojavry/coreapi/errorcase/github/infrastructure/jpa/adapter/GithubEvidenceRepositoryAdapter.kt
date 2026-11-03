@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubEv
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseGithubLinkJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.CaseStepGithubLinkJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubIssueJpaRepository
+import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubItemReconcileJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPrIssueRefJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.GithubPullRequestJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.CaseGithubEventEntity
@@ -41,6 +42,7 @@ class GithubEvidenceRepositoryAdapter(
     private val links: CaseGithubLinkJpaRepository,
     private val events: CaseGithubEventJpaRepository,
     private val stepLinks: CaseStepGithubLinkJpaRepository,
+    private val reconciles: GithubItemReconcileJpaRepository,
     private val objectMapper: ObjectMapper,
 ) : GithubEvidenceRepositoryPort, CaseGithubCleanupPort, StepGithubCleanupPort {
 
@@ -145,6 +147,19 @@ class GithubEvidenceRepositoryAdapter(
             link.detachedAt, link.detachedByUserId,
         ),
     ).toDomain()
+
+    // ── 놓친 웹훅 재동기화 ────────────────────────────────────
+    override fun findReconcileDue(checkedBefore: Instant, recentSince: Instant, limit: Int): List<GithubEvidenceRepositoryPort.ReconcileTarget> =
+        reconciles.findDue(checkedBefore, recentSince, limit).map { (kind, repoId, number) ->
+            GithubEvidenceRepositoryPort.ReconcileTarget(
+                GithubRefKind.valueOf(kind as String),
+                GithubItemRef((repoId as Number).toLong(), (number as Number).toInt()),
+            )
+        }
+
+    override fun markReconciled(target: GithubEvidenceRepositoryPort.ReconcileTarget, at: Instant) {
+        reconciles.markChecked(target.kind.name, target.ref.repoId, target.ref.number, at)
+    }
 
     // ── 타임라인 ──────────────────────────────────────────────
     override fun recordEvent(event: CaseGithubEvent) {

@@ -52,6 +52,14 @@ interface GithubEvidenceRepositoryPort {
     fun findActiveLinkedCaseIds(kind: GithubRefKind, ref: GithubItemRef): List<Long>
     fun saveLink(link: CaseGithubLink): CaseGithubLink
 
+    // ── 놓친 웹훅 재동기화 ──
+    /**
+     * 다시 확인할 붙은 Issue/PR — 끝나지 않았거나(열림·CI 진행 중) [recentSince] 이후 바뀐 것 중 [checkedBefore] 이후 확인하지 않은 것,
+     * 오래 확인 안 한 순으로 [limit] 개.
+     */
+    fun findReconcileDue(checkedBefore: Instant, recentSince: Instant, limit: Int): List<ReconcileTarget>
+    fun markReconciled(target: ReconcileTarget, at: Instant)
+
     /**
      * 같은 (case, dedupeKey) 가 있으면 무시 — 단 [CaseGithubEvent.replaceable] 이면 최신 내용으로 덮어씀.
      * 줄이 새로 생기거나 내용이 바뀌면 그 Case 의 활동 리비전을 +1.
@@ -75,6 +83,8 @@ interface GithubEvidenceRepositoryPort {
     fun deleteStepLinksByLinkId(linkId: Long)
 
     enum class ClosingRefSource { GITHUB, KEYWORD }
+
+    data class ReconcileTarget(val kind: GithubRefKind, val ref: GithubItemRef)
 }
 
 /**

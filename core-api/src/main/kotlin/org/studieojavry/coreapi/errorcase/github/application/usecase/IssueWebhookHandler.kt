@@ -7,6 +7,8 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidence
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
@@ -70,6 +72,29 @@ class IssueWebhookHandler(
         caseIds.forEach { caseId -> event(caseId)?.let(evidence::recordEvent) }
         log.info { "[github] issues $action issue=${repo.fullName}#${ref.number} state=${issue.state} cases=${caseIds.size}" }
         return true
+    }
+
+    /**
+     * 놓친 웹훅 보충([GithubEvidenceReconciler]) — 붙어 있는 Issue 를 다시 조회해 스냅샷을 맞추고, 열림↔닫힘이 바뀌었으면 기록한다
+     * (다시 열림 시각 = GitHub 갱신 시각). 호출자가 트랜잭션을 연다. GitHub 조회 실패는 예외로 올린다.
+     * @return 다시 조회한 Issue — 붙은 Case 가 없거나 GitHub 에서 볼 수 없으면 null
+     */
+    fun reconcile(installation: GithubInstallation, repo: GithubRepository, number: Int): GithubAppApiPort.IssueItem? {
+        val ref = GithubItemRef(repo.repoId, number)
+        val caseIds = evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, ref)
+        if (caseIds.isEmpty()) return null
+        val before = evidence.findIssue(ref)
+        val item = githubApi.fetchItem(installation.installationId, repo.fullName.substringBefore('/'), repo.fullName.substringAfter('/'), number)
+            as? GithubAppApiPort.IssueItem ?: return null
+        val issue = recorder.saveIssue(item.snapshot)
+        val event: (Long) -> CaseGithubEvent? = when {
+            before?.state == STATE_OPEN && issue.state == STATE_CLOSED -> { caseId -> CaseGithubEvent.issueClosed(caseId, issue) }
+            before?.state == STATE_CLOSED && issue.state == STATE_OPEN -> { caseId -> CaseGithubEvent.issueReopened(caseId, issue, issue.sourceUpdatedAt) }
+            else -> { _ -> null }
+        }
+        caseIds.forEach { caseId -> event(caseId)?.let(evidence::recordEvent) }
+        log.info { "[github] issues reconcile issue=${repo.fullName}#$number state=${before?.state}→${issue.state} cases=${caseIds.size}" }
+        return item
     }
 
     companion object {

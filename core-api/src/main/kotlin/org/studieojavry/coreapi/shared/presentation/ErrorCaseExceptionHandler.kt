@@ -14,6 +14,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDele
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAccessDeniedException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.shared.infrastructure.iam.IamApiUnavailableException
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
 import org.studieojavry.sharederror.trace.TraceIdAccessor
@@ -91,6 +92,20 @@ class ErrorCaseExceptionHandler(
     ): ProblemDetail {
         res.setHeader("Retry-After", ex.retryAfterSeconds.toString())
         return build(req, res, HttpStatus.TOO_MANY_REQUESTS, "DRAFT_RATE_LIMITED", ex.message ?: "Too many requests.", retryable = true)
+    }
+
+    /**
+     * GitHub 호출 한도 초과 — 장애(503)와 구분해 **429 + Retry-After(초, 올림)**. FE 는 "잠시 후 다시" 안내에 쓴다.
+     */
+    @ExceptionHandler(GithubRateLimitedException::class)
+    fun handleGithubRateLimited(
+        ex: GithubRateLimitedException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail {
+        val seconds = maxOf(1L, ex.retryAfter.plusMillis(999).seconds)
+        res.setHeader("Retry-After", seconds.toString())
+        return build(req, res, HttpStatus.TOO_MANY_REQUESTS, "GITHUB_RATE_LIMITED", "GitHub 호출 한도에 걸렸습니다. ${seconds}초 뒤 다시 시도해 주세요.", retryable = true)
     }
 
     private fun build(

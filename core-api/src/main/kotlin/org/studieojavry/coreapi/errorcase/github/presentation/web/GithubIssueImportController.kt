@@ -21,6 +21,7 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiExcep
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubImportInvalidRequestException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubImportVisibilityException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
@@ -61,6 +62,7 @@ class GithubIssueImportController(
         ApiResponse(responseCode = "400", description = "지원하지 않는 주소 / PR 주소", content = [Content()]),
         ApiResponse(responseCode = "403", description = "저장소가 GitHub 연결에 없음 / 범위 불일치 / 워크스페이스 WRITE 아님", content = [Content()]),
         ApiResponse(responseCode = "404", description = "GitHub 에 Issue 없음", content = [Content()]),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도", content = [Content()]),
         ApiResponse(responseCode = "503", description = "GitHub API 사용 불가", content = [Content()]),
     )
     @GetMapping("/github-issue-preview")
@@ -84,6 +86,7 @@ class GithubIssueImportController(
         ApiResponse(responseCode = "400", description = "지원하지 않는 주소 / PR 주소 / 고를 수 없는 공개 범위 / 우회 방법 섹션 없음 / 심각도 범위 밖", content = [Content()]),
         ApiResponse(responseCode = "403", description = "저장소가 GitHub 연결에 없음 / 범위 불일치 / 워크스페이스 권한 부족", content = [Content()]),
         ApiResponse(responseCode = "404", description = "GitHub 에 Issue 없음", content = [Content()]),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도", content = [Content()]),
         ApiResponse(responseCode = "503", description = "GitHub API 사용 불가", content = [Content()]),
     )
     @PostMapping("/from-github-issue")
@@ -119,6 +122,6 @@ class GithubIssueImportController(
     } catch (e: GithubItemNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
     } catch (e: GithubApiException) {
-        throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
+        throw e.retryAfter?.let { GithubRateLimitedException(it, e) } ?: ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
     }
 }

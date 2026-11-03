@@ -1,5 +1,7 @@
 package org.studieojavry.coreapi.errorcase.github.application.usecase
 
+import java.time.Duration
+
 /** 설치 state 가 위조·만료·다른 사용자 것. */
 class GithubInstallStateInvalidException(message: String) : RuntimeException(message)
 
@@ -38,3 +40,10 @@ class GithubImportVisibilityException(message: String) : RuntimeException(messag
 
 /** Issue 로 Case 만들 때 초안에 없는 값을 골랐음(예: 우회 방법 섹션 없는 Issue 에 우회 Step 요청, 범위 밖 심각도). */
 class GithubImportInvalidRequestException(message: String) : RuntimeException(message)
+
+/**
+ * GitHub 호출 한도에 걸려 지금은 처리할 수 없음 — 장애(503)가 아니라 [retryAfter] 뒤에 다시 하면 되는 상태(429 + Retry-After).
+ * 컨트롤러가 [org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException.retryAfter] 를 보고 바꿔 던진다.
+ */
+class GithubRateLimitedException(val retryAfter: Duration, cause: Throwable? = null) :
+    RuntimeException("GitHub 호출 한도 초과 — ${retryAfter.seconds}초 뒤 다시 시도", cause)

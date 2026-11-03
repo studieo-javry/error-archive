@@ -20,6 +20,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -338,6 +339,24 @@ class GithubCiIssueWebhookIntegrationTest {
         assertEquals(InboxStatus.PENDING, row.status)
         assertEquals(0, row.attempts, "한도 초과는 실패 횟수에 넣지 않음")
         assertTrue(row.nextRetryAt.isAfter(before.plus(Duration.ofMinutes(9))), "${row.nextRetryAt}")
+    }
+
+    @Test
+    fun `사용자 API - GitHub 호출 한도 초과는 429 + Retry-After(올림 초), 그 밖의 GitHub 장애는 503`() {
+        val me = 410L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        Mockito.`when`(githubApi.fetchItem(s.installationId, s.owner, s.name, 160))
+            .thenThrow(GithubApiException("rate limited", retryAfter = Duration.ofMillis(89_500)))
+        Mockito.`when`(githubApi.fetchItem(s.installationId, s.owner, s.name, 161))
+            .thenThrow(GithubApiException("GitHub API fetchItem 실패: 502"))
+
+        link(me, caseId, "https://github.com/${s.fullName}/pull/160")
+            .andExpect(status().isTooManyRequests)
+            .andExpect(header().string("Retry-After", "90"))
+            .andExpect(jsonPath("$.code").value("GITHUB_RATE_LIMITED"))
+            .andExpect(jsonPath("$.retryable").value(true))
+        link(me, caseId, "https://github.com/${s.fullName}/pull/161").andExpect(status().isServiceUnavailable)
     }
 
     // ── issues ──────────────────────────────────────────────

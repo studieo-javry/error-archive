@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.CompleteGit
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallStateInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationAlreadyBoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationNotOwnedException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubInstallUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListMyGithubInstallationsUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
@@ -65,6 +66,7 @@ class GithubInstallationController(
         ApiResponse(responseCode = "400", description = "state 위조·만료·다른 사용자 것 / 잘못된 code"),
         ApiResponse(responseCode = "403", description = "이 GitHub 계정이 접근할 수 없는 설치 / 워크스페이스 ADMIN 아님"),
         ApiResponse(responseCode = "409", description = "이미 다른 사용자·워크스페이스에 연결된 설치"),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도"),
         ApiResponse(responseCode = "503", description = "GitHub API 사용 불가"),
     )
     @PostMapping("/installations")
@@ -83,6 +85,7 @@ class GithubInstallationController(
         } catch (e: GithubInstallationAlreadyBoundException) {
             throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
         } catch (e: GithubApiException) {
+            e.retryAfter?.let { throw GithubRateLimitedException(it, e) }
             val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE
             throw ResponseStatusException(status, e.message, e)
         }

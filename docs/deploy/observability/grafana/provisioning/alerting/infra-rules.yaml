@@ -691,8 +691,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.consumergroup }} · {{ $labels.topic }} 밀린 메시지 1000개 초과"
-          description: "들어오는 속도를 처리가 못 따라감. 알림이 늦게 가는 중."
+          summary: "{{ $labels.consumergroup }} · {{ $labels.topic }} 밀린 메시지 100개 초과"
+          description: "들어오는 속도를 처리가 못 따라감. 알림이 늦게 가는 중. (지금 규모는 분당 수 건 — 100개가 10분 쌓이면 이상)"
         notification_settings:
           receiver: slack-ea
         data:
@@ -716,7 +716,7 @@ groups:
               expression: A
               conditions:
                 - type: query
-                  evaluator: { type: gt, params: [1000] }
+                  evaluator: { type: gt, params: [100] }
                   operator: { type: and }
                   query: { params: [C] }
                   reducer: { type: last }

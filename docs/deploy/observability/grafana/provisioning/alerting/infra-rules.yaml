@@ -310,7 +310,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.instance }} 바깥에서 접속 실패"
+          summary: "{{ $labels.site }} 바깥에서 접속 실패 ({{ $labels.instance }})"
           description: "DB VM 에서 공개 주소를 1분마다 호출했는데 3분째 실패(200 아님·시간 초과·TLS 오류). 사용자도 못 쓰는 상태일 가능성."
         notification_settings:
           receiver: slack-ea
@@ -323,7 +323,7 @@ groups:
               instant: true
               range: false
               editorMode: code
-              expr: "min by (instance) (probe_success{job=\"blackbox-http\"})"
+              expr: "min by (instance, site) (probe_success{job=\"blackbox-http\"})"
               intervalMs: 1000
               maxDataPoints: 43200
           - refId: C
@@ -351,7 +351,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.instance }} 인증서가 14일 안에 만료"
+          summary: "{{ $labels.site }} 인증서가 14일 안에 만료 ({{ $labels.instance }})"
           description: "stream. 도메인은 Let's Encrypt 수동 갱신(90일). 만료되면 실시간 알림 연결이 끊김."
         notification_settings:
           receiver: slack-ea
@@ -364,7 +364,7 @@ groups:
               instant: true
               range: false
               editorMode: code
-              expr: "min by (instance) (probe_ssl_earliest_cert_expiry{job=\"blackbox-http\"} - time()) / 86400"
+              expr: "min by (instance, site) (probe_ssl_earliest_cert_expiry{job=\"blackbox-http\"} - time()) / 86400"
               intervalMs: 1000
               maxDataPoints: 43200
           - refId: C

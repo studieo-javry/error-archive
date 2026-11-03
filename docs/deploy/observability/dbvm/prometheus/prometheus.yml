@@ -23,12 +23,16 @@ scrape_configs:
     scrape_interval: 60s
     metrics_path: /probe
     params: { module: [http_2xx] }
+    # site = 대시보드·알림에 보일 이름
     static_configs:
-      - targets:
-          - https://error-archive.com/                                        # FE (Cloudflare)
-          - https://api.error-archive.com/internal/actuator/health            # gateway 자체
-          - https://api.error-archive.com/api/v1/publishments/public          # gateway → publish-api → DB 끝까지
-          - https://stream.error-archive.com:30443/internal/actuator/health   # 실시간 알림(SSE) 우회 도메인 — LE 인증서 수동 갱신
+      - targets: ["https://error-archive.com/"]
+        labels: { site: "FE 사이트" }
+      - targets: ["https://api.error-archive.com/internal/actuator/health"]
+        labels: { site: "API 게이트웨이" }
+      - targets: ["https://api.error-archive.com/api/v1/publishments/public"]
+        labels: { site: "API 전체 경로 (gateway→publish→DB)" }
+      - targets: ["https://stream.error-archive.com:30443/internal/actuator/health"]   # LE 인증서 수동 갱신
+        labels: { site: "실시간 알림 (stream)" }
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

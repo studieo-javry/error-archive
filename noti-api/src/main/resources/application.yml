@@ -48,3 +48,11 @@ management:
     web:
       exposure:
         include: health
+  # 요청마다 traceId/spanId 를 만들어 로그 MDC 에 넣는다. 수집 서버로 보내는 건 env 로 켤 때만(로컬·테스트는 꺼짐).
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    export:
+      zipkin:
+        enabled: ${TRACING_EXPORT_ENABLED:false}
+        endpoint: ${TRACING_ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

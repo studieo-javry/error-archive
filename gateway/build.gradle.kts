@@ -45,7 +45,9 @@ dependencies {
   // Circuit Breaker (Resilience4j)
   implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")
 
-  implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  // 분산 추적 — Boot 4 는 추적 자동설정이 별도 모듈이라 브리지만으론 traceId 가 안 생긴다(로그 [,] 빈칸).
+  // 이 스타터 = 추적 자동설정 + Brave 브리지 + Zipkin 전송(기본 꺼짐, TRACING_EXPORT_ENABLED 로 켬).
+  implementation("org.springframework.boot:spring-boot-starter-zipkin")
   implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
 

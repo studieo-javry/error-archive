@@ -21,8 +21,10 @@ class CoreApiRestClientConfig {
     fun coreApiRestClient(
         properties: CoreApiProperties,
         internalTokenIssuer: InternalTokenIssuer,
+        // Boot 가 만든 빌더 — 추적 관측이 붙어 있어 호출 헤더로 traceId 가 넘어간다(같은 요청이 서비스를 건너도 한 추적).
+        restClientBuilder: RestClient.Builder,
     ): RestClient =
-        RestClient.builder()
+        restClientBuilder
             .baseUrl(properties.baseUrl)
             .requestInterceptor { request, body, execution ->
                 currentUser()?.let { (userId, roles) ->

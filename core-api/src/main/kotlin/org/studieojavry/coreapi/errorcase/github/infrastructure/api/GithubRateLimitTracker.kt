@@ -24,7 +24,7 @@ class GithubRateLimitTracker(
 ) : GithubRateLimitPort {
 
     private data class Key(val installationId: Long, val resource: String)
-    private data class Window(val limit: Int, val remaining: Int, val resetAt: Instant)
+    data class Window(val limit: Int, val remaining: Int, val resetAt: Instant)
 
     private val windows = ConcurrentHashMap<Key, Window>()
 
@@ -52,6 +52,10 @@ class GithubRateLimitTracker(
             .filter { it.remaining <= reserve(it.limit) }
             .mapNotNull { it.waitFrom(now) }
             .maxOrNull()
+
+    /** 지표용 — 아직 리셋 전인 창만 (설치 id, 자원) → 창. */
+    fun snapshot(now: Instant = Instant.now()): Map<Pair<Long, String>, Window> =
+        windows.filterValues { it.resetAt.isAfter(now) }.mapKeys { (k, _) -> k.installationId to k.resource }
 
     private fun reserve(limit: Int): Int = ceil(limit * properties.rateLimit.backgroundReserveRatio).toInt()
 

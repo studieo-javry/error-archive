@@ -1,0 +1,559 @@
+apiVersion: 1
+# 인프라·가용성·GitHub 연동 알림. LLM 알림은 rules.yaml.
+# 모든 룰은 receiver: slack-ea 직접 지정(rules.yaml 과 같은 방식).
+groups:
+  # 클러스터·노드·앱 상태 (kube-state-metrics · node-exporter · apps-jvm)
+  - orgId: 1
+    name: infra
+    folder: Infra
+    interval: 1m
+    rules:
+      - uid: infra_deploy_unavailable
+        title: 배포 파드 부족(서비스 다운)
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.deployment }} 사용 가능한 파드가 모자람"
+          description: "원하는 개수보다 Ready 파드가 적은 상태가 5분째. kubectl -n {{ $labels.namespace }} get pods / describe 로 원인(크래시·이미지·프로브) 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "sum by (namespace, deployment) (kube_deployment_spec_replicas{namespace=~\"apps|platform|observability\"}) - sum by (namespace, deployment) (kube_deployment_status_replicas_available{namespace=~\"apps|platform|observability\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: infra_app_scrape_down
+        title: 앱 메트릭 응답 없음
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.app }} 메트릭 수집 실패"
+          description: "파드는 Running 인데 /internal/actuator/prometheus 응답이 3분째 없음 — 앱 멈춤(행)·과부하 의심."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (app) (up{job=\"apps-jvm\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: infra_pod_restarts
+        title: 파드 재시작 반복
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} 15분에 3번 이상 재시작"
+          description: "크래시루프·OOMKilled 의심. kubectl describe pod 의 Last State, 직전 로그(Loki) 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"apps|platform|observability\"}[15m]))"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [2] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: infra_disk_low
+        title: 디스크 여유 15% 미만
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} {{ $labels.mountpoint }} 디스크 여유 15% 미만"
+          description: "DB VM 이면 Postgres·Kafka·Loki·Prometheus 가 같은 디스크를 씀. 오래된 로그·이미지 정리 또는 볼륨 확장."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (instance, mountpoint) (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|nsfs|ramfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|nsfs|ramfs\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [0.15] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: infra_memory_low
+        title: 메모리 여유 10% 미만
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} 사용 가능한 메모리 10% 미만"
+          description: "스왑이 없어 더 줄면 OOM 으로 프로세스가 죽음. 어느 컨테이너·파드가 늘었는지 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (instance) (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [0.1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: app_http_5xx
+        title: 서버 오류(5xx) 비율 높음
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.application }} 5xx 비율 5% 초과"
+          description: "최근 5분 요청 중 5% 넘게(최소 5건) 서버 오류. Loki 에서 {app=\"{{ $labels.application }}\"} |= \"ERROR\" 로 원인 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "(sum by (application) (rate(http_server_requests_seconds_count{job=\"apps-jvm\", status=~\"5..\"}[5m])) / clamp_min(sum by (application) (rate(http_server_requests_seconds_count{job=\"apps-jvm\"}[5m])), 1e-9) > 0.05) and (sum by (application) (increase(http_server_requests_seconds_count{job=\"apps-jvm\", status=~\"5..\"}[5m])) >= 5)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: app_jvm_heap_high
+        title: JVM 힙 사용 90% 초과
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} 힙 90% 초과 15분"
+          description: "GC 가 회수 못 하는 상태가 이어짐 — 메모리 누수·캐시 과다 의심. 계속되면 OOM 재시작."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "sum by (application) (jvm_memory_used_bytes{job=\"apps-jvm\", area=\"heap\"}) / sum by (application) (jvm_memory_max_bytes{job=\"apps-jvm\", area=\"heap\"} > 0)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0.9] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+  # 바깥에서 본 가용성 (blackbox-exporter)
+  - orgId: 1
+    name: probe
+    folder: Infra
+    interval: 1m
+    rules:
+      - uid: probe_site_down
+        title: 외부에서 사이트 접속 실패
+        condition: C
+        for: 3m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.site }} 바깥에서 접속 실패 ({{ $labels.instance }})"
+          description: "DB VM 에서 공개 주소를 1분마다 호출했는데 3분째 실패(200 아님·시간 초과·TLS 오류). 사용자도 못 쓰는 상태일 가능성."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (instance, site) (probe_success{job=\"blackbox-http\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: probe_tls_expiry
+        title: TLS 인증서 만료 14일 이내
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.site }} 인증서가 14일 안에 만료 ({{ $labels.instance }})"
+          description: "stream. 도메인은 Let's Encrypt 수동 갱신(90일). 만료되면 실시간 알림 연결이 끊김."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (instance, site) (probe_ssl_earliest_cert_expiry{job=\"blackbox-http\"} - time()) / 86400"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [14] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+  # GitHub 연동 동기화 (core-api GithubSyncMetrics 등)
+  - orgId: 1
+    name: github-sync
+    folder: GitHub
+    interval: 1m
+    rules:
+      - uid: github_inbox_failed
+        title: GitHub 웹훅 처리 실패 건 있음
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "GitHub 웹훅 FAILED {{ $values.A.Value }}건"
+          description: "8번 재시도 후 실패한 웹훅이 있음. 원인 해결 후 POST /internal/admin/github/webhooks/retry-failed 로 다시 처리."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "max(github_webhook_inbox_failed)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: github_inbox_stuck
+        title: GitHub 웹훅 처리 지연
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "가장 오래 기다린 웹훅이 1시간 30분 넘음"
+          description: "재시도(최대 ~21분)·호출 한도 대기(최대 1시간)를 넘겨도 PENDING — 처리기 멈춤(ShedLock 잠김·스케줄 중단) 의심."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "max(github_webhook_inbox_pending_oldest_age)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [5400] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: github_rate_limit_low
+        title: GitHub 호출 한도 거의 소진
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "설치 {{ $labels.installation }} {{ $labels.resource }} 한도 10% 미만"
+          description: "백그라운드 처리는 20% 이하에서 이미 쉬고 있음. 10% 아래면 사용자 요청 몫까지 쓰는 중 — 곧 429."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "min by (installation, resource) (github_api_rate_limit_remaining / github_api_rate_limit_limit)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [0.1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: github_reconcile_stalled
+        title: GitHub 재동기화 멈춤
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "재동기화가 1시간 넘게 안 돎"
+          description: "15분마다 돌아야 하는 놓친 웹훅 재동기화가 멈춤. core-api 로그 [github] reconcile, ShedLock(github-evidence-reconcile) 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "(time() - max(github_reconcile_last_run)) and on() (min(process_uptime_seconds{application=\"core-api\"}) > 3600)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [3600] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+# 시험용으로 넣었다가 남은 룰 — 1분마다 발화하던 것 제거
+deleteRules:
+  - orgId: 1
+    uid: llm_alert_selftest_ping

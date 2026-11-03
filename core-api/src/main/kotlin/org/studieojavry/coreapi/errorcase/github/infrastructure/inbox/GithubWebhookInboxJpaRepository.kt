@@ -44,4 +44,11 @@ interface GithubWebhookInboxJpaRepository : JpaRepository<GithubWebhookInboxEnti
         """,
     )
     fun requeueAllFailed(@Param("now") now: Instant): Int
+
+    /** 운영 지표 — 상태별 건수. */
+    fun countByStatus(status: GithubWebhookInboxEntity.InboxStatus): Long
+
+    /** 운영 지표 — [status] 중 가장 먼저 받은 시각. 없으면 null. */
+    @Query("SELECT MIN(e.receivedAt) FROM GithubWebhookInboxEntity e WHERE e.status = :status")
+    fun oldestReceivedAt(@Param("status") status: GithubWebhookInboxEntity.InboxStatus): Instant?
 }

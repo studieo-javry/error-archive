@@ -1,0 +1,121 @@
+// k3s observability ns ConfigMap alloy-config 사본(kubectl 직접 관리). 반영: kubectl create cm ... --dry-run=client -o yaml | kubectl apply -f - 후 rollout restart deploy/alloy.
+// apps 네임스페이스 파드 디스커버리
+discovery.kubernetes "apps" {
+  role = "pod"
+  namespaces {
+    names = ["apps"]
+  }
+}
+
+// 5개 백엔드만(publish-api 포함) + 같은 노드(instance02)만 유지 → podIP:containerPort 로 주소 구성
+discovery.relabel "app_metrics" {
+  targets = discovery.kubernetes.apps.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    regex         = "iam-api|core-api|noti-api|insight-api|publish-api"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    regex         = "error-archive-instance02"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_phase"]
+    regex         = "Running"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_container_port_number"]
+    separator     = ":"
+    target_label  = "__address__"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "app"
+  }
+  // instance 라벨을 앱 이름으로 (대시보드 드롭다운에 core-api/iam-api 로 표시).
+  // 각 앱 1 레플리카라 유일. 멀티 레플리카 시엔 pod 명으로 되돌릴 것.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "instance"
+  }
+  // application 라벨도 부여 — JVM(Micrometer) 대시보드가 기대하는 표준 라벨.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "application"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+}
+
+prometheus.scrape "apps" {
+  targets         = discovery.relabel.app_metrics.output
+  metrics_path    = "/internal/actuator/prometheus"
+  scrape_interval = "15s"
+  job_name        = "apps-jvm"
+  forward_to      = [prometheus.remote_write.dbvm.receiver]
+}
+
+prometheus.remote_write "dbvm" {
+  endpoint {
+    url = "http://10.0.0.183:9090/api/v1/write"
+  }
+  external_labels = {
+    cluster = "error-archive",
+  }
+}
+
+// ===== Phase 2: 로그 수집 (Loki) =====
+// apps + platform 네임스페이스 파드 로그를 K8s API 경유로 tail → DB VM Loki.
+discovery.kubernetes "log_pods" {
+  role = "pod"
+}
+
+discovery.relabel "pod_logs" {
+  targets = discovery.kubernetes.log_pods.targets
+
+  // 우리 서비스 네임스페이스만 (kube-system 등 노이즈 제외)
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    regex         = "apps|platform"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "app"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pod_logs.output
+  forward_to = [loki.write.dbvm.receiver]
+}
+
+loki.write "dbvm" {
+  endpoint {
+    url = "http://10.0.0.183:3100/loki/api/v1/push"
+  }
+  external_labels = {
+    cluster = "error-archive",
+  }
+}

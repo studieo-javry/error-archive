@@ -23,13 +23,18 @@ resources:
   # 전역 상한은 콘솔 spend limit 과 이중 백스톱. (llm.rate-limit.global-per-day ← relaxed binding)
   # 비용 메트릭(llm_draft_estimated_cost_usd_total) 추정 단가(USD/1M tokens). Haiku $1/$5 기준 추정치 —
   # 과금이 아니라 알림용 추정이라 ±오차 허용. 실단가는 콘솔 Usage(비용÷토큰)로 역산해 조정 가능.
+  # 분산 추적 전송 — 5개 서비스 모두 DB VM Tempo(Zipkin 수신 9411)로 span 을 보낸다. apps ns NetworkPolicy allow-egress 에 9411 허용 필요.
 configMapGenerator:
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  - TRACING_EXPORT_ENABLED=true
+  - TRACING_ZIPKIN_ENDPOINT=http://10.0.0.183:9411/api/v2/spans
   - DEMO_ENABLED=true
   name: iam-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  - TRACING_EXPORT_ENABLED=true
+  - TRACING_ZIPKIN_ENDPOINT=http://10.0.0.183:9411/api/v2/spans
   - REDIS_HOST=redis
   - REDIS_PORT=6379
   - DEMO_ENABLED=true
@@ -41,14 +46,20 @@ configMapGenerator:
   name: core-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  - TRACING_EXPORT_ENABLED=true
+  - TRACING_ZIPKIN_ENDPOINT=http://10.0.0.183:9411/api/v2/spans
   - REDIS_HOST=redis
   - REDIS_PORT=6379
   name: noti-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  - TRACING_EXPORT_ENABLED=true
+  - TRACING_ZIPKIN_ENDPOINT=http://10.0.0.183:9411/api/v2/spans
   name: insight-api-env
 - literals:
   - SPRING_PROFILES_ACTIVE=prod
+  - TRACING_EXPORT_ENABLED=true
+  - TRACING_ZIPKIN_ENDPOINT=http://10.0.0.183:9411/api/v2/spans
   - DEMO_ENABLED=true
   name: publish-api-env
 generatorOptions:

@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.github.infrastructure.inbox
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.micrometer.core.instrument.MeterRegistry
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.springframework.data.domain.PageRequest
 import org.springframework.scheduling.annotation.Scheduled
@@ -23,6 +24,7 @@ import java.time.Instant
  * - 실패: 별도 트랜잭션에서 attempts++ · backoff(2^n·base, 상한) · 최대 횟수 넘으면 FAILED(수동 재처리 대상).
  * - GitHub 호출 한도 초과(403/429, [GithubApiException.retryAfter]): 처리 실패가 아니므로 시도 횟수를 쓰지 않고 한도가 풀릴 때까지 미룬다.
  * - 한도를 넘기 전에도: GitHub 를 부를 수 있는 이벤트는 잔량이 예비분(사용자 몫) 이하면 처리하지 않고 리셋까지 미룬다([GithubRateLimitPort]).
+ * - 처리 결과마다 `github.webhook.inbox.processed{event,outcome}` 를 센다(done·skipped·retry·failed·deferred).
  */
 @Component
 @ConditionalOnGithubEnabled
@@ -31,6 +33,7 @@ class GithubWebhookInboxProcessor(
     private val processEvent: ProcessGithubWebhookEventUseCase,
     private val properties: GithubAppProperties,
     private val rateLimits: GithubRateLimitPort,
+    private val meterRegistry: MeterRegistry,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = KotlinLogging.logger {}
@@ -56,11 +59,14 @@ class GithubWebhookInboxProcessor(
                 val wait = row.installationId?.takeIf { row.event in CALLS_GITHUB }?.let(rateLimits::backgroundWait)
                 if (wait != null) {
                     row.defer("GitHub 호출 한도 예비분 — 사용자 요청 몫으로 남겨 둠", wait.coerceAtMost(MAX_RATE_LIMIT_WAIT))
+                    count(row.event, OUTCOME_DEFERRED)
                     log.info { "github webhook deferred (rate limit reserve): delivery=$deliveryId event=${row.event} wait=$wait" }
                     return@executeWithoutResult
                 }
                 val result = processEvent.invoke(row.event, row.action, row.installationId, row.payload)
-                row.markProcessed(skipped = result == ProcessGithubWebhookEventUseCase.Result.SKIPPED)
+                val skipped = result == ProcessGithubWebhookEventUseCase.Result.SKIPPED
+                row.markProcessed(skipped = skipped)
+                count(row.event, if (skipped) OUTCOME_SKIPPED else OUTCOME_DONE)
             }
         } catch (ex: Exception) {
             recordFailure(deliveryId, ex)
@@ -76,19 +82,33 @@ class GithubWebhookInboxProcessor(
             if (rateLimited != null) {
                 val wait = rateLimited.coerceIn(MIN_RATE_LIMIT_WAIT, MAX_RATE_LIMIT_WAIT)
                 row.defer(reason, wait)
+                count(row.event, OUTCOME_DEFERRED)
                 log.info { "github webhook deferred (rate limit): delivery=$deliveryId event=${row.event} wait=$wait" }
             } else if (row.attempts + 1 >= properties.inbox.maxAttempts) {
                 row.markFailed(reason)
+                count(row.event, OUTCOME_FAILED)
                 log.warn(ex) { "github webhook FAILED: delivery=$deliveryId event=${row.event} attempts=${row.attempts}" }
             } else {
                 val exp = (1L shl minOf(row.attempts + 1, 20)) * properties.inbox.baseBackoffMs
                 row.scheduleRetry(reason, Duration.ofMillis(minOf(exp, properties.inbox.maxBackoffMs)))
+                count(row.event, OUTCOME_RETRY)
                 log.debug { "github webhook retry: delivery=$deliveryId attempt=${row.attempts}" }
             }
         }
     }
 
+    private fun count(event: String, outcome: String) {
+        meterRegistry.counter(METRIC_PROCESSED, "event", event, "outcome", outcome).increment()
+    }
+
     companion object {
+        const val METRIC_PROCESSED = "github.webhook.inbox.processed"
+        const val OUTCOME_DONE = "done"
+        const val OUTCOME_SKIPPED = "skipped"
+        const val OUTCOME_RETRY = "retry"
+        const val OUTCOME_FAILED = "failed"
+        const val OUTCOME_DEFERRED = "deferred"
+
         private val MIN_RATE_LIMIT_WAIT: Duration = Duration.ofSeconds(1)
         private val MAX_RATE_LIMIT_WAIT: Duration = Duration.ofHours(1)
 

@@ -34,8 +34,10 @@ class IamApiRestClientConfig {
     fun iamApiRestClient(
         properties: IamApiProperties,
         internalTokenIssuer: InternalTokenIssuer,
+        // Boot 가 만든 빌더 — 추적 관측이 붙어 있어 호출 헤더로 traceId 가 넘어간다(같은 요청이 서비스를 건너도 한 추적).
+        restClientBuilder: RestClient.Builder,
     ): RestClient =
-        RestClient.builder()
+        restClientBuilder
             .baseUrl(properties.baseUrl)
             // connect/read timeout — iam-api 가 느려지거나 멈춰도 홈 대시보드 등 호출 스레드가
             // 무한정 매달리지 않도록 소켓 레벨 하드 캡. CircuitBreaker 5s TimeLimiter 안쪽,

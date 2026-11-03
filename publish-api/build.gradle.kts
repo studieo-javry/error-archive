@@ -40,7 +40,11 @@ dependencies {
 
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
-  implementation("io.micrometer:micrometer-tracing-bridge-brave")
+  // 분산 추적 — Boot 4 는 추적 자동설정이 별도 모듈이라 브리지만으론 traceId 가 안 생긴다(로그 [,] 빈칸).
+  // 이 스타터 = 추적 자동설정 + Brave 브리지 + Zipkin 전송(기본 꺼짐, TRACING_EXPORT_ENABLED 로 켬).
+  implementation("org.springframework.boot:spring-boot-starter-zipkin")
+  // Boot 가 만드는 RestClient.Builder(추적 헤더 전파 포함) — Boot 4 는 별도 모듈. core-api 는 circuitbreaker 경유로 이미 있음.
+  implementation("org.springframework.boot:spring-boot-starter-restclient")
   // 관측 — Prometheus 메트릭 registry (/internal/actuator/prometheus 노출).
   runtimeOnly("io.micrometer:micrometer-registry-prometheus")
   // 공통 에러 처리 — GlobalExceptionHandler(4xx 매핑·traceId) + ProblemDetail security 핸들러 (auto-config).

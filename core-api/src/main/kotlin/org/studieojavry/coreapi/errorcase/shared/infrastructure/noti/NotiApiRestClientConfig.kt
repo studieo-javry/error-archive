@@ -27,8 +27,10 @@ class NotiApiRestClientConfig {
     fun notiApiRestClient(
         properties: NotiApiProperties,
         internalTokenIssuer: InternalTokenIssuer,
+        // Boot 가 만든 빌더 — 추적 관측이 붙어 있어 호출 헤더로 traceId 가 넘어간다(같은 요청이 서비스를 건너도 한 추적).
+        restClientBuilder: RestClient.Builder,
     ): RestClient =
-        RestClient.builder()
+        restClientBuilder
             .baseUrl(properties.baseUrl)
             // connect/read timeout — noti-api 지연/정지 시 호출 스레드 무한 대기 방지 (소켓 레벨 하드 캡).
             // iam RestClient 와 동일 정책: CircuitBreaker 5s TimeLimiter 안쪽, gateway 10s 보다 짧게.

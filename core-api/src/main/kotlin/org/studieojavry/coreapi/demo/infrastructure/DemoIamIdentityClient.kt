@@ -22,10 +22,12 @@ import java.time.Duration
 class DemoIamIdentityClient(
     properties: IamApiProperties,
     private val internalTokenIssuer: InternalTokenIssuer,
+    // Boot 가 만든 빌더 — 추적 관측이 붙어 있어 호출 헤더로 traceId 가 넘어간다.
+    restClientBuilder: RestClient.Builder,
 ) {
     private val log = KotlinLogging.logger {}
 
-    private val restClient: RestClient = RestClient.builder()
+    private val restClient: RestClient = restClientBuilder
         .baseUrl(properties.baseUrl)
         .requestFactory(
             ClientHttpRequestFactoryBuilder.detect().build(

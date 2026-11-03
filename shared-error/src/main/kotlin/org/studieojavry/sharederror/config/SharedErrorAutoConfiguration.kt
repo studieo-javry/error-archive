@@ -8,6 +8,7 @@ import org.studieojavry.sharederror.security.AuthFailureMonitor
 import org.studieojavry.sharederror.security.CaffeineAuthFailureMonitor
 import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
 import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
+import org.studieojavry.sharederror.trace.ActuatorObservationPredicate
 import org.studieojavry.sharederror.trace.TraceIdAccessor
 import tools.jackson.databind.ObjectMapper
 
@@ -45,4 +46,9 @@ class SharedErrorAutoConfiguration {
         traceIdAccessor: TraceIdAccessor,
     ): ProblemDetailAccessDeniedHandler =
         ProblemDetailAccessDeniedHandler(objectMapper, traceIdAccessor)
+
+    /** 헬스체크·메트릭 수집 요청은 추적·요청 지표에서 뺀다. Boot 가 ObservationPredicate 빈을 관측 레지스트리에 붙인다. */
+    @Bean
+    @ConditionalOnMissingBean
+    fun actuatorObservationPredicate(): ActuatorObservationPredicate = ActuatorObservationPredicate()
 }

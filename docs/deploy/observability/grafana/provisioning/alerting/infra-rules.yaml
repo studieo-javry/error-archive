@@ -723,6 +723,88 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
 
+      - uid: dlq_dead_messages
+        title: DLQ 포기한 메시지 있음
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} DLQ 에 포기(DEAD)한 메시지가 있음"
+          description: "10번 재시도(약 1시간 25분)해도 처리 못 한 메시지 — 알림·활동 기록이 사용자에게 안 감. GET /internal/admin/dlq 로 확인 후 POST /internal/admin/dlq/{id}/retry."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "max by (application) ({__name__=~\"noti_dlq_dead_count|insight_dlq_dead_count\", job=\"apps-jvm\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: dlq_retry_stuck
+        title: DLQ 재시도 멈춤
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.application }} DLQ 에서 2시간 넘게 기다리는 메시지가 있음"
+          description: "재시도는 1시간 25분 안에 끝나야 함. 더 오래 PENDING 이면 재시도 작업(DlqRetryJob)이 멈춘 것 — 서비스 로그와 서비스 개요의 '작업별 실행 수' 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "max by (application) ({__name__=~\"noti_dlq_oldest_age|insight_dlq_oldest_age\", job=\"apps-jvm\"})"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [7200] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
 # 시험용으로 넣었다가 남은 룰 — 1분마다 발화하던 것 제거
 deleteRules:
   - orgId: 1

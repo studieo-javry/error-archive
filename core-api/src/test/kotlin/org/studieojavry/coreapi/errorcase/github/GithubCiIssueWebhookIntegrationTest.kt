@@ -11,6 +11,7 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
@@ -35,6 +36,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapsho
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubPullRequestSnapshot
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
+import org.studieojavry.coreapi.errorcase.github.infrastructure.api.GithubRateLimitTracker
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxProcessor
@@ -93,6 +95,7 @@ class GithubCiIssueWebhookIntegrationTest {
     @Autowired private lateinit var inboxRepo: GithubWebhookInboxJpaRepository
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var issueRepo: GithubIssueJpaRepository
+    @Autowired private lateinit var rateLimits: GithubRateLimitTracker
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -339,6 +342,31 @@ class GithubCiIssueWebhookIntegrationTest {
         assertEquals(InboxStatus.PENDING, row.status)
         assertEquals(0, row.attempts, "한도 초과는 실패 횟수에 넣지 않음")
         assertTrue(row.nextRetryAt.isAfter(before.plus(Duration.ofMinutes(9))), "${row.nextRetryAt}")
+    }
+
+    @Test
+    fun `호출 한도 예비분 - 잔량이 한도의 20퍼센트 이하면 GitHub 를 부르는 웹훅은 처리하지 않고 리셋까지 미룸(시도 횟수 그대로)`() {
+        val me = 411L
+        val s = seedRepo(me)
+        val caseId = createCase(me)
+        stubItem(s, 170, prItem(s, 170, head = "c170"))
+        stubRuns(s, "c170")
+        link(me, caseId, "https://github.com/${s.fullName}/pull/170").andExpect(status().isCreated)
+
+        val reset = Instant.now().plusSeconds(1200)
+        rateLimits.record(s.installationId, HttpHeaders().apply {
+            add("x-ratelimit-limit", "5000"); add("x-ratelimit-remaining", "700")
+            add("x-ratelimit-reset", reset.epochSecond.toString()); add("x-ratelimit-resource", "graphql")
+        })
+        Mockito.clearInvocations(githubApi)
+        val delivery = checkSuite(s, "c170", listOf(170))
+
+        val row = inboxRepo.findById(delivery).orElseThrow()
+        assertEquals(InboxStatus.PENDING, row.status)
+        assertEquals(0, row.attempts)
+        assertTrue(row.nextRetryAt.isAfter(Instant.now().plusSeconds(1100)), "${row.nextRetryAt}")
+        Mockito.verify(githubApi, Mockito.never()).fetchCommitCheckRuns(anyLong(), anyString(), anyString(), anyString())
+        Mockito.verifyNoInteractions(githubApi)
     }
 
     @Test

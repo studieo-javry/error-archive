@@ -33,6 +33,7 @@ data class GithubAppProperties(
     val webBaseUrl: String = "https://github.com",
     val stateTtl: Duration = Duration.ofMinutes(10),
     val inbox: Inbox = Inbox(),
+    val rateLimit: RateLimit = RateLimit(),
 ) {
     /** 웹훅 inbox 처리기 파라미터. backoff = min(2^attempts * base, max). */
     data class Inbox(
@@ -41,6 +42,14 @@ data class GithubAppProperties(
         val maxAttempts: Int = 8,
         val baseBackoffMs: Long = 5000,
         val maxBackoffMs: Long = 3_600_000,
+    )
+
+    /**
+     * GitHub 호출 한도 나눠 쓰기. 백그라운드 작업(웹훅 처리·재동기화)은 남은 양이 한도의 [backgroundReserveRatio] 이하가 되면
+     * 리셋까지 멈추고 그 몫을 사용자 요청(연결·검색·가져오기)에 남긴다.
+     */
+    data class RateLimit(
+        val backgroundReserveRatio: Double = 0.2,
     )
 
     @AssertTrue(

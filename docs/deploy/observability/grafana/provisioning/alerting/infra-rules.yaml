@@ -553,6 +553,176 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
 
+  # Kafka 브로커·소비 지연 (kafka-exporter)
+  - orgId: 1
+    name: kafka
+    folder: Infra
+    interval: 1m
+    rules:
+      - uid: kafka_broker_down
+        title: Kafka 브로커 응답 없음
+        condition: C
+        for: 3m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka 브로커에 연결할 수 없음"
+          description: "kafka-exporter 가 ea-kafka(10.0.0.183)에 3분째 못 붙음 — 알림·활동 이벤트 발행·소비가 멈춤. DB VM 에서 docker ps / docker logs ea-kafka 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "max(kafka_brokers)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: kafka_consumer_absent
+        title: Kafka 소비자 없음
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "소비자 그룹 {{ $labels.consumergroup }} 에 붙은 소비자가 없음"
+          description: "해당 서비스(noti-api·insight-api)가 Kafka 에서 떨어졌거나 내려감. 메시지는 쌓이고 처리되지 않음."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "sum by (consumergroup) (kafka_consumergroup_members)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: kafka_consumer_stalled
+        title: Kafka 소비 멈춤
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.consumergroup }} 가 {{ $labels.topic }} 를 15분째 소비하지 못함"
+          description: "밀린 메시지가 있는데 15분 동안 하나도 처리하지 못함 — 리스너가 한 메시지에서 계속 실패하거나 멈춤. 해당 서비스 로그(Loki) 확인."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "(sum by (consumergroup, topic) (kafka_consumergroup_lag_sum) > 0) and (sum by (consumergroup, topic) (delta(kafka_consumergroup_current_offset_sum[15m])) == 0)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+      - uid: kafka_lag_high
+        title: Kafka 소비 지연 많음
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.consumergroup }} · {{ $labels.topic }} 밀린 메시지 1000개 초과"
+          description: "들어오는 속도를 처리가 못 따라감. 알림이 늦게 가는 중."
+        notification_settings:
+          receiver: slack-ea
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              editorMode: code
+              expr: "sum by (consumergroup, topic) (kafka_consumergroup_lag_sum)"
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [1000] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last }
+              intervalMs: 1000
+              maxDataPoints: 43200
+
 # 시험용으로 넣었다가 남은 룰 — 1분마다 발화하던 것 제거
 deleteRules:
   - orgId: 1

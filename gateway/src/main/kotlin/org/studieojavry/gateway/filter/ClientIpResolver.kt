@@ -26,8 +26,9 @@ data class ClientIpProperties(
  * ForwardedHeaderFilter 가 요청을 감싸 remoteAddr 를 `X-Forwarded-For` 맨 앞 값으로 바꾸기 때문이다.
  * 래퍼를 끝까지 벗겨 컨테이너가 본 실제 소켓 주소를 읽는다.
  *
- * ⚠️ 배포 전제: 게이트웨이 Service 가 `externalTrafficPolicy: Local` 이어야 파드가 실제 피어를 본다.
- *    `Cluster` 면 SNAT 로 피어가 클러스터 내부 IP 로 뭉쳐, 모든 사용자가 한 버킷을 나눠 쓰게 된다.
+ * 배포 전제: TCP 피어가 trustedProxies 안이면 X-Forwarded-For 마지막 값을 쓴다.
+ *   - Cluster(기본): kube-proxy 가 피어를 노드 IP(10.0.0.x)로 SNAT → trustedProxies(10.0.0.0/24) 안 → XFF 마지막 값(OCI LB 가 덧붙인 실 클라 IP) 신뢰 → 사용자별 버킷 정상.
+ *   - Local: 파드가 LB 백엔드 사설 IP 를 직접 본다 → 그 IP 가 trustedProxies 안이어야 동작(+단일 노드 순단 주의).
  */
 @Component
 class ClientIpResolver(properties: ClientIpProperties) {

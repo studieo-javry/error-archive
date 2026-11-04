@@ -227,6 +227,20 @@ class RouteConfig(
             .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
             .build()
 
+    /**
+     * Sentry 웹훅 — Sentry 서버가 호출(앱 토큰 없음, 인증은 core-api 의 Sentry-Hook-Signature HMAC 검증). 무인증 공개라 per-IP rate limit.
+     * core-api 가 본문 sha256 으로 멱등 처리하므로 재시도 안전 — 본문 재전송 비용을 피하려 retry 미적용.
+     * coreApiRoute 보다 먼저 선언(그쪽 integrations 와일드카드의 서브셋).
+     */
+    @Bean
+    fun sentryWebhookRoute(): RouterFunction<ServerResponse> =
+        route("sentry-webhook")
+            .POST("/api/v1/integrations/sentry/webhook", http())
+            .before(uri(downstream.coreApi))
+            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "sentry-webhook", capacity = 60.0, refillPerSec = 5.0))
+            .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
+            .build()
+
     @Bean
     fun coreApiRoute(): RouterFunction<ServerResponse> =
         route("core-api")

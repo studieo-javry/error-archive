@@ -52,8 +52,8 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
-  # X-Forwarded-For 를 믿을 TCP 피어 대역 = OCI 로드밸런서가 있는 서브넷(ErrorArchive_subnet).
-  # ⚠️ 게이트웨이 Service 가 externalTrafficPolicy: Local 이어야 동작한다(ClientIpResolver 참고).
+ # Cluster(기본)·Local 모두 동작: 피어(Cluster=노드 SNAT IP / Local=LB 사설 IP)가 이 대역 안이면
+ # XFF 마지막 값을 신뢰한다(ClientIpResolver 참고).
   client-ip:
     trusted-proxies:
       - 10.0.0.0/24

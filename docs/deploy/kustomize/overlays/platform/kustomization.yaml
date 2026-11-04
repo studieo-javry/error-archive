@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# gateway 전용 overlay. stg overlay 는 namespace: apps 라 분리했다. 네임스페이스 platform.
+namespace: platform
+
+resources:
+- ../../base/gateway
+
+configMapGenerator:
+- literals:
+  - SPRING_PROFILES_ACTIVE=prod
+  - GATEWAY_PORT=8443
+  - GATEWAY_CORE_API_URI=http://core-api.apps:8081
+  - GATEWAY_IAM_API_URI=http://iam-api.apps:8080
+  - GATEWAY_INSIGHT_API_URI=http://insight-api.apps:8083
+  - GATEWAY_NOTI_API_URI=http://noti-api.apps:8082
+  - GATEWAY_PUBLISH_API_URI=http://publish-api.apps:8084
+  - REDIS_HOST=redis
+  - REDIS_PORT=6379
+  name: gateway-env
+generatorOptions:
+  disableNameSuffixHash: true
+
+# GitHub Actions(bump-manifest)가 newTag 를 커밋 SHA 로 갱신.
+images:
+- name: gateway
+  newName: ghcr.io/studieo-javry/gateway
+  newTag: stg

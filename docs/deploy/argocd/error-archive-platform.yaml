@@ -1,0 +1,19 @@
+# gateway 용 ArgoCD Application. 최초 1회 kubectl apply -f 로 등록한다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: error-archive-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/studieo-javry/error-archive.git
+    targetRevision: alpha
+    path: docs/deploy/kustomize/overlays/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=false

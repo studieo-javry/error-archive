@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  type: NodePort
+  # externalTrafficPolicy 는 기본값 Cluster. 외부 트래픽은 kube-proxy 가 노드 IP(10.0.0.x)로 SNAT →
+  # 소켓 피어 ∈ trusted-proxies(10.0.0.0/24) → ClientIpResolver 가 XFF 마지막 값(OCI L7 LB 가 append 한
+  # 실 클라 IP)을 신뢰. Local 은 LB 사설 IP ∈ trusted-proxies 확정·단일 노드 순단 검토 후 별도로.
+  externalTrafficPolicy: Cluster
+  selector: { app: gateway }
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+      nodePort: 30443
+      protocol: TCP

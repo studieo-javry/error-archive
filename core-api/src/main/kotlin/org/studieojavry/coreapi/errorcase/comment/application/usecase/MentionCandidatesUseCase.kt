@@ -23,6 +23,9 @@ import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAc
  *  - viewer 본인 / DELETED 사용자는 제외 (iam-api 가 ACTIVE 만 반환)
  *  - 워크스페이스 케이스에선 *멤버 외* 후보 제외 — 외부 사용자 멘션 시 정보 누출 방지
  *
+ * **검색어 필터**: q 가 있으면 *모든* 후보(①②③ 포함)를 displayName/handle prefix 일치로 거른다.
+ *  맥락 후보라고 검색어와 무관하게 남기면 `@zz` 에도 댓글 참여자가 뜨고, 실제 일치 후보가 뒤로 밀린다.
+ *
  * **랭킹**: 신호별 점수 합 + prefix 일치 보너스 + alphabetical tie-break.
  */
 @Service
@@ -96,6 +99,7 @@ class MentionCandidatesUseCase(
         val results = finalIds
             .mapNotNull { uid ->
                 val info = infoById[uid] ?: return@mapNotNull null
+                if (!matchesQuery(info.displayName, info.handle, q)) return@mapNotNull null
                 val s = scored[uid] ?: return@mapNotNull null
                 var rank = s.score
                 if (q.isNotEmpty() && info.displayName.startsWith(q, ignoreCase = true)) rank += 12
@@ -123,6 +127,14 @@ class MentionCandidatesUseCase(
 
     data class Item(val userId: Long, val displayName: String, val handle: String?, val avatarUrl: String?, val badge: String?)
     private data class Score(val score: Int, val topBadge: BadgeKind)
+
+    companion object {
+        /** 빈 q 는 전부 통과(기본 추천). 그 외엔 displayName 또는 handle 이 q 로 시작(대소문자 무시) — iam 검색과 같은 규칙. */
+        internal fun matchesQuery(displayName: String, handle: String?, q: String): Boolean =
+            q.isEmpty() ||
+                displayName.startsWith(q, ignoreCase = true) ||
+                handle?.startsWith(q, ignoreCase = true) == true
+    }
 
     private enum class BadgeKind(val priority: Int, val code: String) {
         IN_DISCUSSION(1, "in-discussion"),

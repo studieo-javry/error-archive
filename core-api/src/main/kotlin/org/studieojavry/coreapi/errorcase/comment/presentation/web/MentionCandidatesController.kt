@@ -31,6 +31,8 @@ class MentionCandidatesController(
         description = """
             **순서**(랭킹): 케이스 댓글 참여자(30) > 케이스 owner(20) > 워크스페이스 멤버(15) > iam-api 검색(5) — *prefix 일치 시 +12 보너스*.
 
+            **검색어(q)**: 비어 있으면 맥락 후보(댓글 참여자·owner·워크스페이스 멤버) 기본 추천. 값이 있으면 *모든* 후보를 displayName/handle prefix(대소문자 무시)로 거른다.
+
             **권한 가드**:
             - 케이스 read 권한 없으면 403
             - viewer 본인은 결과에서 제외
@@ -49,7 +51,7 @@ class MentionCandidatesController(
     fun candidates(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
-        @Parameter(description = "displayName prefix. 빈 값=default suggestion.", example = "ji")
+        @Parameter(description = "displayName/handle prefix. 빈 값=default suggestion.", example = "ji")
         @RequestParam(required = false) q: String?,
         @Parameter(description = "1..20", example = "10")
         @RequestParam(required = false, defaultValue = "10") limit: Int,

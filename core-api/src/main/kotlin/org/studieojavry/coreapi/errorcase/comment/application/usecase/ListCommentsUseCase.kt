@@ -55,9 +55,13 @@ class ListCommentsUseCase(
         val helpedByUserIds: List<Long>,
         val helpedByMe: Boolean,
         val mentions: List<String>,
+        /** 사용자로 연결된 멘션만 (식별자 → userId). 표시 정보는 presentation 이 일괄 조회. */
+        val mentionedUsers: List<MentionRef> = emptyList(),
         val suggestion: CommentSuggestion?,
         val replies: List<CommentNode>,
     )
+
+    data class MentionRef(val identifier: String, val userId: Long)
 
     data class QuoteSummary(
         val general: Int,
@@ -129,6 +133,7 @@ class ListCommentsUseCase(
                 helpedByUserIds = hps.map { it.userId },
                 helpedByMe = hps.any { it.userId == input.requesterUserId },
                 mentions = mnts.map { it.mentionedIdentifier },
+                mentionedUsers = mnts.mapNotNull { m -> m.mentionedUserId?.let { MentionRef(m.mentionedIdentifier, it) } },
                 suggestion = suggestions[c.id],
                 replies = emptyList(),
             )

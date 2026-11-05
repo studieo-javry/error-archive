@@ -42,10 +42,12 @@ import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.C
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.UpdateCommentRequest
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.request.UpdateSuggestionStatusRequest
 import org.studieojavry.coreapi.errorcase.case.application.port.AuthorSummaryReaderPort
+import org.studieojavry.coreapi.errorcase.comment.domain.model.CommentMention
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentAuthorDto
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentListResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.CommentResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.HelpfulToggleResponse
+import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.MentionedUserDto
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.ReactionResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.SuggestionStatusResponse
 import org.studieojavry.coreapi.errorcase.comment.presentation.web.dto.response.toDto
@@ -80,6 +82,11 @@ class CommentController(
 ) {
 
     /** userId 집합 → 표시 정보 디렉토리. iam 해석 실패한 userId 는 map 에서 빠지고, 매핑 측에서 unknown 폴백. */
+    private fun mentionedUserDtos(rows: List<CommentMention>, people: Map<Long, CommentAuthorDto>): List<MentionedUserDto> =
+        rows.mapNotNull { m ->
+            m.mentionedUserId?.let { MentionedUserDto.of(m.mentionedIdentifier, people[it] ?: CommentAuthorDto.unknown(it)) }
+        }
+
     private fun resolveAuthors(userIds: Set<Long>, viewerUserId: Long?): Map<Long, CommentAuthorDto> =
         if (userIds.isEmpty()) emptyMap()
         else authorSummaryReader.read(userIds, viewerUserId)
@@ -149,9 +156,10 @@ class CommentController(
 
         val caseOwnerUserId = errorCaseRepository.findById(caseId)?.ownerUserId ?: -1L
         val suggestion = commentRepository.findSuggestionByCommentId(created.id!!)
-        // 단건 응답에선 reaction/helpful/mention 비어있는 상태(방금 만들었으니)
-        val author = resolveAuthors(setOf(created.authorUserId), userId)[created.authorUserId]
-            ?: CommentAuthorDto.unknown(created.authorUserId)
+        // 단건 응답에선 reaction/helpful 비어있는 상태(방금 만들었으니). 멘션은 방금 적재된 것을 그대로.
+        val mentionRows = commentRepository.findMentionsByCommentIds(listOf(created.id!!))
+        val people = resolveAuthors(setOf(created.authorUserId) + mentionRows.mapNotNull { it.mentionedUserId }, userId)
+        val author = people[created.authorUserId] ?: CommentAuthorDto.unknown(created.authorUserId)
         return CommentResponse(
             id = created.id!!,
             errorCaseId = created.errorCaseId,
@@ -163,7 +171,8 @@ class CommentController(
             quote = created.toQuoteDto(),
             reactions = emptyList(),
             helpful = CommentResponse.HelpfulDto(0, emptyList(), false),
-            mentions = emptyList(),
+            mentions = mentionRows.map { it.mentionedIdentifier },
+            mentionedUsers = mentionedUserDtos(mentionRows, people),
             suggestion = suggestion?.toDto(),
             editedAt = created.editedAt?.toApiOffset(),
             deletedAt = created.deletedAt?.toApiOffset(),
@@ -228,6 +237,7 @@ class CommentController(
             referencedUserIds += node.comment.authorUserId
             referencedUserIds += node.helpedByUserIds
             node.reactions.forEach { referencedUserIds += it.userIds }
+            referencedUserIds += node.mentionedUsers.map { it.userId }
             node.replies.forEach { collect(it) }
         }
         r.items.forEach { collect(it) }
@@ -246,7 +256,7 @@ class CommentController(
         )
     }
 
-    @Operation(summary = "댓글 수정", description = "작성자 본인만. body 만 변경. 응답에 (편집됨) 표시용 `editedAt` 세팅.")
+    @Operation(summary = "댓글 수정", description = "작성자 본인만. body 만 변경. 응답에 (편집됨) 표시용 `editedAt` 세팅. 멘션은 수정된 본문 기준으로 다시 적재하고, **이번 수정으로 새로 멘션된 사람**(케이스 읽기 권한자)에게만 알림.")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수정됨"),
         ApiResponse(responseCode = "400", description = "검증 실패 / 삭제된 댓글", content = [Content()]),
@@ -272,8 +282,9 @@ class CommentController(
         }
         val caseOwnerUserId = errorCaseRepository.findById(caseId)?.ownerUserId ?: -1L
         val suggestion = commentRepository.findSuggestionByCommentId(c.id!!)
-        val author = resolveAuthors(setOf(c.authorUserId), userId)[c.authorUserId]
-            ?: CommentAuthorDto.unknown(c.authorUserId)
+        val mentionRows = commentRepository.findMentionsByCommentIds(listOf(c.id!!))
+        val people = resolveAuthors(setOf(c.authorUserId) + mentionRows.mapNotNull { it.mentionedUserId }, userId)
+        val author = people[c.authorUserId] ?: CommentAuthorDto.unknown(c.authorUserId)
         return CommentResponse(
             id = c.id!!,
             errorCaseId = c.errorCaseId,
@@ -285,7 +296,8 @@ class CommentController(
             quote = c.toQuoteDto(),
             reactions = emptyList(),
             helpful = CommentResponse.HelpfulDto(0, emptyList(), false),
-            mentions = emptyList(),
+            mentions = mentionRows.map { it.mentionedIdentifier },
+            mentionedUsers = mentionedUserDtos(mentionRows, people),
             suggestion = suggestion?.toDto(),
             editedAt = c.editedAt?.toApiOffset(), deletedAt = c.deletedAt?.toApiOffset(),
             createdAt = c.createdAt.toApiOffset(), updatedAt = c.updatedAt.toApiOffset(),

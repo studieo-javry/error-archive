@@ -246,7 +246,7 @@ class CommentController(
         )
     }
 
-    @Operation(summary = "댓글 수정", description = "작성자 본인만. body 만 변경. 응답에 (편집됨) 표시용 `editedAt` 세팅.")
+    @Operation(summary = "댓글 수정", description = "작성자 본인만. body 만 변경. 응답에 (편집됨) 표시용 `editedAt` 세팅. 멘션은 수정된 본문 기준으로 다시 적재하고, **이번 수정으로 새로 멘션된 사람**(케이스 읽기 권한자)에게만 알림.")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수정됨"),
         ApiResponse(responseCode = "400", description = "검증 실패 / 삭제된 댓글", content = [Content()]),

@@ -28,6 +28,8 @@ data class CommentResponse(
     val reactions: List<ReactionDto>,
     val helpful: HelpfulDto,
     val mentions: List<String>,
+    @field:Schema(description = "사용자로 연결된 멘션 — 본문의 `@식별자` 를 이름 칩으로 그릴 때 사용. 연결 안 된 식별자는 빠짐.")
+    val mentionedUsers: List<MentionedUserDto> = emptyList(),
     @field:Schema(description = "Diff 제안. 없으면 null.")
     val suggestion: SuggestionDto?,
     val editedAt: OffsetDateTime?,
@@ -110,6 +112,21 @@ data class CommentAuthorDto(
             displayName = "알 수 없는 사용자",
             avatarUrl = null,
         )
+    }
+}
+
+@Schema(description = "멘션된 사용자. `identifier` 는 본문에 적힌 식별자(handle 또는 표시 이름, 조사·구두점 제외).")
+data class MentionedUserDto(
+    val identifier: String,
+    val userId: Long,
+    @field:Schema(description = "탈퇴/조회 실패 시 null — 프런트는 '탈퇴한 사용자' 로 표시.")
+    val handle: String?,
+    val displayName: String,
+    val avatarUrl: String?,
+) {
+    companion object {
+        fun of(identifier: String, user: CommentAuthorDto) =
+            MentionedUserDto(identifier, user.userId, user.handle, user.displayName, user.avatarUrl)
     }
 }
 
@@ -209,6 +226,9 @@ internal fun ListCommentsUseCase.CommentNode.toResponse(
         reactions = reactions.map { it.toDto() },
         helpful = CommentResponse.HelpfulDto(helpedByCount, helpedByUserIds, helpedByMe),
         mentions = mentions,
+        mentionedUsers = mentionedUsers.map { m ->
+            MentionedUserDto.of(m.identifier, authors[m.userId] ?: CommentAuthorDto.unknown(m.userId))
+        },
         suggestion = suggestion?.toDto(),
         editedAt = comment.editedAt?.toApiOffset(),
         deletedAt = comment.deletedAt?.toApiOffset(),

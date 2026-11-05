@@ -23,6 +23,7 @@ import org.studieojavry.coreapi.demo.infrastructure.DemoIamIdentityClient
 import org.studieojavry.coreapi.errorcase.case.application.port.CaseMeTooRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseSearchCriteria
+import org.studieojavry.coreapi.errorcase.case.application.usecase.SearchPublicErrorCasesUseCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
 import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
@@ -48,6 +49,7 @@ class DemoResetGuestGuardTest {
     @Autowired private lateinit var commentRepository: CommentRepositoryPort
     @Autowired private lateinit var codeSnippetRepository: CodeSnippetRepositoryPort
     @Autowired private lateinit var meTooRepository: CaseMeTooRepositoryPort
+    @Autowired private lateinit var searchPublic: SearchPublicErrorCasesUseCase
 
     @MockitoBean private lateinit var identityClient: DemoIamIdentityClient
 
@@ -62,6 +64,21 @@ class DemoResetGuestGuardTest {
     )
 
     @Test
+    fun `데모 케이스는 회원 공개 검색에 나오지 않는다`() {
+        Mockito.`when`(identityClient.fetchIdentity())
+            .thenReturn(DemoIamIdentityClient.DemoIdentity(enabled = true, workspaceId = wsId, botUserId = botId))
+        resetService.reset()
+        val demoIds = searchWs(100).map { it.id }
+        assertThat(demoIds).isNotEmpty()
+
+        // 회원 공개 공간(Search)은 PUBLIC 만 — 데모 케이스가 섞이면 회원 댓글·me-too 가 야간 reset 으로 사라진다.
+        val publicIds = searchPublic.invoke(
+            SearchPublicErrorCasesUseCase.Input(status = null, fingerprint = null, cursor = null, size = 100, viewerUserId = null),
+        ).items.map { it.id }
+        assertThat(publicIds).doesNotContainAnyElementsOf(demoIds)
+    }
+
+    @Test
     fun `reset 는 데모 WS 를 wipe 후 봇 케이스를 reseed 한다`() {
         Mockito.`when`(identityClient.fetchIdentity())
             .thenReturn(DemoIamIdentityClient.DemoIdentity(enabled = true, workspaceId = wsId, botUserId = botId))
@@ -73,7 +90,7 @@ class DemoResetGuestGuardTest {
         val after1 = searchWs(100)
         assertThat(after1).hasSize(r1.seeded)
         assertThat(after1).allMatch {
-            it.ownerUserId == botId && it.visibility == Visibility.PUBLIC && it.workspaceId == wsId
+            it.ownerUserId == botId && it.visibility == Visibility.WORKSPACE && it.workspaceId == wsId
         }
 
         // 리치 콘텐츠 검증: 최소 한 케이스에 스텝이 있고, 최소 하나의 솔루션이 심어졌다.

@@ -6,7 +6,6 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
@@ -33,7 +32,7 @@ import java.time.Instant
 class CompleteGithubInstallationUseCase(
     private val stateCodec: GithubInstallStateCodec,
     private val githubApi: GithubAppApiPort,
-    private val repository: GithubInstallationRepositoryPort,
+    private val installationSyncer: GithubInstallationSyncer,
     private val connections: GithubConnectionRepositoryPort,
     private val workspaceQuery: WorkspaceQueryPort,
     transactionManager: PlatformTransactionManager,
@@ -65,8 +64,8 @@ class CompleteGithubInstallationUseCase(
         val space: GithubSpace = state.workspaceId?.let(GithubSpace::Workspace) ?: GithubSpace.Personal(command.userId)
 
         return tx.execute {
-            val installation = upsertInstallation(command.userId, info)
-            val synced = syncRepositories(installation.installationId, repos)
+            val installation = installationSyncer.upsertInstallation(command.userId, info)
+            val synced = installationSyncer.syncRepositories(installation.installationId, repos)
             val connection = upsertConnection(installation.installationId, space, command.userId)
             // 설치 직후엔 grant 된(활성) 레포 전부 선택 — 기존 동작 보존.
             connections.replaceSelectedRepos(
@@ -83,35 +82,10 @@ class CompleteGithubInstallationUseCase(
         }
     }
 
-    private fun upsertInstallation(userId: Long, info: GithubAppApiPort.InstallationInfo): GithubInstallation {
-        val existing = repository.findById(info.id)
-        val installation = existing
-            ?.also { it.refreshAccount(userId, info.accountLogin, info.accountType) }
-            ?: GithubInstallation.connect(info.id, info.accountLogin, info.accountType, userId)
-        return repository.save(installation)
-    }
-
     private fun upsertConnection(installationId: Long, space: GithubSpace, userId: Long): GithubConnection {
         val existing = connections.findAnyForSpaceAndInstallation(installationId, space)
         val connection = existing?.also { it.reactivate() }
             ?: GithubConnection.create(installationId, space, userId)
         return connections.save(connection)
-    }
-
-    /** 설치 대상 레포를 GitHub 기준으로 맞춘다 — 목록에 없는 기존 레포는 지우지 않고 removed 표시. */
-    private fun syncRepositories(
-        installationId: Long,
-        current: List<GithubAppApiPort.RepositoryInfo>,
-    ): List<GithubRepository> {
-        val known = repository.findRepositories(listOf(installationId)).associateBy { it.repoId }
-        val currentIds = current.map { it.id }.toSet()
-        val upserts = current.map { r ->
-            (known[r.id] ?: repository.findRepository(r.id))
-                ?.also { it.attach(installationId, r.fullName, r.isPrivate) }
-                ?: GithubRepository.of(r.id, installationId, r.fullName, r.isPrivate)
-        }
-        val removed = known.values.filter { it.repoId !in currentIds }.onEach { it.detach() }
-        repository.saveRepositories(upserts + removed)
-        return upserts
     }
 }

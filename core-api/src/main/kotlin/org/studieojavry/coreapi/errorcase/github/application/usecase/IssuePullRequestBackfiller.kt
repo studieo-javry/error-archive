@@ -32,7 +32,7 @@ class IssuePullRequestBackfiller(
     private val installations: GithubInstallationRepositoryPort,
     private val evidence: GithubEvidenceRepositoryPort,
     private val recorder: GithubEvidenceRecorder,
-    private val scopeGuard: GithubScopeGuard,
+    private val guard: GithubConnectionGuard,
     private val ciFetcher: PullRequestCiFetcher,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -125,7 +125,7 @@ class IssuePullRequestBackfiller(
         val repo = installations.findRepository(candidate.repoId)?.takeIf { it.isActive } ?: return Outcome.None
         val installation = installations.findById(repo.installationId)
             ?.takeIf { it.status == GithubInstallationStatus.ACTIVE } ?: return Outcome.None
-        if (!scopeGuard.isSameScope(installation, errorCase)) return Outcome.None
+        if (!guard.selects(errorCase, repo.repoId)) return Outcome.None
 
         val owner = repo.fullName.substringBefore('/')
         val name = repo.fullName.substringAfter('/')

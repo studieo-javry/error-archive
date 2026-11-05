@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubEvidenceReconciler
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent.Type
@@ -84,6 +85,7 @@ class GithubReconcileIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var installations: GithubInstallationRepositoryPort
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var reconciler: GithubEvidenceReconciler
     @Autowired private lateinit var rateLimits: GithubRateLimitTracker
@@ -110,9 +112,10 @@ class GithubReconcileIntegrationTest {
 
     private fun seedRepo(installedBy: Long): Seeded {
         val id = seq.incrementAndGet()
-        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", null, installedBy))
+        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", installedBy))
         val fullName = "acme-$id/payment-api"
         installations.saveRepositories(listOf(GithubRepository.of(id * 10, id, fullName, true)))
+        wireGithubConnection(connections, id, null, installedBy, listOf(id * 10))
         return Seeded(id, id * 10, fullName)
     }
 

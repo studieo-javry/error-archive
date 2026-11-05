@@ -28,6 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
@@ -90,6 +91,7 @@ class GithubReferenceIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var installations: GithubInstallationRepositoryPort
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -110,9 +112,10 @@ class GithubReferenceIntegrationTest {
     /** 설치 하나에 레포 [names] 개. */
     private fun seedInstallation(installedBy: Long, workspaceId: Long?, vararg names: String, isPrivate: Boolean = true): List<Seeded> {
         val id = seq.incrementAndGet()
-        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", workspaceId, installedBy))
+        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", installedBy))
         val seeded = names.mapIndexed { i, n -> Seeded(id, id * 10 + i, "acme-$id/$n") }
         installations.saveRepositories(seeded.map { GithubRepository.of(it.repoId, id, it.fullName, isPrivate) })
+        wireGithubConnection(connections, id, workspaceId, installedBy, seeded.map { it.repoId })
         return seeded
     }
 

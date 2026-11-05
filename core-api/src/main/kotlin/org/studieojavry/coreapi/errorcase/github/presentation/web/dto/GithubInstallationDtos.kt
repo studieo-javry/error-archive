@@ -4,8 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListMyGithubInstallationsUseCase
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.shared.presentation.toApiOffset
 import java.time.OffsetDateTime
 
@@ -34,24 +36,28 @@ data class GithubInstallationResponse(
     @field:Schema(description = "GitHub 계정(org/user) login", example = "studieo-javry") val accountLogin: String,
     @field:Schema(description = "Organization | User") val accountType: String,
     @field:Schema(description = "연결 범위 워크스페이스. null = 개인 연결") val workspaceId: Long?,
-    @field:Schema(description = "연결한 사용자") val installedByUserId: Long,
+    @field:Schema(description = "이 연결을 만든 사용자(감사용)") val installedByUserId: Long,
     @field:Schema(description = "ACTIVE | SUSPENDED") val status: String,
-    @field:Schema(description = "설치 대상 레포(활성)") val repositories: List<GithubRepositoryResponse>,
+    @field:Schema(description = "이 연결에서 선택된(사용) 레포") val repositories: List<GithubRepositoryResponse>,
     val connectedAt: OffsetDateTime,
 ) {
     companion object {
-        fun of(installation: GithubInstallation, repositories: List<GithubRepository>) = GithubInstallationResponse(
+        fun of(
+            installation: GithubInstallation,
+            connection: GithubConnection,
+            repositories: List<GithubRepository>,
+        ) = GithubInstallationResponse(
             installationId = installation.installationId,
             accountLogin = installation.accountLogin,
             accountType = installation.accountType,
-            workspaceId = installation.workspaceId,
-            installedByUserId = installation.installedByUserId,
+            workspaceId = (connection.space as? GithubSpace.Workspace)?.workspaceId,
+            installedByUserId = connection.connectedByUserId,
             status = installation.status.name,
             repositories = repositories.map(GithubRepositoryResponse::of),
-            connectedAt = installation.createdAt.toApiOffset(),
+            connectedAt = connection.createdAt.toApiOffset(),
         )
 
-        fun of(item: ListMyGithubInstallationsUseCase.Item) = of(item.installation, item.repositories)
+        fun of(item: ListMyGithubInstallationsUseCase.Item) = of(item.installation, item.connection, item.repositories)
     }
 }
 

@@ -44,7 +44,7 @@ class PullRequestWebhookHandler(
     private val githubApi: GithubAppApiPort,
     private val evidence: GithubEvidenceRepositoryPort,
     private val recorder: GithubEvidenceRecorder,
-    private val scopeGuard: GithubScopeGuard,
+    private val guard: GithubConnectionGuard,
     private val errorCases: ErrorCaseRepositoryPort,
     private val ciFetcher: PullRequestCiFetcher,
 ) {
@@ -115,8 +115,8 @@ class PullRequestWebhookHandler(
         for (issue in closing) {
             for (caseId in evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, issue)) {
                 val errorCase = errorCases.findById(caseId) ?: continue
-                if (!scopeGuard.isSameScope(installation, errorCase)) {
-                    log.info { "[github] auto-attach skipped (scope): case=$caseId pr=${repo.fullName}#$number" }
+                if (!guard.selects(errorCase, repo.repoId)) {
+                    log.info { "[github] auto-attach skipped (연결/선택 없음): case=$caseId pr=${repo.fullName}#$number" }
                     continue
                 }
                 val outcome = recorder.attach(
@@ -134,16 +134,21 @@ class PullRequestWebhookHandler(
         val removed = ledgerBefore - closing
         val reopened = reopenedAt(pr)
         val linked = evidence.findActiveLinks(GithubRefKind.PULL_REQUEST, prRef)
+        var reflected = 0
         for (link in linked) {
+            // 공간별 게이트: 이 Case 공간이 더 이상 이 repo 를 선택(연결)하지 않으면 그 공간엔 기록하지 않는다.
+            val errorCase = errorCases.findById(link.caseId) ?: continue
+            if (!guard.selects(errorCase, repo.repoId)) continue
             val via = link.viaIssueRepoId?.let { r -> link.viaIssueNumber?.let { GithubItemRef(r, it) } }
             if (via != null && via in removed) evidence.recordEvent(CaseGithubEvent.refRemoved(link.caseId, pr, via, now))
             recorder.pullRequestStateEvents(link.caseId, pr, now).forEach(evidence::recordEvent)
             reopened?.let { evidence.recordEvent(CaseGithubEvent.prReopened(link.caseId, pr, it)) }
+            reflected++
         }
 
         log.info {
             "[github] pull_request $trigger pr=${repo.fullName}#$number closing=${closing.size} " +
-                "attached=$attached linkedCases=${linked.size} removedRefs=${removed.size}"
+                "attached=$attached linkedCases=${linked.size} reflected=$reflected removedRefs=${removed.size}"
         }
         return true
     }

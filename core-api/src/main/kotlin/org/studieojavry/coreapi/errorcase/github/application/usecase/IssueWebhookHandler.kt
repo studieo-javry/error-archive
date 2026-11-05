@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
@@ -32,8 +33,14 @@ class IssueWebhookHandler(
     private val githubApi: GithubAppApiPort,
     private val evidence: GithubEvidenceRepositoryPort,
     private val recorder: GithubEvidenceRecorder,
+    private val errorCases: ErrorCaseRepositoryPort,
+    private val guard: GithubConnectionGuard,
 ) {
     private val log = KotlinLogging.logger {}
+
+    /** 공간별 게이트: 링크된 Case 중 "그 Case 공간이 이 repo 를 선택(연결)" 한 것만 남긴다. */
+    private fun permittedCaseIds(caseIds: List<Long>, repoId: Long): List<Long> =
+        caseIds.filter { id -> errorCases.findById(id)?.let { guard.selects(it, repoId) } == true }
 
     /** @return 처리했으면 true, 관심 없는 이벤트면 false(SKIPPED) */
     fun handle(action: String?, installationId: Long?, root: JsonNode): Boolean {
@@ -46,7 +53,7 @@ class IssueWebhookHandler(
 
         val issueNode = root.path("issue")
         val ref = GithubItemRef(repo.repoId, issueNode.path("number").asInt())
-        val caseIds = evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, ref)
+        val caseIds = permittedCaseIds(evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, ref), repo.repoId)
         if (caseIds.isEmpty()) return false
 
         if (action == "deleted" || action == "transferred") {
@@ -81,7 +88,7 @@ class IssueWebhookHandler(
      */
     fun reconcile(installation: GithubInstallation, repo: GithubRepository, number: Int): GithubAppApiPort.IssueItem? {
         val ref = GithubItemRef(repo.repoId, number)
-        val caseIds = evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, ref)
+        val caseIds = permittedCaseIds(evidence.findActiveLinkedCaseIds(GithubRefKind.ISSUE, ref), repo.repoId)
         if (caseIds.isEmpty()) return null
         val before = evidence.findIssue(ref)
         val item = githubApi.fetchItem(installation.installationId, repo.fullName.substringBefore('/'), repo.fullName.substringAfter('/'), number)

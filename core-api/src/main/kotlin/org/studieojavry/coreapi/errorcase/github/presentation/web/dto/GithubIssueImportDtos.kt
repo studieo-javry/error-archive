@@ -27,7 +27,7 @@ data class GithubIssuePreviewResponse(
     @field:Schema(description = "우회 방법(Workaround) 섹션이 있으면 첫 Step 후보(진행 중). 생성 시 includeWorkaroundStep=true 로 만든다")
     val workaroundStep: StepSuggestion?,
     @field:Schema(description = "Issue 작성 시각(= 보고 시각). 발생 시각으로 자동 반영하지 않음") val reportedAt: Instant,
-    @field:Schema(description = "Case 범위 — 저장소 연결 범위로 결정됨. null = 개인 Case") val workspaceId: Long?,
+    @field:Schema(description = "Case 범위 — 요청자가 고른 공간(요청 workspaceId). null = 개인 Case") val workspaceId: Long?,
     @field:Schema(description = "고를 수 있는 공개 범위. 비공개 저장소면 PUBLIC 없음, 워크스페이스 PUBLIC 은 ADMIN 만")
     val visibilityOptions: List<Visibility>,
     val defaultVisibility: Visibility,
@@ -83,7 +83,7 @@ data class CreateCaseFromGithubIssueRequest(
     @field:Schema(example = "https://github.com/acme/payment-api/issues/142", requiredMode = Schema.RequiredMode.REQUIRED)
     @field:NotBlank @field:Size(max = 500)
     val url: String,
-    @field:Schema(description = "확인용. 저장소 연결 범위와 다르면 403") val workspaceId: Long? = null,
+    @field:Schema(description = "연결할 공간. 그 공간에 저장소가 선택(연결)돼 있지 않으면 403. null = 개인 공간") val workspaceId: Long? = null,
     @field:Schema(description = "생략 시 워크스페이스=WORKSPACE, 개인=PRIVATE") val visibility: Visibility? = null,
     @field:Size(max = 200) val title: String? = null,
     val description: String? = null,

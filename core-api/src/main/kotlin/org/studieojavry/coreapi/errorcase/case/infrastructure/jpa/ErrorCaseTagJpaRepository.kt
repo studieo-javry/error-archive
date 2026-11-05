@@ -17,11 +17,11 @@ interface ErrorCaseTagJpaRepository : JpaRepository<ErrorCaseTagEntity, Long> {
 
     fun countByErrorCaseId(errorCaseId: Long): Long
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from ErrorCaseTagEntity t where t.errorCaseId = :caseId and t.tag = :tag")
     fun deleteByErrorCaseIdAndTag(@Param("caseId") errorCaseId: Long, @Param("tag") tag: String): Int
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from ErrorCaseTagEntity t where t.errorCaseId = :caseId")
     fun deleteAllByErrorCaseId(@Param("caseId") errorCaseId: Long): Int
 }

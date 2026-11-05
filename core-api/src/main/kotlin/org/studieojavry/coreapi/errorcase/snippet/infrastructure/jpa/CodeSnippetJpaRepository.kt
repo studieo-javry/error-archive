@@ -30,11 +30,11 @@ interface CodeSnippetJpaRepository : JpaRepository<CodeSnippetEntity, Long> {
         pageable: Pageable,
     ): List<CodeSnippetEntity>
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE CodeSnippetEntity s SET s.errorCaseId = :caseId WHERE s.markerId IN :markerIds")
     fun linkToCase(@Param("markerIds") markerIds: List<String>, @Param("caseId") caseId: Long): Int
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE CodeSnippetEntity s SET s.errorCaseId = null WHERE s.markerId IN :markerIds")
     fun unlinkFromCase(@Param("markerIds") markerIds: List<String>): Int
 }

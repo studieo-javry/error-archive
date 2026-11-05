@@ -161,6 +161,66 @@ class ErrorCaseIntegrationTest {
             .andExpect(jsonPath("$.items[?(@.id == $id)]").exists())
     }
 
+    private fun createSnippet(uid: Long): String {
+        val json = mvc.perform(
+            post("/api/v1/error-snippets").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"title":"s","language":"kotlin","code":"fun a() = 1"}"""),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        return om.readTree(json).get("markerId").asText()
+    }
+
+    private fun getCase(uid: Long, id: Long) = om.readTree(
+        mvc.perform(get("/api/v1/error-cases/$id").with(asUser(uid)))
+            .andExpect(status().isOk).andReturn().response.contentAsString,
+    )
+
+    // 연결 변경은 @Modifying(clearAutomatically) 벌크 쿼리 — flush 전에 영속성 컨텍스트를 비우면
+    // 같은 요청의 케이스 필드 변경이 버려졌다(수정 폼은 항상 marker 목록을 함께 보낸다).
+    @Test
+    fun `PATCH 로 본문과 스니펫 연결을 함께 바꾸면 둘 다 저장된다`() {
+        val s1 = createSnippet(ownerId)
+        val s2 = createSnippet(ownerId)
+        val id = createCase(ownerId, "relink")
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"description":"before @snippet($s1)","snippetMarkerIds":["$s1"]}"""),
+        ).andExpect(status().isOk)
+
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"title":"relink v2","description":"after @snippet($s1) @snippet($s2)","snippetMarkerIds":["$s1","$s2"]}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.description").value("after @snippet($s1) @snippet($s2)"))
+            .andExpect(jsonPath("$.title").value("relink v2"))
+
+        val saved = getCase(ownerId, id)
+        assertEquals("after @snippet($s1) @snippet($s2)", saved.get("description").asText())
+        assertEquals("relink v2", saved.get("title").asText())
+        assertEquals(2, saved.get("snippets").size())
+    }
+
+    @Test
+    fun `PATCH 로 제목과 태그 삭제를 함께 하면 둘 다 저장된다`() {
+        val id = createCase(ownerId, "tags")
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"tags":["k8s","jvm"]}"""),
+        ).andExpect(status().isOk)
+
+        mvc.perform(
+            patch("/api/v1/error-cases/$id").with(asUser(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"title":"tags v2","tags":["k8s"]}"""),
+        ).andExpect(status().isOk)
+
+        val saved = getCase(ownerId, id)
+        assertEquals("tags v2", saved.get("title").asText())
+        assertEquals(listOf("k8s"), saved.get("tags").map { it.asText() })
+    }
+
     @Test
     fun `PATCH 로 OPEN 에서 IN_PROGRESS 전이가 가능하다`() {
         val id = createCase(ownerId, "전이 대상")

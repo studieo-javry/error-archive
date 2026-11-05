@@ -118,7 +118,9 @@ class ErrorCaseRepositoryAdapter(
 
     /** 코어 엔티티만 갱신(id 존재 → update). 스니펫·첨부 연결은 그대로 둔다. */
     override fun update(errorCase: ErrorCase): ErrorCase {
-        errorCaseRepo.save(errorCase.toEntity())
+        // 즉시 flush — 같은 트랜잭션에서 뒤따르는 연결 재설정이 `@Modifying(clearAutomatically)` 벌크
+        // 쿼리라, flush 전에 영속성 컨텍스트가 비워지면 이 변경(제목·본문 등)이 조용히 버려졌다.
+        errorCaseRepo.saveAndFlush(errorCase.toEntity())
         return errorCase
     }
 

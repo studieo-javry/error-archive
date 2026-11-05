@@ -60,6 +60,9 @@ class SecurityConfig {
                     // 게스트는 AI 초안 제안 금지 — 외부 LLM 호출 비용/남용 방어(로그인 사용자 전용).
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-cases/draft-suggestion")
                     .access(denyGuests())
+                    // 게스트는 GitHub Issue 가져오기 금지 — 데모 밖(개인·공개) 케이스가 생기고 실제 레포가 엮인다.
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/error-cases/from-github-issue")
+                    .access(denyGuests())
                     // GitHub 웹훅 — GitHub 가 호출(앱 토큰 없음). 인증은 컨트롤러의 X-Hub-Signature-256 HMAC 검증이 대신한다.
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/integrations/github/webhook").permitAll()
                     // GitHub 연결은 게스트 금지 — 데모 계정에 실제 레포가 붙지 않도록.

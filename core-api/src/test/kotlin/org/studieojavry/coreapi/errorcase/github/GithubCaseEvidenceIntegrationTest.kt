@@ -32,6 +32,7 @@ import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPo
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ImportGithubIssueUseCase
 import org.studieojavry.coreapi.errorcase.github.presentation.web.GithubIssueImportController
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink
@@ -95,6 +96,7 @@ class GithubCaseEvidenceIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var installations: GithubInstallationRepositoryPort
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @Autowired private lateinit var linkRepo: CaseGithubLinkJpaRepository
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
     @Autowired private lateinit var prRepo: GithubPullRequestJpaRepository
@@ -124,9 +126,10 @@ class GithubCaseEvidenceIntegrationTest {
 
     private fun seedRepo(installedBy: Long, workspaceId: Long?, isPrivate: Boolean = true): Seeded {
         val id = seq.incrementAndGet()
-        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", workspaceId, installedBy))
+        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", installedBy))
         val fullName = "acme-$id/payment-api"
         installations.saveRepositories(listOf(GithubRepository.of(id * 10, id, fullName, isPrivate)))
+        wireGithubConnection(connections, id, workspaceId, installedBy, listOf(id * 10))
         return Seeded(id, id * 10, fullName)
     }
 

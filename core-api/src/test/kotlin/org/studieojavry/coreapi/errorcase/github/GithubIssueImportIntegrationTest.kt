@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueSnapshot
@@ -96,6 +97,7 @@ class GithubIssueImportIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var installations: GithubInstallationRepositoryPort
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @Autowired private lateinit var errorCaseRepo: org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
     @Autowired private lateinit var linkRepo: CaseGithubLinkJpaRepository
     @Autowired private lateinit var eventRepo: CaseGithubEventJpaRepository
@@ -122,9 +124,10 @@ class GithubIssueImportIntegrationTest {
 
     private fun seedRepo(installedBy: Long, workspaceId: Long?, isPrivate: Boolean = true): Seeded {
         val id = seq.incrementAndGet()
-        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", workspaceId, installedBy))
+        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", installedBy))
         val fullName = "acme-$id/payment-api"
         installations.saveRepositories(listOf(GithubRepository.of(id * 10, id, fullName, isPrivate)))
+        wireGithubConnection(connections, id, workspaceId, installedBy, listOf(id * 10))
         return Seeded(id, id * 10, fullName)
     }
 
@@ -373,15 +376,16 @@ class GithubIssueImportIntegrationTest {
         importCase(207L, mapOf("url" to "https://github.com/${priv.fullName}/issues/1")).andExpect(status().isForbidden)
         importCase(me, mapOf("url" to "https://github.com/${priv.fullName}/issues/1", "workspaceId" to ws)).andExpect(status().isForbidden)
 
+        // 워크스페이스 전용 레포는 공간(workspaceId)을 명시해야 함. 멤버지만 READ 면 WRITE 부족 → 403.
         Mockito.`when`(workspaceQuery.getViewerRole(me, ws)).thenReturn(WorkspaceRole.READ)
-        importCase(me, mapOf("url" to "https://github.com/${wsRepo.fullName}/issues/2")).andExpect(status().isForbidden)
+        importCase(me, mapOf("url" to "https://github.com/${wsRepo.fullName}/issues/2", "workspaceId" to ws)).andExpect(status().isForbidden)
 
         Mockito.`when`(workspaceQuery.getViewerRole(me, ws)).thenReturn(WorkspaceRole.WRITE)
-        preview(me, "https://github.com/${wsRepo.fullName}/issues/2")
+        preview(me, "https://github.com/${wsRepo.fullName}/issues/2", ws)
             .andExpect(jsonPath("$.workspaceId").value(ws))
             .andExpect(jsonPath("$.defaultVisibility").value("WORKSPACE"))
             .andExpect(jsonPath("$.visibilityOptions").value(org.hamcrest.Matchers.contains("WORKSPACE", "PRIVATE")))
-        importCase(me, mapOf("url" to "https://github.com/${wsRepo.fullName}/issues/2")).andExpect(status().isCreated)
+        importCase(me, mapOf("url" to "https://github.com/${wsRepo.fullName}/issues/2", "workspaceId" to ws)).andExpect(status().isCreated)
     }
 
     @Test

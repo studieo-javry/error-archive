@@ -198,10 +198,16 @@ class GithubIntegrationTest {
     }
 
     @Test
-    fun `연결 - 이미 다른 사용자에게 연결된 설치면 409`() {
+    fun `연결 - 같은 설치를 다른 사용자가 각자 개인 공간에 연결(멀티-공간)`() {
+        // GitHub 는 계정당 설치 1건만 허용 — 같은 설치를 EA 사용자 둘이 각자 공간에 연결할 수 있어야 한다.
         connect(uid = 7, installationId = 400, repos = emptyList())
         stubGithub(400, "c400-b", emptyList())
-        complete(uid = 8, installationId = 400, code = "c400-b", state = issueState(8)).andExpect(status().isConflict)
+        complete(uid = 8, installationId = 400, code = "c400-b", state = issueState(8)).andExpect(status().isOk)
+        // 둘 다 자기 목록에서 본다(각자 개인 연결).
+        mvc.perform(get("/api/v1/integrations/github/installations").with(asUser(7)))
+            .andExpect(jsonPath("$[?(@.installationId == 400)]").isNotEmpty)
+        mvc.perform(get("/api/v1/integrations/github/installations").with(asUser(8)))
+            .andExpect(jsonPath("$[?(@.installationId == 400)]").isNotEmpty)
     }
 
     @Test

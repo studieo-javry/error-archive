@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
@@ -84,6 +85,7 @@ class GithubActivityCursorIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var installations: GithubInstallationRepositoryPort
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @Autowired private lateinit var evidencePort: GithubEvidenceRepositoryPort
     @Autowired private lateinit var txManager: PlatformTransactionManager
     @Autowired private lateinit var jdbc: JdbcTemplate
@@ -105,9 +107,10 @@ class GithubActivityCursorIntegrationTest {
 
     private fun seedRepo(installedBy: Long, workspaceId: Long?, isPrivate: Boolean = true): Seeded {
         val id = seq.incrementAndGet()
-        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", workspaceId, installedBy))
+        installations.save(GithubInstallation.connect(id, "acme-$id", "Organization", installedBy))
         val fullName = "acme-$id/payment-api"
         installations.saveRepositories(listOf(GithubRepository.of(id * 10, id, fullName, isPrivate)))
+        wireGithubConnection(connections, id, workspaceId, installedBy, listOf(id * 10))
         return Seeded(id * 10, fullName)
     }
 

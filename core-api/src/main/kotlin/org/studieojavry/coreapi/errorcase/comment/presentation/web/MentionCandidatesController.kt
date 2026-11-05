@@ -29,16 +29,16 @@ class MentionCandidatesController(
     @Operation(
         summary = "멘션 자동완성 후보",
         description = """
-            **순서**(랭킹): 케이스 댓글 참여자(30) > 케이스 owner(20) > 워크스페이스 멤버(15) > iam-api 검색(5) — *prefix 일치 시 +12 보너스*.
+            **순서**(랭킹): 케이스 댓글 참여자(30) > 케이스 owner(20) > 워크스페이스 멤버(15) > 내가 팔로우한 사람(10) > iam-api 검색(5) — *prefix 일치 시 +12 보너스*.
 
-            **검색어(q)**: 비어 있으면 맥락 후보(댓글 참여자·owner·워크스페이스 멤버) 기본 추천. 값이 있으면 *모든* 후보를 displayName/handle prefix(대소문자 무시)로 거른다.
+            **검색어(q)**: 비어 있으면 맥락 후보(댓글 참여자·owner·워크스페이스 멤버·내가 팔로우한 사람) 기본 추천. 값이 있으면 *모든* 후보를 displayName/handle prefix(대소문자 무시)로 거른다.
 
             **권한 가드**:
             - 케이스 read 권한 없으면 403
             - viewer 본인은 결과에서 제외
             - 워크스페이스 케이스 → *멤버 외* 후보 자동 제거 (외부 사용자 노출 방지)
 
-            **`badge`**: 후보의 *어느 source* 에서 왔는지 — `in-discussion` / `owner` / `workspace-member` / `search`.
+            **`badge`**: 후보의 *어느 source* 에서 왔는지 — `in-discussion` / `owner` / `workspace-member` / `following` / `search`.
         """
     )
     @ApiResponses(

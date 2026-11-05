@@ -50,7 +50,7 @@ class IamWorkspaceQueryAdapter(
                     .retrieve()
                     .body(Array<IamWorkspaceItem>::class.java)
                     ?: emptyArray()
-                items.map { WorkspaceQueryPort.WorkspaceSummary(workpaceId = it.id, name = it.name) }
+                items.map { WorkspaceQueryPort.WorkspaceSummary(workpaceId = it.workspaceId, name = it.name) }
             } catch (ex: RestClientResponseException) {
                 log.warn(ex) { "iam-api list workspaces failed: status=${ex.statusCode}" }
                 throw ex
@@ -79,8 +79,9 @@ class IamWorkspaceQueryAdapter(
         { t -> log.warn(t) { "iam-api unavailable on listMembers → empty" }; emptyList() }
     )
 
+    /** iam-api WorkspaceListItemResponse 중 쓰는 필드만. 키는 `workspaceId`(과거 `id` 로 받아 매번 역직렬화 실패 → 빈 목록). */
     private data class IamWorkspaceItem(
-        val id: Long,
+        val workspaceId: Long,
         val name: String
     )
 

@@ -76,19 +76,6 @@ class DemoGuestPersonalSeederTest {
         assertThat(ownedByGuest(guestId)).hasSameSizeAs(afterFirst)
     }
 
-    @Test
-    fun `게스트 케이스는 데모 WS 소속이라 ws=null 정리 쿼리에는 잡히지 않는다`() {
-        val guestId = 770002L
-        seeder.ensureSeededForGuest(guestId)
-        val mine = ownedByGuest(guestId).map { it.id }
-        assertThat(mine).isNotEmpty()
-
-        // 게스트 케이스는 이제 데모 WS(workspaceId != null) 소속 → workspace wipe 로 정리된다.
-        // ws=null + 태그 스코프인 레거시 개인-정리 쿼리(2026-10-19 인시던트 가드)에는 (의도대로) 안 잡힌다.
-        val wsNullTagged = errorCaseRepository.findDemoGuestPersonalCaseIds(DemoGuestPersonalSeeder.GUEST_PERSONAL_TAG, 200)
-        assertThat(wsNullTagged).doesNotContainAnyElementsOf(mine)
-    }
-
     private companion object {
         const val DEMO_WS = 424242L
     }

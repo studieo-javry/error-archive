@@ -35,15 +35,13 @@ class DemoResetService(
             log.warn { "demo reset skipped — identity unavailable/disabled" }
             return ResetResult(ran = false, wiped = 0, seeded = 0)
         }
+        // 게스트가 지연 생성한 케이스(DemoGuestPersonalSeeder)도 데모 WS 소속이라 함께 정리된다.
         val wiped = wipeWorkspace(id.workspaceId)
-        // 게스트가 지연 생성한 개인(workspaceId=null) 케이스도 정리 — 데모 환경에선 개인 케이스=게스트 산물.
-        // (iam 의 야간 deleteAllGuests 와 짝. 워크스페이스 wipe 로는 안 지워지므로 별도 purge.)
-        val wipedPersonal = wipePersonalCases()
         // 시드 작성자 = persona 들(iam 미제공 시 봇으로 폴백). 케이스를 여러 작성자로 분산.
         val authorIds = id.personaUserIds.ifEmpty { listOfNotNull(id.botUserId) }
         val seeded = seeder.seedFresh(id.workspaceId, authorIds)
-        log.info { "demo reset: wiped=$wiped wipedPersonal=$wipedPersonal seeded=$seeded (ws=${id.workspaceId})" }
-        return ResetResult(ran = true, wiped = wiped + wipedPersonal, seeded = seeded)
+        log.info { "demo reset: wiped=$wiped seeded=$seeded (ws=${id.workspaceId})" }
+        return ResetResult(ran = true, wiped = wiped, seeded = seeded)
     }
 
     /**
@@ -93,23 +91,6 @@ class DemoResetService(
             )
             if (batch.isEmpty()) return total
             batch.forEach { deleteErrorCaseUseCase.purge(it.id); total++ }
-        }
-        return total
-    }
-
-    /**
-     * 데모 게스트 개인 케이스만 purge(cascade) — **반드시 데모 태그 스코프**.
-     * ⚠️ 2026-10-19 인시던트: 과거엔 workspaceId=null 전체(실사용자 개인 포함)를 지워 데이터가 유실됐다.
-     *    이제 DemoGuestPersonalSeeder 가 붙인 태그(GUEST_PERSONAL_TAG)가 있는 개인 케이스만 지운다.
-     */
-    private fun wipePersonalCases(): Int {
-        var total = 0
-        repeat(MAX_WIPE_BATCHES) {
-            val ids = errorCaseRepository.findDemoGuestPersonalCaseIds(
-                DemoGuestPersonalSeeder.GUEST_PERSONAL_TAG, WIPE_BATCH,
-            )
-            if (ids.isEmpty()) return total
-            ids.forEach { deleteErrorCaseUseCase.purge(it); total++ }
         }
         return total
     }

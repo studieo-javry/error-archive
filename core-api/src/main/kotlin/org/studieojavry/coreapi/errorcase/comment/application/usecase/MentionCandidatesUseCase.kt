@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.comment.application.port.CommentRepositoryPort
+import org.studieojavry.coreapi.errorcase.shared.application.port.FollowedUserReaderPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.IamUserQueryPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
@@ -16,6 +17,8 @@ import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAc
  *  - ① 케이스 댓글 참여자  ⭐⭐⭐⭐⭐ (30)
  *  - ② 케이스 owner       ⭐⭐⭐⭐  (20)
  *  - ③ 워크스페이스 멤버  ⭐⭐⭐⭐  (15) — 워크스페이스 케이스만
+ *  - ⑤ viewer 가 팔로우한 사람 ⭐⭐⭐ (10) — 맥락 후보가 없는 개인 케이스에서도 `@` 만으로 추천이 뜨도록.
+ *       워크스페이스 케이스에선 아래 멤버 게이트로 비멤버가 걸러진다.
  *  - ④ iam-api prefix 검색 ⭐⭐    (5)  — q 가 비어있지 않을 때 fallback 풀
  *
  * **권한 가드**:
@@ -34,6 +37,7 @@ class MentionCandidatesUseCase(
     private val commentRepository: CommentRepositoryPort,
     private val iamUserQuery: IamUserQueryPort,
     private val workspaceQuery: WorkspaceQueryPort,
+    private val followedUserReader: FollowedUserReaderPort,
     private val access: ErrorCaseAccess,
 ) {
     @Transactional(readOnly = true)
@@ -62,6 +66,10 @@ class MentionCandidatesUseCase(
         val workspaceMembers: List<WorkspaceQueryPort.MemberSummary> =
             if (isWorkspaceCase) workspaceQuery.listMembers(errorCase.meta.workspaceId!!) else emptyList()
         workspaceMembers.forEach { m -> scored.bump(m.userId, 15, BadgeKind.WORKSPACE) }
+
+        // ⑤ viewer 가 팔로우한 사람 — 표시 정보를 id 마다 조회하므로 상한을 둔다. 실패 시 어댑터가 빈 목록.
+        followedUserReader.findFollowingIds(viewerUserId, FOLLOWING_POOL_MAX)
+            .forEach { uid -> scored.bump(uid, 10, BadgeKind.FOLLOWING) }
 
         // 표시 정보 캐시 — iam-api 한 번에 모은다
         val needIds = scored.keys.toMutableSet()
@@ -129,6 +137,9 @@ class MentionCandidatesUseCase(
     private data class Score(val score: Int, val topBadge: BadgeKind)
 
     companion object {
+        /** 팔로우 후보 풀 상한 — findByIds 가 id 마다 iam 을 부르므로(캐시 미스 시) 작게. */
+        private const val FOLLOWING_POOL_MAX = 30
+
         /** 빈 q 는 전부 통과(기본 추천). 그 외엔 displayName 또는 handle 이 q 로 시작(대소문자 무시) — iam 검색과 같은 규칙. */
         internal fun matchesQuery(displayName: String, handle: String?, q: String): Boolean =
             q.isEmpty() ||
@@ -140,6 +151,7 @@ class MentionCandidatesUseCase(
         IN_DISCUSSION(1, "in-discussion"),
         CASE_OWNER(2,    "owner"),
         WORKSPACE(3,     "workspace-member"),
-        SEARCH(4,        "search"),
+        FOLLOWING(4,     "following"),
+        SEARCH(5,        "search"),
     }
 }

@@ -12,6 +12,7 @@ import org.studieojavry.iamapi.workspace.domain.model.WorkspaceMember
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceName
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceRole
 import org.studieojavry.iamapi.workspace.domain.model.vo.WorkspaceSlug
+import org.studieojavry.iamapi.shared.util.ReservedNames
 
 @Service
 class CreateWorkspaceUseCase(
@@ -26,7 +27,8 @@ class CreateWorkspaceUseCase(
             throw NoSuchElementException("user not found: ${command.createdByUserId}")
         }
         val slug = WorkspaceSlug(command.slug)
-        if (workspaceRepository.existsBySlug(slug.value)) {
+        // 데모 예약 slug(demo, demo-*)는 이미 사용 중인 것처럼 거절 — 회원 워크스페이스가 데모로 오인되지 않게.
+        if (ReservedNames.isReserved(slug.value) || workspaceRepository.existsBySlug(slug.value)) {
             throw DuplicateSlugException(slug.value)
         }
         val saved = try {

@@ -27,12 +27,6 @@ interface ErrorCaseRepositoryPort {
 
     fun findOwnerUserIdById(errorCaseId: Long): Long?
 
-    /**
-     * 데모 게스트 개인 케이스 id 최대 limit 개 — 개인(workspaceId null) **AND 지정 데모 태그 보유분만**.
-     * 데모 purge 전용. 실사용자 개인 케이스(태그 없음)는 선택되지 않는다. (2026-10-19 데이터 유실 인시던트 수정)
-     */
-    fun findDemoGuestPersonalCaseIds(tag: String, limit: Int): List<Long>
-
     fun deleteById(errorCaseId: Long)
 
     // ── Recent Activity (home dashboard) ──────────────────────

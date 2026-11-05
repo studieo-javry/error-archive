@@ -51,14 +51,15 @@ class GuestLoginUseCase(
 
     /** 공유 게스트를 멱등 보장(없으면 생성, 있으면 재사용) + 데모 WS WRITE 멤버 보장. 콜드스타트 동시 생성 race 수렴. */
     private fun ensureSharedGuest(workspaceId: Long): User {
-        val guest = userRepository.findByHandle(props.guestHandle) ?: run {
+        // 이름으로 찾으므로 회원 계정이 아닌지 확인 — 회원이면 방문자 전원이 그 계정으로 로그인된다.
+        val guest = userRepository.findByHandle(props.guestHandle)?.let { provisioner.requireDemoAccount(it, guest = true) } ?: run {
             try {
                 userRepository.save(
                     User.createGuest(handle = props.guestHandle, displayName = props.guestDisplayName)
                         .also { it.changeDefaultWorkspace(workspaceId) },
                 )
             } catch (ex: DataIntegrityViolationException) {
-                userRepository.findByHandle(props.guestHandle)
+                userRepository.findByHandle(props.guestHandle)?.let { provisioner.requireDemoAccount(it, guest = true) }
                     ?: throw IllegalStateException("shared demo guest provisioning race not resolved", ex)
             }
         }

@@ -38,7 +38,8 @@ import java.time.LocalDateTime
  * 각 케이스가 스택트레이스(스냅샷) + 코드블록이 담긴 재현/조사 스텝 + 솔루션 + 첨부(스크린샷 SVG·JSON·로그)를
  * 갖춰, 둘러보기 방문자가 제품 사용감을 바로 체감하도록 한다. 스텝/설명 본문은 마크다운(코드펜스 하이라이팅).
  *
- * - 가시성 PUBLIC: Search 탭(전역 PUBLIC)에서 누구나 조회.
+ * - 가시성 WORKSPACE: 데모 WS 멤버(게스트·봇·persona)만 조회. 회원 공개 공간(Search)에 섞이면 회원이 남긴
+ *   댓글·me-too 가 야간 reset 으로 사라지므로 노출하지 않는다. (게스트는 원래 공개 공간 진입이 막혀 있다.)
  * - 워크스페이스는 데모 WS 로 묶여 reset 이 ws 단위 wipe+reseed(스텝/솔루션/첨부는 purge 가 cascade).
  * - 첨부는 S3 put 필요 — 스토리지 미가용(테스트)이면 `demo.seed-attachments=false`.
  */
@@ -104,7 +105,7 @@ class DemoSeeder(
             snapshot = snapshot,
             description = description,
             meta = meta,
-            visibility = Visibility.PUBLIC,
+            visibility = Visibility.WORKSPACE,
             snippets = snippets,
             attachments = attachments,
             tags = emptyList(), // 태그는 case.save 가 아니라 tagRepository 로 별도 저장(아래)
@@ -157,7 +158,7 @@ class DemoSeeder(
         errorCaseRepository.update(
             ErrorCase.reconstitute(
                 id = caseId, ownerUserId = ownerId, title = s.title, project = s.project,
-                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.PUBLIC,
+                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.WORKSPACE,
                 snippets = emptyList(), attachments = emptyList(), tags = emptyList(),
                 status = s.status, occurredAt = occurredAt, createdAt = occurredAt, updatedAt = occurredAt,
                 resolvedAt = if (resolved) occurredAt else null,
@@ -257,7 +258,7 @@ class DemoSeeder(
 
     companion object {
         /** 시드 콘텐츠 버전 — 개수가 같아도 **내용이 바뀌면 이 값을 올려** 배포 시 자동 재시드를 유발한다. */
-        private const val SEED_VERSION = 9   // v9: 작성자를 persona 로 분산(봇 단일 → 다인). 배포 시 자동 재시드.
+        private const val SEED_VERSION = 10   // v10: 가시성 PUBLIC → WORKSPACE(회원 공개 공간에서 숨김). 배포 시 자동 재시드.
 
         /**
          * FE 사용 가이드가 따라가는 샘플 케이스. publish-api 데모 시드 첫 건(같은 주제의 공개 아티클)과 짝을 이룬다.

@@ -49,4 +49,4 @@ spec:
             timeoutSeconds: 5
           resources:
             requests: { cpu: "75m", memory: "384Mi" }
-            limits:   { memory: "640Mi" }
+            limits:   { memory: "768Mi" }   # 힙(55%≈420Mi)+비힙(~250Mi) 여유 — 640Mi 에서 OOMKilled 반복(2026-11-05)

@@ -10,4 +10,4 @@ COPY app.jar /app/app.jar
 USER app
 EXPOSE 8084
 # 컨테이너 메모리 limit 존중 + 힙 여유 확보(1vCPU/소용량 노드). PDF 렌더는 일시적 힙 사용 큼.
-ENTRYPOINT ["java","-XX:MaxRAMPercentage=75.0","-jar","/app/app.jar"]
+ENTRYPOINT ["java","-XX:MaxRAMPercentage=55.0","-jar","/app/app.jar"]

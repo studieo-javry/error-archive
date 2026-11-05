@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
@@ -17,6 +18,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.vo.CiSummary
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
 import java.time.Instant
 
@@ -37,6 +39,7 @@ class GetCaseGithubEvidenceUseCase(
     private val policy: GithubCaseAccessPolicy,
     private val evidence: GithubEvidenceRepositoryPort,
     private val installations: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
     private val activity: GithubActivityReader,
 ) {
     /**
@@ -99,9 +102,12 @@ class GetCaseGithubEvidenceUseCase(
         }
         val childrenByIssue = placed.filter { it.first != null }.groupBy({ it.first!! }, { it.second })
 
+        // 공간별 중단: 레포/설치 비활성뿐 아니라, 이 Case 공간이 더 이상 그 레포를 선택(연결)하지 않아도 동기화 멈춤.
+        val space = GithubSpace.of(errorCase)
         val syncStopped = links.any { link ->
             val repo = repos[link.repoId]
-            repo == null || !repo.isActive || repo.installationId !in activeInstallations
+            repo == null || !repo.isActive || repo.installationId !in activeInstallations ||
+                !connections.isRepoSelectedInSpace(space, link.repoId)
         }
 
         return EvidenceView(

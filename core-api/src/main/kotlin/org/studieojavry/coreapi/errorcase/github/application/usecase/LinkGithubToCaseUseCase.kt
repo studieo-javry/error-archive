@@ -30,7 +30,7 @@ import java.time.Instant
 class LinkGithubToCaseUseCase(
     private val errorCases: ErrorCaseRepositoryPort,
     private val policy: GithubCaseAccessPolicy,
-    private val scopeGuard: GithubScopeGuard,
+    private val guard: GithubConnectionGuard,
     private val githubApi: GithubAppApiPort,
     private val recorder: GithubEvidenceRecorder,
     private val backfiller: IssuePullRequestBackfiller,
@@ -48,8 +48,8 @@ class LinkGithubToCaseUseCase(
         val errorCase = errorCases.findById(caseId) ?: throw ErrorCaseNotFoundException(caseId)
         policy.requireWrite(errorCase, requesterUserId)
 
-        val (repository, installation) = scopeGuard.resolve(url.fullName)
-        scopeGuard.requireSameScope(installation, errorCase)
+        val (repository, installation) = guard.resolve(url.fullName)
+        guard.requireSelected(errorCase, repository.repoId)
 
         // 이름은 레포 장부의 현재 이름으로 조회(대소문자·rename 차이 흡수).
         val owner = repository.fullName.substringBefore('/')

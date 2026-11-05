@@ -12,6 +12,7 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAcce
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubIssueImportEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubLink.LinkSource
@@ -20,6 +21,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubIssueCaseDra
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubItemRef
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubUrl
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort.WorkspaceRole
@@ -47,7 +49,8 @@ import java.time.ZoneId
 @Service
 @ConditionalOnGithubIssueImportEnabled
 class ImportGithubIssueUseCase(
-    private val scopeGuard: GithubScopeGuard,
+    private val guard: GithubConnectionGuard,
+    private val connections: GithubConnectionRepositoryPort,
     private val githubApi: GithubAppApiPort,
     private val workspaceQuery: WorkspaceQueryPort,
     private val extractor: ErrorSnaphostExtractorPort,
@@ -196,18 +199,21 @@ class ImportGithubIssueUseCase(
             ?: throw GithubUrlInvalidException("지원하지 않는 GitHub 주소 (github.com 의 issues/pull 주소만 가능)")
         if (url.kind == GithubRefKind.PULL_REQUEST) throw GithubUrlInvalidException("PR 이 아니라 Issue 주소를 넣어 주세요")
 
-        val (repository, installation) = scopeGuard.resolve(url.fullName)
-        val workspaceId = installation.workspaceId
-        if (requestedWorkspaceId != null && requestedWorkspaceId != workspaceId) {
-            throw GithubScopeMismatchException("이 저장소는 ${if (workspaceId == null) "개인" else "다른 워크스페이스"} 범위로 연결되어 있어요")
+        val (repository, installation) = guard.resolve(url.fullName)
+        // 공간은 더 이상 레포가 정하지 않는다(한 레포가 여러 공간에 연결될 수 있음) — 요청자가 고른 공간으로 확정.
+        val workspaceId = requestedWorkspaceId
+        val space: GithubSpace = workspaceId?.let(GithubSpace::Workspace) ?: GithubSpace.Personal(userId)
+        if (!connections.isRepoSelectedInSpace(space, repository.repoId)) {
+            throw GithubScopeMismatchException(
+                if (workspaceId == null) "이 저장소가 개인 공간에 연결(선택)되어 있지 않아요"
+                else "이 저장소가 선택한 워크스페이스에 연결(선택)되어 있지 않아요",
+            )
         }
         val role: WorkspaceRole? = if (workspaceId != null) {
             workspaceQuery.getViewerRole(userId, workspaceId)?.takeIf { it.canWriteContent() }
                 ?: throw WorkspaceAccessDeniedException("WRITE role required to create an error case in workspace $workspaceId")
         } else {
-            if (installation.installedByUserId != userId) {
-                throw GithubScopeMismatchException("개인으로 연결된 저장소는 연결한 본인만 Case 로 가져올 수 있어요")
-            }
+            // 개인 공간은 Personal(userId) 로 구성됐으니 요청자가 곧 공간 주인 — 추가 확인 불필요.
             null
         }
 

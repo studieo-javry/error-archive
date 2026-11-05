@@ -16,7 +16,6 @@ import java.time.LocalDateTime
     name = "github_installation",
     indexes = [
         Index(name = "ix_github_installation_user", columnList = "installed_by_user_id"),
-        Index(name = "ix_github_installation_workspace", columnList = "workspace_id"),
     ],
 )
 class GithubInstallationEntity(
@@ -29,9 +28,6 @@ class GithubInstallationEntity(
 
     @Column(name = "account_type", nullable = false, length = 20)
     var accountType: String,
-
-    @Column(name = "workspace_id")
-    var workspaceId: Long?,
 
     @Column(name = "installed_by_user_id", nullable = false)
     var installedByUserId: Long,
@@ -47,12 +43,12 @@ class GithubInstallationEntity(
     var updatedAt: LocalDateTime,
 ) {
     fun toDomain() = GithubInstallation.reconstitute(
-        installationId, accountLogin, accountType, workspaceId, installedByUserId, status, createdAt, updatedAt,
+        installationId, accountLogin, accountType, installedByUserId, status, createdAt, updatedAt,
     )
 
     companion object {
         fun from(d: GithubInstallation) = GithubInstallationEntity(
-            d.installationId, d.accountLogin, d.accountType, d.workspaceId, d.installedByUserId,
+            d.installationId, d.accountLogin, d.accountType, d.installedByUserId,
             d.status, d.createdAt, d.updatedAt,
         )
     }

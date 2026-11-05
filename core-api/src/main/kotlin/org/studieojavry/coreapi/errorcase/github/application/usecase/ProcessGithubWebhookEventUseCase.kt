@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
@@ -28,6 +29,7 @@ import java.time.Instant
 @ConditionalOnGithubEnabled
 class ProcessGithubWebhookEventUseCase(
     private val repository: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
     private val objectMapper: ObjectMapper,
     private val pullRequests: PullRequestWebhookHandler,
     private val checkSuites: CheckSuiteWebhookHandler,
@@ -81,6 +83,16 @@ class ProcessGithubWebhookEventUseCase(
             else -> return Result.SKIPPED
         }
         repository.saveRepositories(changed)
+        // 설치에 새로 추가된 레포는 이 설치의 ACTIVE 연결 선택에 반영 — 단일-공간이던 기존 동작(모든 grant=사용) 보존.
+        // (연결별 선택 UX 가 생기면 "후보로만" 바꾸는 건 후속 PR 몫.)
+        if (action == "added" && changed.isNotEmpty()) {
+            val addedIds = changed.map { it.repoId }
+            val now = Instant.now()
+            connections.findActiveByInstallation(installation.installationId).forEach { conn ->
+                val connectionId = requireNotNull(conn.connectionId)
+                connections.replaceSelectedRepos(connectionId, connections.selectedRepoIds(connectionId) + addedIds, now)
+            }
+        }
         return Result.DONE
     }
 

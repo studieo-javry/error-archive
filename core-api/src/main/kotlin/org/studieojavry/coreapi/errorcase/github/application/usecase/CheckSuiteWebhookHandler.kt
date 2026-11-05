@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
@@ -33,8 +34,14 @@ class CheckSuiteWebhookHandler(
     private val githubApi: GithubAppApiPort,
     private val evidence: GithubEvidenceRepositoryPort,
     private val recorder: GithubEvidenceRecorder,
+    private val errorCases: ErrorCaseRepositoryPort,
+    private val guard: GithubConnectionGuard,
 ) {
     private val log = KotlinLogging.logger {}
+
+    /** 공간별 게이트: 링크된 Case 중 "그 Case 공간이 이 repo 를 선택(연결)" 한 것만 남긴다. */
+    private fun permittedCaseIds(caseIds: List<Long>, repoId: Long): List<Long> =
+        caseIds.filter { id -> errorCases.findById(id)?.let { guard.selects(it, repoId) } == true }
 
     /** @return 처리했으면 true, 관심 없는 이벤트면 false(SKIPPED) */
     fun handle(action: String?, installationId: Long?, root: JsonNode): Boolean {
@@ -60,7 +67,7 @@ class CheckSuiteWebhookHandler(
 
         val linked = numbers.distinct()
             .map { GithubItemRef(repo.repoId, it) }
-            .filter { evidence.findActiveLinkedCaseIds(GithubRefKind.PULL_REQUEST, it).isNotEmpty() }
+            .filter { permittedCaseIds(evidence.findActiveLinkedCaseIds(GithubRefKind.PULL_REQUEST, it), repo.repoId).isNotEmpty() }
         if (linked.isEmpty()) return false
 
         val summary by lazy { CiSummary.of(sha, githubApi.fetchCommitCheckRuns(installation.installationId, owner, name, sha)) }
@@ -70,7 +77,7 @@ class CheckSuiteWebhookHandler(
             val pr = currentSnapshot(installation.installationId, owner, name, ref, sha) ?: continue
             val ci = summary ?: break   // 검사가 하나도 없는 커밋(다른 앱의 빈 suite) — 남길 것이 없음
             if (pr.recordCi(ci)) evidence.savePullRequest(pr)
-            val caseIds = evidence.findActiveLinkedCaseIds(GithubRefKind.PULL_REQUEST, ref)
+            val caseIds = permittedCaseIds(evidence.findActiveLinkedCaseIds(GithubRefKind.PULL_REQUEST, ref), repo.repoId)
             caseIds.forEach { caseId -> recorder.ciEvent(caseId, pr, ci, now)?.let(evidence::recordEvent) }
             recorded++
             log.info { "[github] check_suite pr=${repo.fullName}#${ref.number} sha=${sha.take(7)} ci=${ci.conclusion} merge=${sha != pr.headSha} cases=${caseIds.size}" }

@@ -29,7 +29,7 @@ class ResolveGithubReferencesUseCase(
     private val errorCases: ErrorCaseRepositoryPort,
     private val access: ErrorCaseAccess,
     private val policy: GithubCaseAccessPolicy,
-    private val scopeGuard: GithubScopeGuard,
+    private val guard: GithubConnectionGuard,
     private val githubApi: GithubAppApiPort,
 ) {
     private val log = KotlinLogging.logger {}
@@ -62,8 +62,8 @@ class ResolveGithubReferencesUseCase(
             val number = m.groupValues[2].toInt()
             val unresolved = Reference(raw, repoName, number, resolved = false)
 
-            val resolved = runCatching { scopeGuard.resolve(repoName) }.getOrNull() ?: return@mapNotNull unresolved
-            if (!scopeGuard.isSameScope(resolved.installation, errorCase)) return@mapNotNull unresolved
+            val resolved = runCatching { guard.resolve(repoName) }.getOrNull() ?: return@mapNotNull unresolved
+            if (!guard.selects(errorCase, resolved.repository.repoId)) return@mapNotNull unresolved
             if (!policy.isVisible(resolved.repository, canSeePrivate)) return@mapNotNull unresolved.copy(masked = true)
 
             val found = lookup(resolved.installation.installationId, resolved.repository.fullName, number)

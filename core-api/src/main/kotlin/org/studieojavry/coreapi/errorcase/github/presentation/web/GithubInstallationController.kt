@@ -89,7 +89,7 @@ class GithubInstallationController(
             val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE
             throw ResponseStatusException(status, e.message, e)
         }
-        return GithubInstallationResponse.of(result.installation, result.repositories)
+        return GithubInstallationResponse.of(result.installation, result.connection, result.repositories)
     }
 
     @Operation(

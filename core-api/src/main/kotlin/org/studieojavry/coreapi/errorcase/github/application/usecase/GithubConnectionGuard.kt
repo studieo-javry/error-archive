@@ -2,24 +2,27 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 
 /**
- * "이 레포의 근거를 이 Case 에 붙여도 되나" — 사람이 붙일 때와 자동으로 붙일 때 모두 이 규칙 하나를 쓴다.
+ * "이 레포의 근거를 이 Case 에 붙여도 되나" — 사람이 붙일 때·자동으로 붙일 때 모두 이 규칙 하나를 쓴다.
  *
- * **설치 범위 = Case 범위** 여야 한다.
- *  - 워크스페이스 W 에 연결된 설치 → W 의 Case 에만
- *  - 개인 설치(연결자 A)          → A 가 주인인 개인 Case(workspaceId 없음)에만
+ * **규칙**: Case 의 공간([GithubSpace.of])에 ACTIVE 연결이 있고, 그 연결이 이 repo 를 "사용 선택" 했는가.
+ *  (+ resolve 단계에서 repo 활성·설치 ACTIVE 를 함께 본다.)
  *
- * 두 워크스페이스에 모두 속한 사람이 A 의 비공개 레포 Issue 를 B 의 Case 에 붙여
- * B 멤버 전원에게 노출시키는 경로를 원천 차단하기 위함.
+ * 한 설치가 개인 + 여러 워크스페이스에 동시 연결될 수 있으므로, 더 이상 "설치의 범위" 가 아니라
+ * "연결(connection)이 그 공간에서 이 repo 를 선택했는가" 가 기준이다. 한 공간에서 떨어진(해제·미선택)
+ * 레포의 비공개 이벤트가 다른 공간 멤버에게 새지 않도록 막는다.
  */
 @Component
-class GithubScopeGuard(
+class GithubConnectionGuard(
     private val installations: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
 ) {
     data class ResolvedRepository(val repository: GithubRepository, val installation: GithubInstallation)
 
@@ -33,20 +36,14 @@ class GithubScopeGuard(
         return ResolvedRepository(repo, installation)
     }
 
-    fun isSameScope(installation: GithubInstallation, errorCase: ErrorCase): Boolean {
-        val installationWs = installation.workspaceId
-        val caseWs = errorCase.meta.workspaceId
-        return if (installationWs != null) {
-            caseWs == installationWs
-        } else {
-            caseWs == null && errorCase.ownerUserId == installation.installedByUserId
-        }
-    }
+    /** Case 공간의 ACTIVE 연결이 이 repo 를 선택했는가. */
+    fun selects(errorCase: ErrorCase, repoId: Long): Boolean =
+        connections.isRepoSelectedInSpace(GithubSpace.of(errorCase), repoId)
 
-    fun requireSameScope(installation: GithubInstallation, errorCase: ErrorCase) {
-        if (!isSameScope(installation, errorCase)) {
+    fun requireSelected(errorCase: ErrorCase, repoId: Long) {
+        if (!selects(errorCase, repoId)) {
             throw GithubScopeMismatchException(
-                "레포 연결 범위와 Case 범위가 다름 (installation=${installation.installationId}, case=${errorCase.id})",
+                "이 Case 공간에 활성 GitHub 연결이 없거나 레포가 선택되지 않음 (case=${errorCase.id}, repo=$repoId)",
             )
         }
     }

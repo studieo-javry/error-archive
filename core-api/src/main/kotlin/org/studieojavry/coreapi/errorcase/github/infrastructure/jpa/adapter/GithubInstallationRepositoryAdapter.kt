@@ -21,10 +21,6 @@ class GithubInstallationRepositoryAdapter(
     override fun save(installation: GithubInstallation): GithubInstallation =
         installations.save(GithubInstallationEntity.from(installation)).toDomain()
 
-    override fun findVisibleTo(userId: Long, workspaceIds: Collection<Long>): List<GithubInstallation> =
-        // 빈 IN () 은 JPQL 방언별로 깨질 수 있어 더미 값으로 채운다(워크스페이스 id 는 양수).
-        installations.findVisibleTo(userId, workspaceIds.ifEmpty { listOf(-1L) }).map { it.toDomain() }
-
     override fun findRepository(repoId: Long): GithubRepository? =
         repositories.findById(repoId).orElse(null)?.toDomain()
 

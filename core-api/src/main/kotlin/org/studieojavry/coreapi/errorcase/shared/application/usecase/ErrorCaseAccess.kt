@@ -25,16 +25,21 @@ class ErrorCaseAccess(
     private val workspaceQuery: WorkspaceQueryPort,
 ) {
     fun requireRead(errorCase: ErrorCase, requesterUserId: Long) {
-        if (errorCase.ownerUserId == requesterUserId) return
-        when (errorCase.visibility) {
-            Visibility.PUBLIC -> return
+        if (canRead(errorCase, requesterUserId)) return
+        throw ErrorCaseAccessDeniedException("not allowed to read error case ${errorCase.id}")
+    }
+
+    /** [requireRead] 와 같은 판정을 예외 없이 — 멘션 알림 수신자처럼 *남* 의 읽기 권한을 거를 때. */
+    fun canRead(errorCase: ErrorCase, userId: Long): Boolean {
+        if (errorCase.ownerUserId == userId) return true
+        return when (errorCase.visibility) {
+            Visibility.PUBLIC -> true
             Visibility.WORKSPACE -> {
                 val wsId = errorCase.meta.workspaceId
-                if (wsId != null && workspaceQuery.getViewerRole(requesterUserId, wsId)?.canRead() == true) return
+                wsId != null && workspaceQuery.getViewerRole(userId, wsId)?.canRead() == true
             }
-            Visibility.PRIVATE -> { /* fall through to throw */ }
+            Visibility.PRIVATE -> false
         }
-        throw ErrorCaseAccessDeniedException("not allowed to read error case ${errorCase.id}")
     }
 
     fun requireWrite(errorCase: ErrorCase, requesterUserId: Long) {

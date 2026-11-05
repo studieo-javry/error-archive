@@ -76,11 +76,13 @@ class CreateCommentUseCase(
         }
         commentRepository.saveMentions(mentions)
 
-        // 알림 발사 — userId 가 매핑됐고 본인 멘션 아닌 경우만. 발송 실패는 댓글 작성에 영향 X.
+        // 알림 발사 — userId 가 매핑됐고 본인 멘션 아니고 *케이스를 읽을 수 있는* 경우만.
+        // (워크스페이스/비공개 케이스에서 권한 없는 사람을 멘션해도 스니펫이 새지 않게.) 발송 실패는 댓글 작성에 영향 X.
         val recipients = mentions
             .mapNotNull { it.mentionedUserId }
             .filter { it != command.authorUserId }
             .distinct()
+            .filter { access.canRead(errorCase, it) }
         if (recipients.isNotEmpty()) {
             runCatching {
                 notificationPublisher.publishMentions(

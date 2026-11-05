@@ -27,6 +27,16 @@ interface ErrorCaseRepositoryPort {
 
     fun findOwnerUserIdById(errorCaseId: Long): Long?
 
+    /** 케이스의 워크스페이스 id — 개인 케이스이거나 없으면 null. */
+    fun findWorkspaceIdById(errorCaseId: Long): Long?
+
+    // ── 데모 시드 ────────────────────────────────────────────
+    /** 시드가 만든 케이스에 데모 표식(시드 버전)을 남긴다 → 응답 `demo=true`. */
+    fun markDemo(errorCaseIds: Collection<Long>, seedVersion: Int)
+
+    /** 공개 쇼케이스(워크스페이스 없는 데모 시드 케이스) id → 시드 버전. */
+    fun findDemoShowcase(): Map<Long, Int>
+
     fun deleteById(errorCaseId: Long)
 
     // ── Recent Activity (home dashboard) ──────────────────────

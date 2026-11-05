@@ -13,6 +13,7 @@ import java.time.OffsetDateTime
  * `descriptionPreview` 는 본문에서 마커(`@snippet(..)` / `@attach(..)`) 를 `[code]` / `[file]` 로 치환한 뒤
  *     공백 정규화 + max 120자 + 잘리면 끝에 `…` — 상세 본문이 아님.
  * `author` 는 검색 응답에만 hydration — 일반 목록 응답에서는 null 일 수 있음.
+ * `demo` 는 데모 시드가 만든 케이스 — FE 가 "데모" 배지로 표시.
  */
 data class ErrorCaseSummaryResponse(
     val id: Long,
@@ -28,6 +29,7 @@ data class ErrorCaseSummaryResponse(
     val tags: List<String>,
     val descriptionPreview: String?,
     val author: AuthorSummaryResponse?,
+    val demo: Boolean = false,
 ) {
     companion object {
         /** author 정보 없이 (일반 목록 응답용). */
@@ -48,6 +50,7 @@ data class ErrorCaseSummaryResponse(
             tags = s.tags,
             descriptionPreview = DescriptionPreview.of(s.descriptionRaw),
             author = author?.let { AuthorSummaryResponse.from(it) },
+            demo = s.demo,
         )
     }
 }

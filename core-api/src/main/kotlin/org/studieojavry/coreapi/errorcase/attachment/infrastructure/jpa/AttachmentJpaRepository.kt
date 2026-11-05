@@ -36,11 +36,11 @@ interface AttachmentJpaRepository : JpaRepository<AttachmentEntity, Long> {
         pageable: Pageable,
     ): List<AttachmentEntity>
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE AttachmentEntity a SET a.errorCaseId = :caseId WHERE a.markerId IN :markerIds")
     fun linkToCase(@Param("markerIds") markerIds: List<String>, @Param("caseId") caseId: Long): Int
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE AttachmentEntity a SET a.errorCaseId = null WHERE a.markerId IN :markerIds")
     fun unlinkFromCase(@Param("markerIds") markerIds: List<String>): Int
 }

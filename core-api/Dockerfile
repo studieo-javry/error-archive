@@ -9,4 +9,4 @@ COPY app.jar /app/app.jar
 USER app
 EXPOSE 8081
 # 컨테이너 메모리 limit 존중 + 힙 여유 확보(1vCPU/소용량 노드).
-ENTRYPOINT ["java","-XX:MaxRAMPercentage=75.0","-jar","/app/app.jar"]
+ENTRYPOINT ["java","-XX:MaxRAMPercentage=55.0","-jar","/app/app.jar"]

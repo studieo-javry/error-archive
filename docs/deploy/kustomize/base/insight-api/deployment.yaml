@@ -14,7 +14,7 @@ spec:
     metadata:
       labels: { app: insight-api }
     spec:
-      nodeSelector: { role: apps }
+      nodeSelector: { role: platform }           # node1 배치 — apps 노드에 JVM 5개가 몰려 배포 시 기동 CPU 경합(2026-11-05). core·iam·noti 는 apps 노드
       terminationGracePeriodSeconds: 30            # preStop(5s) + in-flight 정리 여유
       volumes:
         - name: insight-weights
@@ -45,7 +45,7 @@ spec:
           startupProbe:                          # ARM 콜드스타트+다중 JVM 경합 대비: 기동 완료 전 liveness 가 죽이는 것 방지
             httpGet: { path: /internal/actuator/health/liveness, port: 8083 }
             periodSeconds: 5
-            failureThreshold: 60                  # 최대 ~300s (정상 콜드스타트 25~150s 커버, 여유 2x)
+            failureThreshold: 120                 # 최대 ~600s — 배포 시 같은 노드 JVM 동시 기동이면 200~290s 걸려 300s 한도로 kill 됨(2026-11-05)
             timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /internal/actuator/health/liveness, port: 8083 }

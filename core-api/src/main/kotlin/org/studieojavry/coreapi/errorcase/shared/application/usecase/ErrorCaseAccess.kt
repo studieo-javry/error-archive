@@ -25,18 +25,32 @@ class ErrorCaseAccess(
     private val workspaceQuery: WorkspaceQueryPort,
 ) {
     fun requireRead(errorCase: ErrorCase, requesterUserId: Long) {
-        if (canRead(errorCase, requesterUserId)) return
+        if (errorCase.ownerUserId == requesterUserId) return
+        when (errorCase.visibility) {
+            Visibility.PUBLIC -> return
+            Visibility.WORKSPACE -> {
+                val wsId = errorCase.meta.workspaceId
+                if (wsId != null && workspaceQuery.getViewerRole(requesterUserId, wsId)?.canRead() == true) return
+            }
+            Visibility.PRIVATE -> { /* fall through to throw */ }
+        }
         throw ErrorCaseAccessDeniedException("not allowed to read error case ${errorCase.id}")
     }
 
-    /** [requireRead] 와 같은 판정을 예외 없이 — 멘션 알림 수신자처럼 *남* 의 읽기 권한을 거를 때. */
-    fun canRead(errorCase: ErrorCase, userId: Long): Boolean {
+    /**
+     * *요청자가 아닌* 사용자(멘션 알림 수신자 등)의 읽기 권한 — [requireRead] 와 같은 정책, 예외 없이.
+     * [WorkspaceQueryPort.getViewerRole] 은 *현재 요청자* 의 토큰으로 iam 을 조회하므로 남에게 쓰면 안 된다
+     * (요청자 역할이 그 사람 키로 캐시됨). 대신 멤버 목록에서 찾는다. iam 장애로 목록이 비면 false(알림 보류 쪽이 안전).
+     */
+    fun canUserRead(errorCase: ErrorCase, userId: Long): Boolean {
         if (errorCase.ownerUserId == userId) return true
         return when (errorCase.visibility) {
             Visibility.PUBLIC -> true
             Visibility.WORKSPACE -> {
-                val wsId = errorCase.meta.workspaceId
-                wsId != null && workspaceQuery.getViewerRole(userId, wsId)?.canRead() == true
+                val wsId = errorCase.meta.workspaceId ?: return false
+                workspaceQuery.listMembers(wsId).any {
+                    it.userId == userId && WorkspaceQueryPort.WorkspaceRole.fromCode(it.role)?.canRead() == true
+                }
             }
             Visibility.PRIVATE -> false
         }

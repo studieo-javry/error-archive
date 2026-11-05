@@ -7,6 +7,8 @@ interface WorkspaceQueryPort {
     /**
      * 호출 사용자의 워크스페이스 역할을 조회한다. **멤버가 아니면 null**.
      * 콘텐츠(에러케이스) 권한 판정에 사용 — 멤버 여부뿐 아니라 READ/WRITE/ADMIN 구분.
+     * **userId 는 반드시 현재 요청자** — 조회는 요청자 토큰으로 하고 결과만 `userId` 키로 캐시한다.
+     * 다른 사용자 권한은 [listMembers] 로 판정할 것.
      */
     fun getViewerRole(userId: Long, workspaceId: Long): WorkspaceRole?
 

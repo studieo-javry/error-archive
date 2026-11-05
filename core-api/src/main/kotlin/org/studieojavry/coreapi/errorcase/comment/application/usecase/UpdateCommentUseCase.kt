@@ -47,7 +47,7 @@ class UpdateCommentUseCase(
             .mapNotNull { it.mentionedUserId }
             .filter { it != command.requesterUserId && it !in before }
             .distinct()
-            .filter { uid -> errorCase != null && access.canRead(errorCase, uid) }
+            .filter { uid -> errorCase != null && access.canUserRead(errorCase, uid) }
         if (recipients.isNotEmpty()) {
             runCatching {
                 notificationPublisher.publishMentions(

@@ -69,7 +69,7 @@ class CreateCommentUseCase(
             .mapNotNull { it.mentionedUserId }
             .filter { it != command.authorUserId }
             .distinct()
-            .filter { access.canRead(errorCase, it) }
+            .filter { access.canUserRead(errorCase, it) }
         if (recipients.isNotEmpty()) {
             runCatching {
                 notificationPublisher.publishMentions(

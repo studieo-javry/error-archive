@@ -17,6 +17,7 @@ import org.studieojavry.iamapi.auth.domain.model.vo.Email
 import org.studieojavry.iamapi.shared.util.HashUtils
 import java.time.Instant
 import java.util.UUID
+import org.studieojavry.iamapi.shared.util.ReservedNames
 
 @Service
 class SocialLoginUseCase(
@@ -97,6 +98,7 @@ class SocialLoginUseCase(
      *  - `[^a-z0-9-]` → 하이픈으로 치환 (이론상 GitHub login 은 이미 영문/숫자/하이픈만, 단 방어적 처리)
      *  - 시작/끝 하이픈 제거 (`-foo` → `foo`)
      *  - 빈 결과면 `user`
+     *  - 데모 예약 이름(`demo`, `demo-*`)이면 `user-` 접두
      *  - 39자 cap
      */
     private fun pickAvailableHandle(providerLogin: String): String {
@@ -105,6 +107,8 @@ class SocialLoginUseCase(
             .replace(Regex("[^a-z0-9-]"), "-")
             .trim('-')
             .ifBlank { "user" }
+            // 데모 예약 이름(demo, demo-*)은 회원이 가질 수 없다 → `user-` 접두로 피한다.
+            .let { if (ReservedNames.isReserved(it)) "user-$it" else it }
             .take(User.HANDLE_MAX_LENGTH)
 
         if (!userRepository.existsByHandle(base)) return base

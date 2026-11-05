@@ -38,6 +38,17 @@ class MentionParseTest {
     }
 
     @Test
+    fun `코드 블록·인라인 코드 안의 @ 는 멘션 아님`() {
+        assertEquals(emptyList<String>(), MentionResolver.parse("```\n@alice\n```"))
+        assertEquals(emptyList<String>(), MentionResolver.parse("~~~kotlin\n@Bean fun x()\n~~~"))
+        assertEquals(emptyList<String>(), MentionResolver.parse("` @alice` 는 예시"))
+        // 코드 밖 멘션은 그대로
+        assertEquals(listOf("bob"), MentionResolver.parse("로그:\n```\n@alice 실패\n```\n@bob 확인 부탁"))
+        // 닫히지 않은 코드 블록은 끝까지 코드
+        assertEquals(listOf("bob"), MentionResolver.parse("@bob\n```\n@alice"))
+    }
+
+    @Test
     fun `같은 식별자는 한 번만`() {
         assertEquals(listOf("alice"), MentionResolver.parse("@alice @alice @alice."))
     }

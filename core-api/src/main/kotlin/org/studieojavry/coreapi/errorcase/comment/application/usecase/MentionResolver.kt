@@ -48,9 +48,13 @@ class MentionResolver(
             "이", "가", "은", "는", "을", "를", "도", "의", "랑", "와", "과", "아", "야", "에",
         )
 
-        /** 본문에서 멘션 식별자 추출 (끝 구두점 제거, 중복 제거, 최대 [MENTIONS_MAX]). */
+        // 코드 블록(``` / ~~~, 닫히지 않으면 끝까지)과 인라인 코드 — 로그·예시 속 @ 는 멘션이 아니다.
+        private val FENCED_CODE = Regex("(?ms)^[ \\t]*(```|~~~).*?(^[ \\t]*\\1[^\\n]*$|\\z)")
+        private val INLINE_CODE = Regex("`[^`\\n]+`")
+
+        /** 본문에서 멘션 식별자 추출 (코드 제외, 끝 구두점 제거, 중복 제거, 최대 [MENTIONS_MAX]). */
         internal fun parse(body: String): List<String> =
-            MENTION_PATTERN.findAll(body)
+            MENTION_PATTERN.findAll(body.replace(FENCED_CODE, "\n").replace(INLINE_CODE, " "))
                 .map { it.groupValues[1].trimEnd(*TRAILING_PUNCT) }
                 .filter { it.isNotEmpty() }
                 .distinct()

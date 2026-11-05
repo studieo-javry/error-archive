@@ -7,18 +7,14 @@ discovery.kubernetes "apps" {
   }
 }
 
-// 5개 백엔드만(publish-api 포함) + 같은 노드(instance02)만 유지 → podIP:containerPort 로 주소 구성
+// 5개 백엔드만(publish-api 포함) → podIP:containerPort 로 주소 구성.
+// 노드 제한 없음 — insight·publish 는 node1 에 뜬다(2026-11-05). 노드 간 파드 IP 수집 확인됨.
 discovery.relabel "app_metrics" {
   targets = discovery.kubernetes.apps.targets
 
   rule {
     source_labels = ["__meta_kubernetes_pod_label_app"]
     regex         = "iam-api|core-api|noti-api|insight-api|publish-api"
-    action        = "keep"
-  }
-  rule {
-    source_labels = ["__meta_kubernetes_pod_node_name"]
-    regex         = "error-archive-instance02"
     action        = "keep"
   }
   rule {

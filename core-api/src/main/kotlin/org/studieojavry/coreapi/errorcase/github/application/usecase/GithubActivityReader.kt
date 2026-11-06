@@ -2,12 +2,14 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubEvidenceRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.CaseGithubEvent
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubEventCursor
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import java.time.Instant
 
 /**
@@ -31,6 +33,7 @@ class GithubActivityReader(
     private val policy: GithubCaseAccessPolicy,
     private val evidence: GithubEvidenceRepositoryPort,
     private val installations: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
 ) {
     fun page(errorCase: ErrorCase, viewerUserId: Long, cursor: String?, size: Int): ActivityPage {
         val caseId = errorCase.id!!
@@ -46,8 +49,11 @@ class GithubActivityReader(
 
         val repoIds = (page.map { it.repoId } + page.mapNotNull { it.relatedIssueRepoId() }).toSet()
         val repos = installations.findRepositoriesByIds(repoIds).associateBy { it.repoId }
+        // 공간 경계: 근거 조회와 동일하게, 이 Case 공간이 지금 ACTIVE 로 선택한 레포의 활동만 내용 노출(그 외는 마스킹) — §6.
+        val space = GithubSpace.of(errorCase)
+        val selectedByRepo = repoIds.associateWith { connections.isRepoSelectedInSpace(space, it) }
         val canSeePrivate by lazy { policy.canSeePrivate(errorCase, viewerUserId) }
-        fun visible(repoId: Long): Boolean = policy.isVisible(repos[repoId], canSeePrivate)
+        fun visible(repoId: Long): Boolean = selectedByRepo[repoId] == true && policy.isVisible(repos[repoId], canSeePrivate)
 
         return ActivityPage(
             events = page.map { e ->

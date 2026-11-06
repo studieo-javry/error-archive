@@ -16,6 +16,9 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.DeleteErrorCa
  * 전략: 데모 WS 의 **모든 케이스를 wipe → 봇 시드 재생성**(drop & reseed, 멱등). 게스트가 만든 콘텐츠는
  * 작성자 무관하게 WS 단위로 함께 사라진다. iam 의 게스트 사용자 정리와 짝을 이뤄 매일 베이스라인으로 복귀.
  * (데모 WS/봇 ID 는 iam `/internal/demo/identity` 로 조회.)
+ *
+ * 공개 쇼케이스(워크스페이스 없는 데모 시드, 회원 Search 용)는 야간 리셋 대상이 **아니다** — 기동 시
+ * [syncShowcase] 가 버전이 다를 때만 다시 만든다.
  */
 @Service
 class DemoResetService(
@@ -72,6 +75,24 @@ class DemoResetService(
             val r = reset()
             log.info { "demo seed (re)seeded on startup [${seeder.versionTag}]: wiped=${r.wiped} seeded=${r.seeded}" }
         }
+        syncShowcase(id.personaUserIds.ifEmpty { listOfNotNull(id.botUserId) })
+    }
+
+    /**
+     * 공개 쇼케이스 동기화 — 전부 현재 버전이면 no-op(회원 댓글·me-too 보존).
+     * 없거나 다른 버전이 섞여 있으면 기존 쇼케이스만 지우고 새로 만든다. 지우는 대상은
+     * `demo_seed_version` 표식이 있고 워크스페이스가 없는 케이스뿐이라 회원 케이스는 건드리지 않는다.
+     */
+    fun syncShowcase(authorIds: List<Long>): Int {
+        val existing = errorCaseRepository.findDemoShowcase()
+        if (existing.isNotEmpty() && existing.values.all { it == seeder.showcaseVersion }) {
+            log.info { "demo showcase up to date (v${seeder.showcaseVersion}, n=${existing.size})" }
+            return 0
+        }
+        existing.keys.forEach { deleteErrorCaseUseCase.purge(it) }
+        val seeded = seeder.seedShowcase(authorIds)
+        log.info { "demo showcase (re)seeded [v${seeder.showcaseVersion}]: removed=${existing.size} seeded=$seeded" }
+        return seeded
     }
 
     private fun wipeWorkspace(workspaceId: Long): Int {

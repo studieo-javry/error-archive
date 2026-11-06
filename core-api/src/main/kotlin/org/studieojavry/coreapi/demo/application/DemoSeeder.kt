@@ -42,6 +42,10 @@ import java.time.LocalDateTime
  *   댓글·me-too 가 야간 reset 으로 사라지므로 노출하지 않는다. (게스트는 원래 공개 공간 진입이 막혀 있다.)
  * - 워크스페이스는 데모 WS 로 묶여 reset 이 ws 단위 wipe+reseed(스텝/솔루션/첨부는 purge 가 cascade).
  * - 첨부는 S3 put 필요 — 스토리지 미가용(테스트)이면 `demo.seed-attachments=false`.
+ *
+ * **공개 쇼케이스**([seedShowcase]): 같은 콘텐츠를 워크스페이스 없이 PUBLIC 으로 한 벌 더 만들어 회원 Search 를 채운다.
+ * 야간 리셋 대상이 아니고(고정 데이터) [SHOWCASE_VERSION] 이 바뀔 때만 다시 만든다 — 회원 댓글·me-too 가 유지된다.
+ * 모든 시드 케이스는 `demo_seed_version` 으로 표시돼 응답 `demo=true`("데모" 배지)가 된다.
  */
 @Service
 class DemoSeeder(
@@ -62,6 +66,9 @@ class DemoSeeder(
     /** 현재 시드 콘텐츠 버전 태그 — 모든 시드 케이스에 부착. 내용이 바뀌면 SEED_VERSION 을 올려 재시드를 유발. */
     val versionTag: String get() = VERSION_TAG
 
+    /** 공개 쇼케이스 콘텐츠 버전 — 기동 시 이 값과 다르면 쇼케이스를 다시 만든다. */
+    val showcaseVersion: Int get() = SHOWCASE_VERSION
+
     @Transactional
     fun ensureSeeded(workspaceId: Long, authorIds: List<Long>): Int {
         if (errorCaseRepository.search(criteria(workspaceId, 1)).isNotEmpty()) return 0
@@ -74,16 +81,39 @@ class DemoSeeder(
      */
     @Transactional
     fun seedFresh(workspaceId: Long, authorIds: List<Long>): Int {
-        require(authorIds.isNotEmpty()) { "demo seed needs at least one author" }
-        SEED.forEachIndexed { i, s ->
-            val ownerId = authorIds[i % authorIds.size]
-            val commenterId = authorIds[(i + 1) % authorIds.size]
-            seedOne(s, workspaceId, ownerId, commenterId)
-        }
-        return SEED.size
+        val ids = seedAll(workspaceId, Visibility.WORKSPACE, VERSION_TAG, authorIds)
+        errorCaseRepository.markDemo(ids, SEED_VERSION)
+        return ids.size
     }
 
-    private fun seedOne(s: RichSeed, workspaceId: Long, ownerId: Long, commenterId: Long) {
+    /**
+     * 공개 쇼케이스 — 워크스페이스 없이 PUBLIC, 버전 태그 없이(회원 카드에 내부 태그가 보이지 않게) 생성.
+     * 버전은 `demo_seed_version` 컬럼에 남겨 재시드 판단에 쓴다.
+     */
+    @Transactional
+    fun seedShowcase(authorIds: List<Long>): Int {
+        val ids = seedAll(workspaceId = null, Visibility.PUBLIC, versionTag = null, authorIds)
+        errorCaseRepository.markDemo(ids, SHOWCASE_VERSION)
+        return ids.size
+    }
+
+    private fun seedAll(workspaceId: Long?, visibility: Visibility, versionTag: String?, authorIds: List<Long>): List<Long> {
+        require(authorIds.isNotEmpty()) { "demo seed needs at least one author" }
+        return SEED.mapIndexed { i, s ->
+            val ownerId = authorIds[i % authorIds.size]
+            val commenterId = authorIds[(i + 1) % authorIds.size]
+            seedOne(s, workspaceId, visibility, versionTag, ownerId, commenterId)
+        }
+    }
+
+    private fun seedOne(
+        s: RichSeed,
+        workspaceId: Long?,
+        visibility: Visibility,
+        versionTag: String?,
+        ownerId: Long,
+        commenterId: Long,
+    ): Long {
         // 스니펫(DB 전용) + 첨부(S3). 둘 다 markerId 로 먼저 저장돼야 case.save 가 링크할 수 있다.
         val snippets = s.snippets.mapNotNull { buildSnippet(it, ownerId) }
         val attachments = if (props.seedAttachments) s.attachments.mapNotNull { buildAttachment(it, ownerId) } else emptyList()
@@ -105,7 +135,7 @@ class DemoSeeder(
             snapshot = snapshot,
             description = description,
             meta = meta,
-            visibility = Visibility.WORKSPACE,
+            visibility = visibility,
             snippets = snippets,
             attachments = attachments,
             tags = emptyList(), // 태그는 case.save 가 아니라 tagRepository 로 별도 저장(아래)
@@ -115,7 +145,7 @@ class DemoSeeder(
         val caseId = errorCaseRepository.save(case).id!!
 
         // 태그는 별도 테이블 — 콘텐츠 태그 + 버전 태그를 정규화해 저장(버전 태그로 재시드 감지).
-        (s.tags + VERSION_TAG).mapNotNull { ErrorCase.normalizeTag(it) }.distinct()
+        (s.tags + listOfNotNull(versionTag)).mapNotNull { ErrorCase.normalizeTag(it) }.distinct()
             .forEach { tagRepository.add(caseId, it) }
         val stepIds = s.steps.mapIndexed { i, st ->
             stepRepository.save(
@@ -158,13 +188,14 @@ class DemoSeeder(
         errorCaseRepository.update(
             ErrorCase.reconstitute(
                 id = caseId, ownerUserId = ownerId, title = s.title, project = s.project,
-                snapshot = snapshot, description = description, meta = meta, visibility = Visibility.WORKSPACE,
+                snapshot = snapshot, description = description, meta = meta, visibility = visibility,
                 snippets = emptyList(), attachments = emptyList(), tags = emptyList(),
                 status = s.status, occurredAt = occurredAt, createdAt = occurredAt, updatedAt = occurredAt,
                 resolvedAt = if (resolved) occurredAt else null,
                 resolvedByUserId = if (resolved) ownerId else null,
             ),
         )
+        return caseId
     }
 
     private fun buildSnippet(sn: SeedSnippet, botUserId: Long): CodeSnippet? = runCatching {
@@ -266,6 +297,9 @@ class DemoSeeder(
          */
         const val GUIDE_CASE_TITLE = "피크 시간마다 터지는 503 — HikariCP 커넥션 풀 고갈"
         private val VERSION_TAG = "seed-v$SEED_VERSION"
+
+        /** 공개 쇼케이스 콘텐츠 버전 — 데모 WS 시드와 별개. 올리면 다음 기동 때 쇼케이스를 지우고 다시 만든다(회원 댓글도 사라짐). */
+        private const val SHOWCASE_VERSION = 1
 
         /** me-too 시드용 가짜 사용자 id 기준값(실 사용자와 충돌 없게 큼). 프로필 resolve 안 됨. */
         private const val ME_TOO_BASE_UID = 900_000L

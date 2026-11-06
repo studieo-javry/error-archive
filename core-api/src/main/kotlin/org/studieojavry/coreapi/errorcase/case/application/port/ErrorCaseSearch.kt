@@ -65,4 +65,6 @@ data class ErrorCaseSummary(
     /** RESOLVED 로 전환된 마지막 시각 — 없으면 null. timeline 의 RESOLVED 활동 시각. */
     val resolvedAt: LocalDateTime? = null,
     val resolvedByUserId: Long? = null,
+    /** 데모 시드가 만든 케이스("데모" 배지). */
+    val demo: Boolean = false,
 )

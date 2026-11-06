@@ -32,6 +32,8 @@ class ErrorCase private constructor(
     var resolvedAt: LocalDateTime? = null,
     /** RESOLVED 로 전환한 actor. timeline 의 "Resolved a case" 활동 주체 식별. */
     var resolvedByUserId: Long? = null,
+    /** 데모 시드가 만든 케이스 — 읽기 전용 표식("데모" 배지). 시드 경로만 저장소에서 기록한다. */
+    val demo: Boolean = false,
 ) {
     init {
         require(title.isNotBlank()) { "Title cannot be blank" }
@@ -148,6 +150,7 @@ class ErrorCase private constructor(
             updatedAt: LocalDateTime,
             resolvedAt: LocalDateTime? = null,
             resolvedByUserId: Long? = null,
+            demo: Boolean = false,
         ): ErrorCase = ErrorCase(
             id = id,
             ownerUserId = ownerUserId,
@@ -166,6 +169,7 @@ class ErrorCase private constructor(
             updatedAt = updatedAt,
             resolvedAt = resolvedAt,
             resolvedByUserId = resolvedByUserId,
+            demo = demo,
         )
     }
 }

@@ -18,18 +18,9 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DisconnectGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionCandidateInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionNotFoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionVersionConflictException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallStateInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationAlreadyBoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositorySelectionInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubAuthorizeUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
@@ -96,11 +87,9 @@ class GithubConnectionController(
     fun connectionCandidates(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: GithubConnectionCandidatesRequest,
-    ): GithubConnectionCandidatesResponse = mapGithubErrors {
-        GithubConnectionCandidatesResponse.of(
-            getCandidates.invoke(GetGithubConnectionCandidatesUseCase.Command(userId, request.code, request.state)),
-        )
-    }
+    ): GithubConnectionCandidatesResponse = GithubConnectionCandidatesResponse.of(
+        getCandidates.invoke(GetGithubConnectionCandidatesUseCase.Command(userId, request.code, request.state)),
+    )
 
     @Operation(
         summary = "연결 생성",
@@ -120,13 +109,11 @@ class GithubConnectionController(
     fun create(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: CreateGithubConnectionRequest,
-    ): GithubConnectionResponse = mapGithubErrors {
-        GithubConnectionResponse.of(
-            createConnection.invoke(
-                CreateGithubConnectionUseCase.Command(userId, request.candidateToken, request.selectedRepoIds),
-            ),
-        )
-    }
+    ): GithubConnectionResponse = GithubConnectionResponse.of(
+        createConnection.invoke(
+            CreateGithubConnectionUseCase.Command(userId, request.candidateToken, request.selectedRepoIds),
+        ),
+    )
 
     @Operation(
         summary = "내 연결 목록(관리)",
@@ -157,15 +144,13 @@ class GithubConnectionController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결 id") @PathVariable connectionId: Long,
         @Valid @RequestBody request: UpdateConnectionRepositoriesRequest,
-    ): GithubConnectionResponse = mapGithubErrors {
-        GithubConnectionResponse.of(
-            updateRepositories.invoke(
-                UpdateConnectionRepositoriesUseCase.Command(
-                    userId, connectionId, request.selectedRepoIds, request.expectedVersion,
-                ),
+    ): GithubConnectionResponse = GithubConnectionResponse.of(
+        updateRepositories.invoke(
+            UpdateConnectionRepositoriesUseCase.Command(
+                userId, connectionId, request.selectedRepoIds, request.expectedVersion,
             ),
-        )
-    }
+        ),
+    )
 
     @Operation(
         summary = "설치 저장소 새로고침",
@@ -183,9 +168,7 @@ class GithubConnectionController(
     fun refreshRepositories(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "GitHub installation id") @PathVariable installationId: Long,
-    ): RefreshRepositoriesResponse = mapGithubErrors {
-        RefreshRepositoriesResponse.of(refreshRepositories.invoke(userId, installationId))
-    }
+    ): RefreshRepositoriesResponse = RefreshRepositoriesResponse.of(refreshRepositories.invoke(userId, installationId))
 
     @Operation(
         summary = "공간별 연결 해제",
@@ -201,28 +184,5 @@ class GithubConnectionController(
     fun disconnect(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결 id") @PathVariable connectionId: Long,
-    ) = mapGithubErrors { disconnectConnection.invoke(userId, connectionId) }
-
-    /** github 도메인 예외 → HTTP 매핑(기존 두 컨트롤러와 동일 관례). */
-    private fun <T> mapGithubErrors(block: () -> T): T = try {
-        block()
-    } catch (e: GithubInstallStateInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubConnectionCandidateInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubRepositorySelectionInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubConnectionNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: GithubInstallationAlreadyBoundException) {
-        throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
-    } catch (e: GithubConnectionVersionConflictException) {
-        throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
-    } catch (e: org.springframework.orm.ObjectOptimisticLockingFailureException) {
-        throw ResponseStatusException(HttpStatus.CONFLICT, "다른 관리자가 먼저 변경했습니다 — 새로고침 후 다시 시도하세요", e)
-    } catch (e: GithubApiException) {
-        e.retryAfter?.let { throw GithubRateLimitedException(it, e) }
-        val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE
-        throw ResponseStatusException(status, e.message, e)
-    }
+    ) = disconnectConnection.invoke(userId, connectionId)
 }

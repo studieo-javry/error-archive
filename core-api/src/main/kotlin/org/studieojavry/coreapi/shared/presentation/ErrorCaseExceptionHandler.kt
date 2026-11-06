@@ -14,8 +14,8 @@ import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseDele
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseLinkException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.ErrorCaseNotFoundException
 import org.studieojavry.coreapi.errorcase.case.application.usecase.WorkspaceAccessDeniedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.shared.infrastructure.iam.IamApiUnavailableException
+import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
 import org.studieojavry.sharederror.trace.TraceIdAccessor
 
@@ -68,6 +68,13 @@ class ErrorCaseExceptionHandler(
         res: HttpServletResponse,
     ): ProblemDetail = build(req, res, HttpStatus.BAD_REQUEST, "CASE_LINK_INVALID", ex.message ?: "Invalid snippet/attachment link.")
 
+    @ExceptionHandler(StepNotFoundException::class)
+    fun handleStepNotFound(
+        ex: StepNotFoundException,
+        req: HttpServletRequest,
+        res: HttpServletResponse,
+    ): ProblemDetail = build(req, res, HttpStatus.NOT_FOUND, "CASE_STEP_NOT_FOUND", ex.message ?: "Step not found.")
+
     /**
      * iam-api 지연/중단으로 권한(워크스페이스 role) 확인이 불가한 경우 — **일시 장애**.
      * 500(서버 오류)이 아니라 **503(Service Unavailable, retryable)** 로 내려 클라이언트가 재시도 가능함을 인지시킨다.
@@ -92,20 +99,6 @@ class ErrorCaseExceptionHandler(
     ): ProblemDetail {
         res.setHeader("Retry-After", ex.retryAfterSeconds.toString())
         return build(req, res, HttpStatus.TOO_MANY_REQUESTS, "DRAFT_RATE_LIMITED", ex.message ?: "Too many requests.", retryable = true)
-    }
-
-    /**
-     * GitHub 호출 한도 초과 — 장애(503)와 구분해 **429 + Retry-After(초, 올림)**. FE 는 "잠시 후 다시" 안내에 쓴다.
-     */
-    @ExceptionHandler(GithubRateLimitedException::class)
-    fun handleGithubRateLimited(
-        ex: GithubRateLimitedException,
-        req: HttpServletRequest,
-        res: HttpServletResponse,
-    ): ProblemDetail {
-        val seconds = maxOf(1L, ex.retryAfter.plusMillis(999).seconds)
-        res.setHeader("Retry-After", seconds.toString())
-        return build(req, res, HttpStatus.TOO_MANY_REQUESTS, "GITHUB_RATE_LIMITED", "GitHub 호출 한도에 걸렸습니다. ${seconds}초 뒤 다시 시도해 주세요.", retryable = true)
     }
 
     private fun build(

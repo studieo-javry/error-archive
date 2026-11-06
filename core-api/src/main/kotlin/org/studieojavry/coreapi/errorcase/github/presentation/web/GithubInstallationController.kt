@@ -6,7 +6,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
-import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -14,13 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CompleteGithubInstallationUseCase
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallStateInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationAlreadyBoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationNotOwnedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubInstallUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListMyGithubInstallationsUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
@@ -74,21 +67,9 @@ class GithubInstallationController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: CompleteGithubInstallationRequest,
     ): GithubInstallationResponse {
-        val result = try {
-            completeInstallation.invoke(
-                CompleteGithubInstallationUseCase.Command(userId, request.installationId, request.code, request.state),
-            )
-        } catch (e: GithubInstallStateInvalidException) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-        } catch (e: GithubInstallationNotOwnedException) {
-            throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
-        } catch (e: GithubInstallationAlreadyBoundException) {
-            throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
-        } catch (e: GithubApiException) {
-            e.retryAfter?.let { throw GithubRateLimitedException(it, e) }
-            val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE
-            throw ResponseStatusException(status, e.message, e)
-        }
+        val result = completeInstallation.invoke(
+            CompleteGithubInstallationUseCase.Command(userId, request.installationId, request.code, request.state),
+        )
         return GithubInstallationResponse.of(result.installation, result.connection, result.repositories)
     }
 

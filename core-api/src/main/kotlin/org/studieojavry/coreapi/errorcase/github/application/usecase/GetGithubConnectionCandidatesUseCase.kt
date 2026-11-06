@@ -79,6 +79,14 @@ class GetGithubConnectionCandidatesUseCase(
                 updatedAt = now,
             ),
         )
+        return candidatesFor(command.userId, state.workspaceId, space, userToken)
+    }
+
+    /**
+     * 유효한 **사용자 토큰**으로 접근 가능한 설치를 후보로 조립한다(code 교환과 분리) — OAuth 콜백 흐름과,
+     * 저장된 토큰을 재사용하는 흐름([GetGithubConnectionOptionsUseCase], 시나리오 ②)이 공유한다.
+     */
+    fun candidatesFor(userId: Long, workspaceId: Long?, space: GithubSpace, userToken: String): Result {
         val installationIds = githubApi.listUserInstallationIds(userToken)
 
         val candidates = installationIds.map { installationId ->
@@ -103,10 +111,10 @@ class GetGithubConnectionCandidatesUseCase(
                 accountType = info.accountType,
                 repositories = repositories,
                 alreadyConnected = connections.findActive(installationId, space) != null,
-                candidateToken = selectionCodec.issue(command.userId, state.workspaceId, installationId, eligibleRepoIds),
+                candidateToken = selectionCodec.issue(userId, workspaceId, installationId, eligibleRepoIds),
             )
         }
-        return Result(state.workspaceId, candidates)
+        return Result(workspaceId, candidates)
     }
 
     /** 개인 공간은 read(pull) 이상이면 선택 가능, 워크스페이스에 공유하려면 그 레포의 admin 권한이 필요(보수적 기본 정책, §2-B). */

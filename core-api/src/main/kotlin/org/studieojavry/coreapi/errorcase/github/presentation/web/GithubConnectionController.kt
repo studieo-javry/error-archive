@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DisconnectGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionOptionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubAuthorizeUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
@@ -30,6 +31,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateGith
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubAuthorizeUrlResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesResponse
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionOptionsResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.RefreshRepositoriesResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.UpdateConnectionRepositoriesRequest
@@ -47,6 +49,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.UpdateConn
 @ConditionalOnGithubEnabled
 class GithubConnectionController(
     private val issueAuthorizeUrl: IssueGithubAuthorizeUrlUseCase,
+    private val getOptions: GetGithubConnectionOptionsUseCase,
     private val getCandidates: GetGithubConnectionCandidatesUseCase,
     private val createConnection: CreateGithubConnectionUseCase,
     private val listConnections: ListGithubConnectionsUseCase,
@@ -54,6 +57,23 @@ class GithubConnectionController(
     private val disconnectConnection: DisconnectGithubConnectionUseCase,
     private val refreshRepositories: RefreshInstallationRepositoriesUseCase,
 ) {
+
+    @Operation(
+        summary = "연결 옵션 조회 (시나리오 ②)",
+        description = "저장된 사용자 토큰으로 상황을 구분한다. VERIFIED_AVAILABLE 면 GitHub 재이동 없이 candidates 로 바로 " +
+            "레포를 고를 수 있다. NOT_AUTHORIZED 면 authorizeUrl, VERIFIED_EMPTY(설치 없음)면 installUrl 로 이동. " +
+            "workspaceId 를 주면 그 워크스페이스 기준(ADMIN 필요).",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "상태 + (후보 또는 이동 URL)"),
+        ApiResponse(responseCode = "401", description = "미인증"),
+        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트"),
+    )
+    @GetMapping("/connection-options")
+    fun connectionOptions(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "연결할 워크스페이스 ID (생략 시 개인 연결)") @RequestParam(required = false) workspaceId: Long?,
+    ): GithubConnectionOptionsResponse = GithubConnectionOptionsResponse.of(getOptions.invoke(userId, workspaceId))
 
     @Operation(
         summary = "연결 시작 — OAuth 인가 URL 발급",

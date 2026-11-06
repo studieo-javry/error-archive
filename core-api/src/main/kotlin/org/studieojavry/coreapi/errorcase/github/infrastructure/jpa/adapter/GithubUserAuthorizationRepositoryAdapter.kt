@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.adapter
 
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
@@ -52,5 +53,8 @@ class GithubUserAuthorizationRepositoryAdapter(
             )
         }
 
+    // @Modifying DELETE 는 트랜잭션을 요구한다. 웹훅 경로엔 바깥 tx 가 있지만 connection-options(무효 토큰 폐기)엔 없으므로
+    // 어댑터가 자체 tx 를 연다(바깥 tx 가 있으면 합류 — REQUIRED).
+    @Transactional
     override fun deleteByGithubUserId(githubUserId: Long): Int = repository.deleteByGithubUserId(githubUserId)
 }

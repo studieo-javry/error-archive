@@ -23,10 +23,13 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionSelectionCodec
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
+import java.time.Instant
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -135,6 +138,17 @@ class GithubConnectionFlowIntegrationTest {
                 .content(om.writeValueAsString(mapOf("candidateToken" to token, "selectedRepoIds" to selected))),
         )
 
+    private fun connectionOptions(uid: Long, workspaceId: Long? = null) =
+        get("/api/v1/integrations/github/connection-options").with(asUser(uid)).let { req ->
+            workspaceId?.let { req.param("workspaceId", it.toString()) }
+            om.readTree(mvc.perform(req).andExpect(status().isOk).andReturn().response.contentAsString)
+        }
+
+    private fun saveToken(uid: Long, githubUserId: Long, token: String) {
+        val now = Instant.now()
+        userAuthorizations.save(GithubUserAuthorization(uid, githubUserId, "login-$uid", token, now, now))
+    }
+
     private fun listConnections(uid: Long) =
         om.readTree(
             mvc.perform(get("/api/v1/integrations/github/connections").with(asUser(uid)))
@@ -167,6 +181,53 @@ class GithubConnectionFlowIntegrationTest {
         assertEquals(90044, stored.githubUserId) // getAuthenticatedUser 로 잡은 GitHub 숫자 id → revoked 웹훅 매칭 키
         assertEquals("utok-44", stored.token) // 어댑터가 복호화해 돌려준 평문(DB 에는 ciphertext+iv 만)
         assertEquals("user-44", stored.githubLogin)
+    }
+
+    // ── connection-options (시나리오 ②) ─────────────────────────
+    @Test
+    fun `connection-options - 저장 토큰 없으면 NOT_AUTHORIZED + authorizeUrl`() {
+        val body = connectionOptions(uid = 60)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assert(body["authorizeUrl"].asText().startsWith("https://github.com/login/oauth/authorize?client_id=cid&state="))
+        assert(body["installUrl"].isNull)
+        assertEquals(0, body["candidates"].size())
+    }
+
+    @Test
+    fun `connection-options - 접근 가능한 설치가 있으면 VERIFIED_AVAILABLE + 후보(GitHub 재이동 없이)`() {
+        // 먼저 후보 조회로 토큰을 저장(= 사용자가 이미 한 번 인가한 상태).
+        stubOAuth(uid = 61, installationId = 7100, code = "code-61", repos = listOf(repo(1, "acme/a"), repo(2, "acme/b")))
+        candidateToken(uid = 61, installationId = 7100, code = "code-61")
+
+        val body = connectionOptions(uid = 61)
+        assertEquals("VERIFIED_AVAILABLE", body["status"].asText())
+        assert(body["authorizeUrl"].isNull)
+        val candidates = body["candidates"]
+        assertEquals(1, candidates.size())
+        assertEquals(7100, candidates[0]["installationId"].asLong())
+        assert(candidates[0]["candidateToken"].asText().isNotBlank()) // 바로 POST /connections 가능
+    }
+
+    @Test
+    fun `connection-options - 인가는 됐지만 설치가 없으면 VERIFIED_EMPTY + installUrl`() {
+        saveToken(uid = 62, githubUserId = 90062, token = "utok-62")
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-62")).thenReturn(emptySet())
+
+        val body = connectionOptions(uid = 62)
+        assertEquals("VERIFIED_EMPTY", body["status"].asText())
+        assert(body["installUrl"].asText().startsWith("https://github.com/apps/error-archive-test/installations/new?state="))
+        assertEquals(0, body["candidates"].size())
+    }
+
+    @Test
+    fun `connection-options - 저장 토큰이 만료·취소면 폐기하고 NOT_AUTHORIZED`() {
+        saveToken(uid = 63, githubUserId = 90063, token = "utok-63")
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-63"))
+            .thenThrow(GithubApiException("bad credentials", clientError = true))
+
+        val body = connectionOptions(uid = 63)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assertEquals(null, userAuthorizations.findByEaUserId(63)) // 무효 토큰은 폐기
     }
 
     // ── 후보 조회 → 생성 ────────────────────────────────────────

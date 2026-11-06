@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionOptionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.UpdateConnectionRepositoriesUseCase
@@ -79,6 +80,32 @@ data class GithubConnectionCandidatesResponse(
         fun of(result: GetGithubConnectionCandidatesUseCase.Result) = GithubConnectionCandidatesResponse(
             workspaceId = result.workspaceId,
             candidates = result.candidates.map(GithubConnectionCandidateResponse::of),
+        )
+    }
+}
+
+@Schema(
+    description = "연결 옵션 — 저장된 토큰으로 상황을 구분해, 가능하면 GitHub 재이동 없이 바로 후보를 돌려준다(시나리오 ②).",
+)
+data class GithubConnectionOptionsResponse(
+    @field:Schema(
+        description = "NOT_AUTHORIZED(인가 필요→authorizeUrl) | VERIFIED_EMPTY(설치 없음→installUrl) | " +
+            "VERIFIED_AVAILABLE(후보 있음→candidates) | TEMPORARY_FAILURE(GitHub 일시 장애)",
+    )
+    val status: String,
+    @field:Schema(description = "연결하려는 워크스페이스. null = 개인 연결") val workspaceId: Long?,
+    @field:Schema(description = "NOT_AUTHORIZED 일 때 이동할 OAuth 인가 URL") val authorizeUrl: String?,
+    @field:Schema(description = "VERIFIED_EMPTY 일 때 이동할 설치 URL") val installUrl: String?,
+    @field:Schema(description = "VERIFIED_AVAILABLE 일 때 바로 쓸 후보(설치 + grant 레포 + candidateToken)")
+    val candidates: List<GithubConnectionCandidateResponse>,
+) {
+    companion object {
+        fun of(r: GetGithubConnectionOptionsUseCase.Result) = GithubConnectionOptionsResponse(
+            status = r.status.name,
+            workspaceId = r.workspaceId,
+            authorizeUrl = r.authorizeUrl,
+            installUrl = r.installUrl,
+            candidates = r.candidates.map(GithubConnectionCandidateResponse::of),
         )
     }
 }

@@ -11,6 +11,15 @@ class GithubInstallationNotOwnedException(message: String) : RuntimeException(me
 /** 이미 다른 주체(사용자/워크스페이스)에 연결된 설치. */
 class GithubInstallationAlreadyBoundException(message: String) : RuntimeException(message)
 
+/** 후보 토큰(candidateToken)이 위조·만료·다른 사용자 것. (connection-candidates → POST /connections 사이 서명 토큰) */
+class GithubConnectionCandidateInvalidException(message: String) : RuntimeException(message)
+
+/** 선택한 레포가 설치에 grant 되지 않았거나(= 후보 밖) 비어 유효하지 않음. */
+class GithubRepositorySelectionInvalidException(message: String) : RuntimeException(message)
+
+/** 이 사용자가 접근할 수 있는 ACTIVE 연결이 아님 / 없는 연결 id. */
+class GithubConnectionNotFoundException(message: String) : RuntimeException(message)
+
 /** 웹훅 서명 불일치/누락. */
 class GithubWebhookSignatureException(message: String) : RuntimeException(message)
 

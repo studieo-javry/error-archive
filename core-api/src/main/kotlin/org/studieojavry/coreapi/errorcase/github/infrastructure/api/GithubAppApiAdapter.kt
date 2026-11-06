@@ -121,6 +121,25 @@ class GithubAppApiAdapter(
             }
         }
 
+    override fun listUserInstallationRepositories(userToken: String, installationId: Long): List<GithubAppApiPort.UserRepositoryInfo> =
+        call("listUserInstallationRepositories") {
+            paginate { page ->
+                api.get().uri("/user/installations/{id}/repositories?per_page={n}&page={p}", installationId, PAGE_SIZE, page)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer $userToken")
+                    .retrieve()
+                    .body(UserInstallationRepositoriesResponse::class.java)
+                    ?.repositories.orEmpty()
+                    .map {
+                        GithubAppApiPort.UserRepositoryInfo(
+                            id = it.id,
+                            canAdmin = it.permissions?.admin == true,
+                            canPush = it.permissions?.push == true,
+                            canPull = it.permissions?.pull == true,
+                        )
+                    }
+            }
+        }
+
     override fun fetchItem(installationId: Long, owner: String, name: String, number: Int): GithubAppApiPort.GithubItem? =
         installationCall("fetchItem", installationId, RESOURCE_GRAPHQL) { token ->
             val res = api.post().uri("/graphql")
@@ -291,6 +310,24 @@ class GithubAppApiAdapter(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class InstallationRepositoriesResponse(val repositories: List<RepositoryResponse> = emptyList())
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class RepositoryPermissions(
+        val admin: Boolean = false,
+        val push: Boolean = false,
+        val pull: Boolean = false,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class UserRepositoryResponse(
+        val id: Long,
+        @JsonProperty("full_name") val fullName: String,
+        @JsonProperty("private") val isPrivate: Boolean,
+        val permissions: RepositoryPermissions? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class UserInstallationRepositoriesResponse(val repositories: List<UserRepositoryResponse> = emptyList())
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class AccessTokenResponse(

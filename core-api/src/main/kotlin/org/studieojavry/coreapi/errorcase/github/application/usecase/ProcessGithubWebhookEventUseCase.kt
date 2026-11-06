@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
@@ -21,6 +22,7 @@ import java.time.Instant
  *  - `pull_request`            : [PullRequestWebhookHandler] — 닫는 PR 자동 부착·상태 기록 (P1-c)
  *  - `check_suite`             : [CheckSuiteWebhookHandler] — 커밋 CI 결과(머지 커밋 포함) → PR CI 요약·타임라인 (P1-d)
  *  - `issues`                  : [IssueWebhookHandler] — 붙은 Issue 스냅샷·닫힘/다시 열림 (P1-d)
+ *  - `github_app_authorization`: revoked → 그 GitHub 사용자의 저장 토큰 폐기(installation 없는 payload — sender.id 로 매칭)
  *  - `ping` 및 그 외 → SKIPPED
  *
  * 우리 쪽에 연결되지 않은 설치의 이벤트는 SKIPPED — 연결은 반드시 [CompleteGithubInstallationUseCase] 로만.
@@ -34,6 +36,7 @@ class ProcessGithubWebhookEventUseCase(
     private val pullRequests: PullRequestWebhookHandler,
     private val checkSuites: CheckSuiteWebhookHandler,
     private val issues: IssueWebhookHandler,
+    private val userAuthorizations: GithubUserAuthorizationPort,
 ) {
     private val log = KotlinLogging.logger {}
 
@@ -48,8 +51,23 @@ class ProcessGithubWebhookEventUseCase(
             "pull_request" -> if (pullRequests.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
             "check_suite" -> if (checkSuites.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
             "issues" -> if (issues.handle(action, installationId, root)) Result.DONE else Result.SKIPPED
+            "github_app_authorization" -> onAppAuthorization(action, root)
             else -> Result.SKIPPED
         }
+    }
+
+    /**
+     * 사용자가 GitHub 설정에서 App 인가를 취소함(`github_app_authorization` action=revoked). payload 에 installation 이 없어
+     * installationId 는 null 로 온다 — `sender.id`(GitHub 사용자 숫자 id)로 저장 토큰을 찾아 폐기한다.
+     * 저장된 토큰이 없으면(우리가 교환한 적 없는 사용자) 할 일 없음 → SKIPPED.
+     */
+    private fun onAppAuthorization(action: String?, root: JsonNode): Result {
+        if (action != "revoked") return Result.SKIPPED
+        val githubUserId = root.path("sender").path("id").asLong()
+        if (githubUserId == 0L) return Result.SKIPPED
+        val purged = userAuthorizations.deleteByGithubUserId(githubUserId)
+        log.info { "github app authorization revoked: githubUserId=$githubUserId purgedTokens=$purged" }
+        return if (purged > 0) Result.DONE else Result.SKIPPED
     }
 
     private fun onInstallation(action: String?, installationId: Long?): Result {

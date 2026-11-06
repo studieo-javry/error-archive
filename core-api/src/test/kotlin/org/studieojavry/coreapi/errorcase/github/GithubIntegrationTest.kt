@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubWebhookSignatureVerifier
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
@@ -32,9 +34,12 @@ import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -78,6 +83,7 @@ class GithubIntegrationTest {
     @Autowired private lateinit var inboxRepo: GithubWebhookInboxJpaRepository
     @Autowired private lateinit var processor: GithubWebhookInboxProcessor
     @Autowired private lateinit var connections: GithubConnectionRepositoryPort
+    @Autowired private lateinit var userAuthorizations: GithubUserAuthorizationPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -223,6 +229,28 @@ class GithubIntegrationTest {
         Mockito.`when`(workspaceQuery.getViewerRole(7, 55)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
         mvc.perform(get("/api/v1/integrations/github/install-url").param("workspaceId", "55").with(asUser(7)))
             .andExpect(status().isOk)
+    }
+
+    // ── 인가 취소 ───────────────────────────────────────────────
+    @Test
+    fun `웹훅 github_app_authorization revoked - 그 GitHub 사용자의 저장 토큰을 폐기`() {
+        val now = Instant.now()
+        userAuthorizations.save(GithubUserAuthorization(eaUserId = 501, githubUserId = 7777, githubLogin = "octo", token = "utok-x", createdAt = now, updatedAt = now))
+        userAuthorizations.save(GithubUserAuthorization(eaUserId = 502, githubUserId = 8888, githubLogin = "other", token = "utok-y", createdAt = now, updatedAt = now))
+        assertNotNull(userAuthorizations.findByEaUserId(501))
+
+        // installation 없는 payload — sender.id 로 매칭.
+        val status = deliverAndProcess("github_app_authorization", """{"action":"revoked","sender":{"id":7777,"login":"octo"}}""")
+        assertEquals(InboxStatus.DONE, status)
+
+        assertNull(userAuthorizations.findByEaUserId(501)) // 폐기됨
+        assertNotNull(userAuthorizations.findByEaUserId(502)) // 다른 사용자는 그대로
+    }
+
+    @Test
+    fun `웹훅 github_app_authorization revoked - 저장 토큰 없으면 SKIPPED`() {
+        val status = deliverAndProcess("github_app_authorization", """{"action":"revoked","sender":{"id":99999,"login":"nobody"}}""")
+        assertEquals(InboxStatus.SKIPPED, status)
     }
 
     // ── inbox 처리 ───────────────────────────────────────────────

@@ -34,6 +34,8 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * GitHub 연동 P0 통합 — 실 Postgres 에 Flyway(V1~V4) + `ddl-auto=validate` 로 엔티티↔스키마 정합까지 검증.
@@ -273,5 +275,43 @@ class GithubIntegrationTest {
     @Test
     fun `처리 - 우리와 연결 안 된 설치의 이벤트는 SKIPPED`() {
         assertEquals(InboxStatus.SKIPPED, deliverAndProcess("installation", """{"action":"suspend","installation":{"id":777}}"""))
+    }
+
+    @Test
+    fun `ACCESS_LOST - grant 에서 빠진 선택은 비활성이고 재허용돼도 자동 복구되지 않는다`() {
+        connect(
+            uid = 20, installationId = 600,
+            repos = listOf(
+                GithubAppApiPort.RepositoryInfo(6001, "acme/a", isPrivate = false),
+                GithubAppApiPort.RepositoryInfo(6002, "acme/b", isPrivate = false),
+            ),
+        )
+        val inst = """"installation":{"id":600}"""
+        val space = GithubSpace.Personal(20)
+        val connId = connections.findActive(600, space)!!.connectionId!!
+        // 부트스트랩 선택 = grant 전부.
+        assertEquals(setOf(6001L, 6002L), connections.selectedRepoIds(connId))
+        assertTrue(connections.isRepoSelectedInSpace(space, 6001))
+
+        // 6001 이 grant 에서 빠짐 → 그 선택은 ACCESS_LOST → 실효 사용 중단.
+        assertEquals(InboxStatus.DONE, deliverAndProcess(
+            "installation_repositories",
+            """{"action":"removed",$inst,"repositories_added":[],"repositories_removed":[{"id":6001,"full_name":"acme/a"}]}""",
+        ))
+        assertFalse(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6002L), connections.selectedRepoIds(connId))
+
+        // 6001 재허용(added) → 여전히 비활성(자동 복구 금지).
+        assertEquals(InboxStatus.DONE, deliverAndProcess(
+            "installation_repositories",
+            """{"action":"added",$inst,"repositories_added":[{"id":6001,"full_name":"acme/a","private":false}],"repositories_removed":[]}""",
+        ))
+        assertFalse(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6002L), connections.selectedRepoIds(connId))
+
+        // 사용자가 공간에서 다시 명시 선택 → ACTIVE 복귀.
+        connections.replaceSelectedRepos(connId, listOf(6001L, 6002L), java.time.Instant.now())
+        assertTrue(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6001L, 6002L), connections.selectedRepoIds(connId))
     }
 }

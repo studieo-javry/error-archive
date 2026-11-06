@@ -38,8 +38,18 @@ interface GithubConnectionRepositoryPort {
     fun findSelectedActiveRepositories(space: GithubSpace): List<GithubRepository>
 
     // ── 선택 편집 ──
+    /** 이 연결의 **ACTIVE** 선택 레포 id(ACCESS_LOST 제외). */
     fun selectedRepoIds(connectionId: Long): Set<Long>
 
-    /** 연결의 선택 레포를 주어진 집합으로 교체(replace-set). */
+    /**
+     * 연결의 선택 레포를 주어진 집합으로 교체(replace-set). 고른 레포는 ACTIVE 로 둔다 —
+     * 이전에 ACCESS_LOST 였더라도 명시 재선택이면 ACTIVE 로 되돌린다. 고르지 않은 레포 행은 삭제.
+     */
     fun replaceSelectedRepos(connectionId: Long, repoIds: Collection<Long>, now: Instant)
+
+    /**
+     * 이 레포들의 **ACTIVE 선택을 ACCESS_LOST 로** 표시(모든 연결/공간). GitHub 접근(grant/레포)이 사라졌을 때 호출.
+     * 이미 ACCESS_LOST 인 행은 건드리지 않는다. 바뀐 행 수를 돌려준다.
+     */
+    fun markSelectionsAccessLost(repoIds: Collection<Long>, now: Instant): Int
 }

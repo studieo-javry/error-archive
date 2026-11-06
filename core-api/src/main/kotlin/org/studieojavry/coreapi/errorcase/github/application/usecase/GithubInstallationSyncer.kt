@@ -2,10 +2,12 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import java.time.Instant
 
 /**
  * GitHub "사실"(설치·레포)을 로컬에 맞추는 공통 upsert — installations/new 완료([CompleteGithubInstallationUseCase])와
@@ -17,6 +19,7 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
 @ConditionalOnGithubEnabled
 class GithubInstallationSyncer(
     private val repository: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
 ) {
     /** 설치 사실 upsert(계정 로그인/타입 최신화, 없으면 새로 연결). */
     fun upsertInstallation(userId: Long, info: GithubAppApiPort.InstallationInfo): GithubInstallation {
@@ -41,6 +44,10 @@ class GithubInstallationSyncer(
         }
         val removed = known.values.filter { it.repoId !in currentIds }.onEach { it.detach() }
         repository.saveRepositories(upserts + removed)
+        // grant 에서 빠진 레포는 모든 공간에서 ACCESS_LOST 로 — 재허용돼도 자동 복구되지 않도록(재선택 필요).
+        if (removed.isNotEmpty()) {
+            connections.markSelectionsAccessLost(removed.map { it.repoId }, Instant.now())
+        }
         return upserts
     }
 }

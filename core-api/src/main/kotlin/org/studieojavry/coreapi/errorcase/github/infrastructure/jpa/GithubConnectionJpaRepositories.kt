@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionRepositoryStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionStatus
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubConnectionEntity
 import org.studieojavry.coreapi.errorcase.github.infrastructure.jpa.entity.GithubConnectionRepositoryEntity
@@ -61,6 +62,7 @@ interface GithubConnectionJpaRepository : JpaRepository<GithubConnectionEntity, 
           FROM GithubConnectionEntity c, GithubConnectionRepositoryEntity cr
          WHERE cr.connectionId = c.connectionId
            AND c.status = :status
+           AND cr.status = :repoStatus
            AND cr.repoId = :repoId
            AND ((:ownerUserId IS NOT NULL AND c.ownerUserId = :ownerUserId)
              OR (:workspaceId IS NOT NULL AND c.workspaceId = :workspaceId))
@@ -68,6 +70,7 @@ interface GithubConnectionJpaRepository : JpaRepository<GithubConnectionEntity, 
     )
     fun existsRepoSelectedInSpace(
         @Param("status") status: GithubConnectionStatus,
+        @Param("repoStatus") repoStatus: GithubConnectionRepositoryStatus,
         @Param("ownerUserId") ownerUserId: Long?,
         @Param("workspaceId") workspaceId: Long?,
         @Param("repoId") repoId: Long,
@@ -79,12 +82,14 @@ interface GithubConnectionJpaRepository : JpaRepository<GithubConnectionEntity, 
         SELECT c FROM GithubConnectionEntity c, GithubConnectionRepositoryEntity cr
          WHERE cr.connectionId = c.connectionId
            AND c.status = :status
+           AND cr.status = :repoStatus
            AND cr.repoId = :repoId
            AND (c.ownerUserId IN :ownerIds OR c.workspaceId IN :workspaceIds)
         """,
     )
     fun connectionsSelectingRepo(
         @Param("status") status: GithubConnectionStatus,
+        @Param("repoStatus") repoStatus: GithubConnectionRepositoryStatus,
         @Param("ownerIds") ownerIds: Collection<Long>,
         @Param("workspaceIds") workspaceIds: Collection<Long>,
         @Param("repoId") repoId: Long,
@@ -100,6 +105,27 @@ interface GithubConnectionRepositoryJpaRepository :
     @Query("DELETE FROM GithubConnectionRepositoryEntity cr WHERE cr.connectionId = :connectionId")
     fun deleteAllByConnectionId(@Param("connectionId") connectionId: Long): Int
 
-    @Query("SELECT cr.repoId FROM GithubConnectionRepositoryEntity cr WHERE cr.connectionId IN :connectionIds")
-    fun selectedRepoIds(@Param("connectionIds") connectionIds: Collection<Long>): List<Long>
+    /** ACTIVE 선택만(ACCESS_LOST 제외). */
+    @Query(
+        """
+        SELECT cr.repoId FROM GithubConnectionRepositoryEntity cr
+         WHERE cr.connectionId IN :connectionIds AND cr.status = :repoStatus
+        """,
+    )
+    fun selectedRepoIds(
+        @Param("connectionIds") connectionIds: Collection<Long>,
+        @Param("repoStatus") repoStatus: GithubConnectionRepositoryStatus,
+    ): List<Long>
+
+    /** 이 레포들의 ACTIVE 선택을 ACCESS_LOST 로 전환(이미 ACCESS_LOST 는 그대로). 바뀐 행 수 반환. */
+    @Modifying
+    @Query(
+        """
+        UPDATE GithubConnectionRepositoryEntity cr
+           SET cr.status = org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionRepositoryStatus.ACCESS_LOST
+         WHERE cr.repoId IN :repoIds
+           AND cr.status = org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionRepositoryStatus.ACTIVE
+        """,
+    )
+    fun markSelectionsAccessLost(@Param("repoIds") repoIds: Collection<Long>): Int
 }

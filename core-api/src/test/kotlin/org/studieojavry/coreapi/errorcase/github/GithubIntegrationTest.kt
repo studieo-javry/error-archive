@@ -59,6 +59,7 @@ import kotlin.test.assertTrue
     "core.github.private-key-pem=unused-by-mock",
     "core.github.webhook-secret=whsec",
     "core.github.state-secret=state-secret",
+    "core.github.token-encryption-key=jKyPH4UiG09Bk7prFiiAmRnDMhba8qG9X1rKcUq1BwY=",
     // 스케줄러가 테스트 중 끼어들지 않게 — 처리는 processOne 으로 직접 구동.
     "core.github.inbox.poll-delay-ms=3600000",
 ])

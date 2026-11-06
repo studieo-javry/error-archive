@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionSelectionCodec
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import org.studieojavry.internalauth.InternalAuthentication
@@ -54,6 +55,7 @@ import kotlin.test.assertNotNull
     "core.github.private-key-pem=unused-by-mock",
     "core.github.webhook-secret=whsec",
     "core.github.state-secret=state-secret",
+    "core.github.token-encryption-key=jKyPH4UiG09Bk7prFiiAmRnDMhba8qG9X1rKcUq1BwY=",
     "core.github.inbox.poll-delay-ms=3600000",
 ])
 class GithubConnectionFlowIntegrationTest {
@@ -67,6 +69,7 @@ class GithubConnectionFlowIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var selectionCodec: GithubConnectionSelectionCodec
+    @Autowired private lateinit var userAuthorizations: GithubUserAuthorizationPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -94,6 +97,8 @@ class GithubConnectionFlowIntegrationTest {
             repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
     ) {
         Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$uid")
+        Mockito.`when`(githubApi.getAuthenticatedUser("utok-$uid"))
+            .thenReturn(GithubAppApiPort.GithubUserIdentity(90000 + uid, "user-$uid"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))
         Mockito.`when`(githubApi.getInstallation(installationId))
             .thenReturn(GithubAppApiPort.InstallationInfo(installationId, "acme-$installationId", "Organization"))
@@ -150,6 +155,18 @@ class GithubConnectionFlowIntegrationTest {
         Mockito.`when`(workspaceQuery.getViewerRole(10, 9055)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
         mvc.perform(get("/api/v1/integrations/github/authorize-url").param("workspaceId", "9055").with(asUser(10)))
             .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `connection-candidates - 교환한 사용자 토큰을 암호화 저장(복호화 왕복)`() {
+        stubOAuth(uid = 44, installationId = 7001, code = "code-44", repos = listOf(repo(1, "acme/a")))
+        candidateToken(uid = 44, installationId = 7001, code = "code-44")
+
+        val stored = userAuthorizations.findByEaUserId(44)
+        assertNotNull(stored)
+        assertEquals(90044, stored.githubUserId) // getAuthenticatedUser 로 잡은 GitHub 숫자 id → revoked 웹훅 매칭 키
+        assertEquals("utok-44", stored.token) // 어댑터가 복호화해 돌려준 평문(DB 에는 ciphertext+iv 만)
+        assertEquals("user-44", stored.githubLogin)
     }
 
     // ── 후보 조회 → 생성 ────────────────────────────────────────

@@ -3,9 +3,13 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
+import java.time.Clock
+import java.time.Instant
 
 /**
  * 연결 후보 조회 — OAuth 인가 콜백의 `code`·`state` 를 받아, 그 사용자가 **이미 접근 가능한 설치**들을
@@ -22,7 +26,9 @@ class GetGithubConnectionCandidatesUseCase(
     private val selectionCodec: GithubConnectionSelectionCodec,
     private val githubApi: GithubAppApiPort,
     private val connections: GithubConnectionRepositoryPort,
+    private val userAuthorizations: GithubUserAuthorizationPort,
     private val workspaceQuery: WorkspaceQueryPort,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     data class Command(val userId: Long, val code: String, val state: String)
 
@@ -60,6 +66,19 @@ class GetGithubConnectionCandidatesUseCase(
         val space: GithubSpace = state.workspaceId?.let(GithubSpace::Workspace) ?: GithubSpace.Personal(command.userId)
 
         val userToken = githubApi.exchangeUserCode(command.code)
+        // 재연결 시 GitHub 재이동 없이 쓰려고 사용자 토큰을 암호화 저장(어댑터가 암호화). GitHub 숫자 id 로 revoked 웹훅과 잇는다.
+        val ghUser = githubApi.getAuthenticatedUser(userToken)
+        val now = Instant.now(clock)
+        userAuthorizations.save(
+            GithubUserAuthorization(
+                eaUserId = command.userId,
+                githubUserId = ghUser.id,
+                githubLogin = ghUser.login,
+                token = userToken,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
         val installationIds = githubApi.listUserInstallationIds(userToken)
 
         val candidates = installationIds.map { installationId ->

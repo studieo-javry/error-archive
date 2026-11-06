@@ -106,11 +106,29 @@ class GithubSecurityPrimitivesTest {
     fun `설정 - 꺼져 있으면 시크릿 없이 통과, 켜졌는데 비었거나 미해소 placeholder 면 실패`() {
         assertTrue(GithubAppProperties(enabled = false).isConfiguredWhenEnabled())
         assertFalse(GithubAppProperties(enabled = true).isConfiguredWhenEnabled())
+        val key32 = java.util.Base64.getEncoder().encodeToString(ByteArray(32))
         val full = GithubAppProperties(
             enabled = true, appId = "1", appSlug = "ea", clientId = "c", clientSecret = "s",
-            privateKeyPem = "k", webhookSecret = "w", stateSecret = "st",
+            privateKeyPem = "k", webhookSecret = "w", stateSecret = "st", tokenEncryptionKey = key32,
         )
         assertTrue(full.isConfiguredWhenEnabled())
         assertFalse(full.copy(webhookSecret = "\${CORE_GITHUB_WEBHOOK_SECRET}").isConfiguredWhenEnabled())
+        // 토큰 암호화 키가 빠지면 필수 검증 실패.
+        assertFalse(full.copy(tokenEncryptionKey = null).isConfiguredWhenEnabled())
+    }
+
+    @Test
+    fun `설정 - 토큰 암호화 키는 Base64 32바이트여야 함`() {
+        val key32 = java.util.Base64.getEncoder().encodeToString(ByteArray(32))
+        val base = GithubAppProperties(
+            enabled = true, appId = "1", appSlug = "ea", clientId = "c", clientSecret = "s",
+            privateKeyPem = "k", webhookSecret = "w", stateSecret = "st", tokenEncryptionKey = key32,
+        )
+        assertTrue(base.isEncryptionKeyValidWhenEnabled())                                   // 32바이트 OK
+        assertTrue(GithubAppProperties(enabled = false).isEncryptionKeyValidWhenEnabled())   // 꺼져 있으면 무조건 통과
+        // 16바이트(AES-128)는 거부 — AES-256 을 강제.
+        assertFalse(base.copy(tokenEncryptionKey = java.util.Base64.getEncoder().encodeToString(ByteArray(16))).isEncryptionKeyValidWhenEnabled())
+        // Base64 가 아니면 거부.
+        assertFalse(base.copy(tokenEncryptionKey = "not valid base64 !!!").isEncryptionKeyValidWhenEnabled())
     }
 }

@@ -80,6 +80,8 @@ core:
     private-key-pem: ${CORE_GITHUB_PRIVATE_KEY_PEM:}
     webhook-secret: ${CORE_GITHUB_WEBHOOK_SECRET:}
     state-secret: ${CORE_GITHUB_STATE_SECRET:}
+    # 사용자 OAuth 토큰 저장용 AES-256-GCM 키 — Base64(32바이트). `openssl rand -base64 32`.
+    token-encryption-key: ${CORE_GITHUB_TOKEN_ENCRYPTION_KEY:}
     # "GitHub Issue 로 Case 만들기"(GET /error-cases/github-issue-preview · POST /error-cases/from-github-issue). 기본 꺼짐.
     # Issue 근거 연결·닫는 PR 소급 부착은 이 값과 무관.
     issue-import:

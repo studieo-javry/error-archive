@@ -29,6 +29,11 @@ data class GithubAppProperties(
     val webhookSecret: String? = null,
     /** 설치 state 서명 키 — 웹훅 시크릿과 분리(용도별 키). */
     val stateSecret: String? = null,
+    /**
+     * 사용자 OAuth 토큰 저장 시 AES-256-GCM 암호화 키. **Base64 로 인코딩한 32바이트**(= AES-256).
+     * 서명 키(stateSecret)와 분리(용도별 키). `openssl rand -base64 32` 로 생성.
+     */
+    val tokenEncryptionKey: String? = null,
     val apiBaseUrl: String = "https://api.github.com",
     val webBaseUrl: String = "https://github.com",
     val stateTtl: Duration = Duration.ofMinutes(10),
@@ -67,9 +72,23 @@ data class GithubAppProperties(
     )
 
     @AssertTrue(
-        message = "core.github.enabled=true 이면 app-id/app-slug/client-id/client-secret/private-key-pem/webhook-secret/state-secret 필수 — CORE_GITHUB_* 환경변수 확인",
+        message = "core.github.enabled=true 이면 app-id/app-slug/client-id/client-secret/private-key-pem/webhook-secret/state-secret/token-encryption-key 필수 — CORE_GITHUB_* 환경변수 확인",
     )
     fun isConfiguredWhenEnabled(): Boolean =
-        !enabled || listOf(appId, appSlug, clientId, clientSecret, privateKeyPem, webhookSecret, stateSecret)
+        !enabled || listOf(appId, appSlug, clientId, clientSecret, privateKeyPem, webhookSecret, stateSecret, tokenEncryptionKey)
             .all { !it.isNullOrBlank() && !it.contains("\${") }
+
+    @AssertTrue(
+        message = "core.github.token-encryption-key 는 Base64 로 인코딩한 32바이트(AES-256)여야 함 — `openssl rand -base64 32`",
+    )
+    fun isEncryptionKeyValidWhenEnabled(): Boolean {
+        if (!enabled) return true
+        val raw = tokenEncryptionKey
+        if (raw.isNullOrBlank() || raw.contains("\${")) return true // 위 isConfiguredWhenEnabled 가 이미 실패시킴(중복 메시지 방지)
+        return try {
+            java.util.Base64.getDecoder().decode(raw.trim()).size == 32
+        } catch (_: IllegalArgumentException) {
+            false
+        }
+    }
 }

@@ -150,12 +150,13 @@ class GithubConnectionController(
 
     @Operation(
         summary = "연결의 레포 선택 변경",
-        description = "이 연결에서 사용할 레포를 주어진 집합으로 교체(replace-set). 선택을 빼면 그 공간에선 즉시 반영이 멈춘다.",
+        description = "이 연결에서 사용할 레포를 주어진 집합으로 교체(replace-set). 선택을 빼면 그 공간에선 즉시 반영이 멈춘다. " +
+            "워크스페이스 연결에 **새로 추가**하는 레포는 사용자가 지금도 GitHub repo-admin 인지 재확인한다(§4-D).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "변경됨"),
-        ApiResponse(responseCode = "400", description = "grant 밖 레포 선택"),
-        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트"),
+        ApiResponse(responseCode = "400", description = "grant 밖 레포 선택 / 워크스페이스 공유에 repo-admin 아님"),
+        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트 / GitHub 재연결 필요(토큰 없음·만료, code=GITHUB_REAUTHORIZATION_REQUIRED)"),
         ApiResponse(responseCode = "404", description = "없는/비활성 연결 또는 접근 불가"),
         ApiResponse(responseCode = "409", description = "동시 편집 충돌(expectedVersion 불일치)"),
     )

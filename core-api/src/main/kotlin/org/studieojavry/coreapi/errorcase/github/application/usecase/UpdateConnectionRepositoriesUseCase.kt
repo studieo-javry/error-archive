@@ -3,12 +3,16 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
 import java.time.Instant
 
@@ -18,14 +22,17 @@ import java.time.Instant
  * grant 여부는 **로컬에 저장된 활성 레포**(마지막 sync 기준)로 검증한다 — 단순 편집에 GitHub 재호출을 하지 않는다.
  * 권한은 연결의 공간 기준([requireSpaceAccess]). 비활성(DISCONNECTED) 연결은 편집 대상이 아니다(404).
  *
- * TODO(2차): 워크스페이스 연결에 **새로 추가**하는 레포의 GitHub repo-admin 권한 재검증(§4-D). 지금은 EA 워크스페이스
- * ADMIN + 설치 grant 부분집합까지만 강제한다 — 사용자 GitHub 권한 재조회는 암호화 토큰 저장(2차) 도입 후 가능.
+ * **워크스페이스에 새 레포 공유 재검증(§4-D)**: 워크스페이스 연결에 **새로 추가**하는 레포는 그 사용자가 지금도 GitHub
+ * repo-admin 인지 다시 확인한다(연결 후 권한이 바뀌었을 수 있으므로). 저장된 사용자 토큰으로 조회하며, 이때만 GitHub 를
+ * 부른다(레포 제거·개인 편집은 로컬만). 토큰이 없거나 만료면 [GithubReauthorizationRequiredException] 으로 재연결 유도.
  */
 @Component
 @ConditionalOnGithubEnabled
 class UpdateConnectionRepositoriesUseCase(
     private val connections: GithubConnectionRepositoryPort,
     private val repository: GithubInstallationRepositoryPort,
+    private val userAuthorizations: GithubUserAuthorizationPort,
+    private val githubApi: GithubAppApiPort,
     private val workspaceQuery: WorkspaceQueryPort,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -65,6 +72,14 @@ class UpdateConnectionRepositoriesUseCase(
         if (notGranted.isNotEmpty()) {
             throw GithubRepositorySelectionInvalidException("설치에 포함되지 않은 레포를 선택했습니다: $notGranted")
         }
+        // §4-D: 워크스페이스에 **새로 추가**하는 레포는 지금도 사용자가 repo-admin 인지 재확인(권한은 연결 후 바뀔 수 있음).
+        if (connection.space is GithubSpace.Workspace) {
+            val currentlySelected = connections.selectedRepoIds(command.connectionId).toSet() // ACTIVE 만
+            val newlyAdded = selectedIds - currentlySelected
+            if (newlyAdded.isNotEmpty()) {
+                requireRepoAdmin(command.userId, connection.installationId, newlyAdded)
+            }
+        }
         val installation = repository.findById(connection.installationId)
             ?: throw GithubConnectionNotFoundException("설치를 찾을 수 없습니다: ${connection.installationId}")
 
@@ -86,5 +101,26 @@ class UpdateConnectionRepositoriesUseCase(
             )
             Result(installation, bumped, available.filter { it.repoId in selectedIds }, available)
         }!!
+    }
+
+    /** 새로 추가하는 워크스페이스 레포들에 대해 사용자 GitHub repo-admin 을 저장 토큰으로 재확인. tx 밖에서 호출. */
+    private fun requireRepoAdmin(userId: Long, installationId: Long, newlyAdded: Set<Long>) {
+        val stored = userAuthorizations.findByEaUserId(userId)
+            ?: throw GithubReauthorizationRequiredException(
+                "워크스페이스에 새 레포를 공유하려면 레포 admin 권한 확인이 필요합니다 — GitHub 연결을 다시 해주세요",
+            )
+        val adminIds = try {
+            githubApi.listUserInstallationRepositories(stored.token, installationId).filter { it.canAdmin }.map { it.id }.toSet()
+        } catch (e: GithubApiException) {
+            if (e.clientError) {
+                userAuthorizations.deleteByGithubUserId(stored.githubUserId)
+                throw GithubReauthorizationRequiredException("GitHub 인가가 만료됐습니다 — 연결을 다시 해주세요")
+            }
+            throw e // 5xx/한도초과는 advice 가 503/429
+        }
+        val notAdmin = newlyAdded - adminIds
+        if (notAdmin.isNotEmpty()) {
+            throw GithubRepositorySelectionInvalidException("워크스페이스에 공유하려면 레포 admin 권한이 필요합니다: $notAdmin")
+        }
     }
 }

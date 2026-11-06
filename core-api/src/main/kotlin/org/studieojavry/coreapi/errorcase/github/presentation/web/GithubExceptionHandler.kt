@@ -22,6 +22,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInsta
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationNotOwnedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubReauthorizationRequiredException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositorySelectionInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
@@ -105,6 +106,10 @@ class GithubExceptionHandler(
     @ExceptionHandler(GithubScopeMismatchException::class)
     fun handleScopeMismatch(ex: GithubScopeMismatchException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail =
         build(req, res, HttpStatus.FORBIDDEN, GithubErrorCodes.SCOPE_MISMATCH, ex.message ?: "Repository scope does not match the case.")
+
+    @ExceptionHandler(GithubReauthorizationRequiredException::class)
+    fun handleReauthRequired(ex: GithubReauthorizationRequiredException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail =
+        build(req, res, HttpStatus.FORBIDDEN, GithubErrorCodes.REAUTHORIZATION_REQUIRED, ex.message ?: "GitHub re-authorization required.")
 
     // --- 404 Not Found ---
 

@@ -361,6 +361,64 @@ class GithubConnectionFlowIntegrationTest {
         ).andExpect(status().isNotFound)
     }
 
+    @Test
+    fun `레포선택 변경 - 워크스페이스에 새 레포 추가 시 repo-admin 재확인(admin 통과, read 만 400)`() {
+        val uid = 96_100L
+        val inst = 961_000L
+        val wsId = 96_108L
+        Mockito.`when`(workspaceQuery.getViewerRole(uid, wsId)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
+        // A·C 는 admin, B 는 read 만. 셋 다 설치 grant.
+        stubOAuth(
+            uid, inst, "c-$inst",
+            repos = listOf(repo(961_001, "acme/a"), repo(961_002, "acme/b"), repo(961_003, "acme/c")),
+            userPerms = listOf(
+                GithubAppApiPort.UserRepositoryInfo(961_001, canAdmin = true, canPush = true, canPull = true),
+                GithubAppApiPort.UserRepositoryInfo(961_002, canAdmin = false, canPush = false, canPull = true),
+                GithubAppApiPort.UserRepositoryInfo(961_003, canAdmin = true, canPush = true, canPull = true),
+            ),
+        )
+        val connId = om.readTree(
+            createConnection(uid, candidateToken(uid, inst, "c-$inst", workspaceId = wsId), listOf(961_001))
+                .andExpect(status().isCreated).andReturn().response.contentAsString,
+        )["connectionId"].asLong()
+
+        // 새로 추가하는 C 는 admin → 통과.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(961_001, 961_003)))),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.selectedRepositories.length()").value(2))
+
+        // 새로 추가하는 B 는 read 만 → 400(워크스페이스 공유 불가).
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(961_001, 961_003, 961_002)))),
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `레포선택 변경 - 워크스페이스 새 레포인데 저장 토큰 없으면 재연결 요구(403)`() {
+        val uid = 97_100L
+        val inst = 971_000L
+        val wsId = 97_108L
+        Mockito.`when`(workspaceQuery.getViewerRole(uid, wsId)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
+        stubOAuth(uid, inst, "c-$inst", listOf(repo(971_001, "acme/a"), repo(971_002, "acme/b")))
+        val connId = om.readTree(
+            createConnection(uid, candidateToken(uid, inst, "c-$inst", workspaceId = wsId), listOf(971_001))
+                .andExpect(status().isCreated).andReturn().response.contentAsString,
+        )["connectionId"].asLong()
+
+        // 저장 토큰 폐기(예: 인가 취소됨) 후 새 레포 추가 시도 → 재연결 요구.
+        userAuthorizations.deleteByGithubUserId(90000 + uid)
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(971_001, 971_002)))),
+        ).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value("GITHUB_REAUTHORIZATION_REQUIRED"))
+    }
+
     // ── 해제(DELETE) + 재연결 reactivate ───────────────────────
     @Test
     fun `해제 - 공간 연결만 끊기고 재연결 시 같은 연결을 되살린다(멱등)`() {

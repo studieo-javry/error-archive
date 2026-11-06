@@ -96,6 +96,8 @@ data class CreateGithubConnectionRequest(
 data class UpdateConnectionRepositoriesRequest(
     @field:Schema(description = "이 연결에서 사용할 레포 id 전체(기존 선택을 이 집합으로 교체). 빈 배열이면 전부 해제.")
     val selectedRepoIds: List<Long> = emptyList(),
+    @field:Schema(description = "마지막으로 조회한 연결 version. 지정 시 현재와 다르면 409(동시 편집 충돌). 생략 시 검사 안 함.")
+    val expectedVersion: Long? = null,
 )
 
 @Schema(description = "설치 저장소 새로고침 결과 — 새 레포는 후보로만(자동 선택되지 않음)")
@@ -126,6 +128,7 @@ data class GithubConnectionResponse(
     @field:Schema(description = "이 연결을 만든 사용자(감사용)") val connectedByUserId: Long,
     @field:Schema(description = "사용 선택된 레포") val selectedRepositories: List<GithubRepositoryResponse>,
     @field:Schema(description = "선택 가능한(설치 grant) 레포 전체") val availableRepositories: List<GithubRepositoryResponse>,
+    @field:Schema(description = "낙관적 락 버전 — 레포 선택 변경 시 expectedVersion 으로 되돌려 보내면 동시 편집 충돌을 막는다") val version: Long,
     val connectedAt: OffsetDateTime,
 ) {
     companion object {
@@ -144,6 +147,7 @@ data class GithubConnectionResponse(
             connectedByUserId = connection.connectedByUserId,
             selectedRepositories = selectedRepositories.map(GithubRepositoryResponse::of),
             availableRepositories = availableRepositories.map(GithubRepositoryResponse::of),
+            version = connection.version,
             connectedAt = connection.createdAt.toApiOffset(),
         )
 

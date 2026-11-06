@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionRepositoryStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubInstallationStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
@@ -25,6 +26,7 @@ class GithubConnectionRepositoryAdapter(
 ) : GithubConnectionRepositoryPort {
 
     private val active = GithubConnectionStatus.ACTIVE
+    private val activeRepo = GithubConnectionRepositoryStatus.ACTIVE
 
     override fun save(connection: GithubConnection): GithubConnection =
         connections.save(GithubConnectionEntity.from(connection)).toDomain()
@@ -60,14 +62,14 @@ class GithubConnectionRepositoryAdapter(
     override fun isRepoSelectedInSpace(space: GithubSpace, repoId: Long): Boolean {
         val ownerUserId = (space as? GithubSpace.Personal)?.ownerUserId
         val workspaceId = (space as? GithubSpace.Workspace)?.workspaceId
-        return connections.existsRepoSelectedInSpace(active, ownerUserId, workspaceId, repoId)
+        return connections.existsRepoSelectedInSpace(active, activeRepo, ownerUserId, workspaceId, repoId)
     }
 
     override fun spacesSelectingRepo(spaces: Collection<GithubSpace>, repoId: Long): Set<GithubSpace> {
         if (spaces.isEmpty()) return emptySet()
         val (ownerIds, workspaceIds) = decompose(spaces)
         val requested = spaces.toSet()
-        return connections.connectionsSelectingRepo(active, ownerIds, workspaceIds, repoId)
+        return connections.connectionsSelectingRepo(active, activeRepo, ownerIds, workspaceIds, repoId)
             .map { it.toDomain().space }
             .filter { it in requested }
             .toSet()
@@ -76,7 +78,7 @@ class GithubConnectionRepositoryAdapter(
     override fun findSelectedActiveRepositories(space: GithubSpace): List<GithubRepository> {
         val connectionIds = findActiveBySpaces(listOf(space)).mapNotNull { it.connectionId }
         if (connectionIds.isEmpty()) return emptyList()
-        val repoIds = connectionRepos.selectedRepoIds(connectionIds).toSet()
+        val repoIds = connectionRepos.selectedRepoIds(connectionIds, activeRepo).toSet()
         if (repoIds.isEmpty()) return emptyList()
         val repos = repositories.findAllById(repoIds).map { it.toDomain() }.filter { it.isActive }
         if (repos.isEmpty()) return emptyList()
@@ -88,16 +90,37 @@ class GithubConnectionRepositoryAdapter(
     }
 
     override fun selectedRepoIds(connectionId: Long): Set<Long> =
-        connectionRepos.findAllByConnectionId(connectionId).map { it.repoId }.toSet()
+        connectionRepos.findAllByConnectionId(connectionId)
+            .filter { it.status == GithubConnectionRepositoryStatus.ACTIVE }
+            .map { it.repoId }
+            .toSet()
 
     @Transactional
     override fun replaceSelectedRepos(connectionId: Long, repoIds: Collection<Long>, now: Instant) {
         // set-diff(엔티티 단위) — 벌크 DELETE 로 영속 컨텍스트가 stale 해지는 문제를 피한다.
         val target = repoIds.toSet()
         val existing = connectionRepos.findAllByConnectionId(connectionId)
-        val existingIds = existing.map { it.repoId }.toSet()
+        val existingById = existing.associateBy { it.repoId }
         existing.filter { it.repoId !in target }.forEach(connectionRepos::delete)
-        (target - existingIds).forEach { connectionRepos.save(GithubConnectionRepositoryEntity(connectionId, it, now)) }
+        target.forEach { id ->
+            val row = existingById[id]
+            when {
+                row == null ->
+                    connectionRepos.save(GithubConnectionRepositoryEntity(connectionId, id, now, activeRepo))
+                // 명시 재선택이면 ACCESS_LOST 였어도 ACTIVE 로 되돌린다.
+                row.status != activeRepo -> {
+                    row.status = activeRepo
+                    row.selectedAt = now
+                    connectionRepos.save(row)
+                }
+            }
+        }
+    }
+
+    @Transactional
+    override fun markSelectionsAccessLost(repoIds: Collection<Long>, now: Instant): Int {
+        if (repoIds.isEmpty()) return 0
+        return connectionRepos.markSelectionsAccessLost(repoIds)
     }
 
     /** 공간 집합 → (ownerUserId 들, workspaceId 들). 빈 쪽은 더미(-1)로 채워 IN () 방언 문제 회피. */

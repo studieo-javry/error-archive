@@ -20,6 +20,9 @@ class GithubRepositorySelectionInvalidException(message: String) : RuntimeExcept
 /** 이 사용자가 접근할 수 있는 ACTIVE 연결이 아님 / 없는 연결 id. */
 class GithubConnectionNotFoundException(message: String) : RuntimeException(message)
 
+/** 클라이언트가 보낸 expectedVersion 이 현재 연결 버전과 달라 동시 편집 충돌(다른 관리자가 먼저 바꿈). */
+class GithubConnectionVersionConflictException(message: String) : RuntimeException(message)
+
 /** 웹훅 서명 불일치/누락. */
 class GithubWebhookSignatureException(message: String) : RuntimeException(message)
 

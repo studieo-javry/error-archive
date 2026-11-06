@@ -351,4 +351,30 @@ class GithubConnectionFlowIntegrationTest {
         mvc.perform(post("/api/v1/integrations/github/installations/90909090/refresh-repositories").with(asUser(9950)))
             .andExpect(status().isNotFound)
     }
+
+    // ── 낙관적 버전(동시 편집 충돌) ────────────────────────────
+    @Test
+    fun `레포선택 변경 - version 이 증가하고 오래된 expectedVersion 은 409`() {
+        val uid = 9850L
+        val inst = 98_500L
+        stubOAuth(uid, inst, "c-$inst", listOf(repo(98_501, "acme/a"), repo(98_502, "acme/b")))
+        createConnection(uid, candidateToken(uid, inst, "c-$inst"), listOf(98_501)).andExpect(status().isCreated)
+        val created = listConnections(uid).first { it["installationId"].asLong() == inst }
+        val connId = created["connectionId"].asLong()
+        val v0 = created["version"].asLong()
+
+        // 올바른 expectedVersion 으로 변경 → 200, version 증가.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(98_502), "expectedVersion" to v0))),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.version").value(v0 + 1))
+
+        // 이제 낡아버린 같은 expectedVersion 으로 또 변경 → 409.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(98_501), "expectedVersion" to v0))),
+        ).andExpect(status().isConflict)
+    }
 }

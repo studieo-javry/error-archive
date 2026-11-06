@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubInstallationRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
@@ -28,6 +29,7 @@ import java.time.Instant
 @ConditionalOnGithubEnabled
 class ProcessGithubWebhookEventUseCase(
     private val repository: GithubInstallationRepositoryPort,
+    private val connections: GithubConnectionRepositoryPort,
     private val objectMapper: ObjectMapper,
     private val pullRequests: PullRequestWebhookHandler,
     private val checkSuites: CheckSuiteWebhookHandler,
@@ -84,6 +86,10 @@ class ProcessGithubWebhookEventUseCase(
         // 설치에 새로 허용된 레포는 "후보"로만 동기화한다 — 어느 공간의 선택(github_connection_repository)에도 자동 추가하지 않는다.
         // 멀티-공간에서 한 공간의 grant 확대가 다른 공간의 사용 레포로 새면 비공개 정보가 누출되므로(지시서 §6),
         // 각 공간은 refresh 후 명시적으로 선택해야 한다.
+        // 반대로 grant 에서 빠진 레포는 모든 공간에서 ACCESS_LOST 로 — 재허용돼도 자동 복구되지 않게(재선택 필요).
+        if (action == "removed" && changed.isNotEmpty()) {
+            connections.markSelectionsAccessLost(changed.map { it.repoId }, Instant.now())
+        }
         return Result.DONE
     }
 
@@ -105,6 +111,10 @@ class ProcessGithubWebhookEventUseCase(
             else -> return Result.SKIPPED
         }
         repository.saveRepositories(listOf(repo))
+        // 레포가 삭제/이전으로 이 설치 grant 에서 빠졌으면 그 선택을 ACCESS_LOST 로(재허용돼도 자동 복구 금지).
+        if (action == "deleted" || !repo.isActive) {
+            connections.markSelectionsAccessLost(listOf(repo.repoId), Instant.now())
+        }
         return Result.DONE
     }
 }

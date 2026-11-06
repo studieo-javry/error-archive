@@ -31,7 +31,13 @@ class UpdateConnectionRepositoriesUseCase(
 ) {
     private val tx = TransactionTemplate(transactionManager)
 
-    data class Command(val userId: Long, val connectionId: Long, val selectedRepoIds: List<Long>)
+    data class Command(
+        val userId: Long,
+        val connectionId: Long,
+        val selectedRepoIds: List<Long>,
+        /** 클라이언트가 마지막으로 본 연결 버전. 지정 시 현재 버전과 다르면 409(다른 관리자가 먼저 변경). */
+        val expectedVersion: Long? = null,
+    )
     data class Result(
         val installation: GithubInstallation,
         val connection: GithubConnection,
@@ -44,6 +50,11 @@ class UpdateConnectionRepositoriesUseCase(
             ?.takeIf { it.isActive }
             ?: throw GithubConnectionNotFoundException("연결을 찾을 수 없습니다: ${command.connectionId}")
         requireSpaceAccess(workspaceQuery, command.userId, connection.space)
+        if (command.expectedVersion != null && command.expectedVersion != connection.version) {
+            throw GithubConnectionVersionConflictException(
+                "다른 관리자가 먼저 변경했습니다 — 새로고침 후 다시 시도하세요 (expected=${command.expectedVersion}, current=${connection.version})",
+            )
+        }
 
         val available = repository.findRepositories(listOf(connection.installationId))
             .filter { it.isActive }
@@ -59,7 +70,21 @@ class UpdateConnectionRepositoriesUseCase(
 
         return tx.execute {
             connections.replaceSelectedRepos(command.connectionId, selectedIds, Instant.now())
-            Result(installation, connection, available.filter { it.repoId in selectedIds }, available)
+            // 연결을 dirty 로 만들어 저장 → @Version 증가. 동시 편집은 커밋 시 낙관적 락 충돌(→ 409).
+            connection.markRepositoriesChanged()
+            connections.save(connection)
+            // @Version 증가분은 flush/commit 시점에 반영되므로, 응답 버전은 결정적으로 +1 로 돌려준다.
+            val bumped = GithubConnection.reconstitute(
+                connectionId = command.connectionId,
+                installationId = connection.installationId,
+                space = connection.space,
+                connectedByUserId = connection.connectedByUserId,
+                status = connection.status,
+                createdAt = connection.createdAt,
+                updatedAt = connection.updatedAt,
+                version = connection.version + 1,
+            )
+            Result(installation, bumped, available.filter { it.repoId in selectedIds }, available)
         }!!
     }
 }

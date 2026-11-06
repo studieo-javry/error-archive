@@ -74,21 +74,26 @@ class CreateGithubConnectionUseCase(
             throw GithubRepositorySelectionInvalidException("설치에 포함되지 않은 레포를 선택했습니다: $notGranted")
         }
 
-        return tx.execute {
-            val installation = installationSyncer.upsertInstallation(command.userId, info)
-            val synced = installationSyncer.syncRepositories(installation.installationId, grant)
-            if (connections.findActive(installation.installationId, space) != null) {
-                throw GithubInstallationAlreadyBoundException("이미 이 공간에 연결된 설치입니다: ${installation.installationId}")
-            }
-            val existing = connections.findAnyForSpaceAndInstallation(installation.installationId, space)
-            val connection = connections.save(
-                existing?.also { it.reactivate() } ?: GithubConnection.create(installation.installationId, space, command.userId),
-            )
-            connections.replaceSelectedRepos(requireNotNull(connection.connectionId), selectedIds, Instant.now())
-            val available = synced.filter { it.isActive }
-            val selectedRepos = available.filter { it.repoId in selectedIds }
-            Result(installation, connection, selectedRepos, available)
-        }!!.also {
+        return try {
+            tx.execute {
+                val installation = installationSyncer.upsertInstallation(command.userId, info)
+                val synced = installationSyncer.syncRepositories(installation.installationId, grant)
+                if (connections.findActive(installation.installationId, space) != null) {
+                    throw GithubInstallationAlreadyBoundException("이미 이 공간에 연결된 설치입니다: ${installation.installationId}")
+                }
+                val existing = connections.findAnyForSpaceAndInstallation(installation.installationId, space)
+                val connection = connections.save(
+                    existing?.also { it.reactivate() } ?: GithubConnection.create(installation.installationId, space, command.userId),
+                )
+                connections.replaceSelectedRepos(requireNotNull(connection.connectionId), selectedIds, Instant.now())
+                val available = synced.filter { it.isActive }
+                val selectedRepos = available.filter { it.repoId in selectedIds }
+                Result(installation, connection, selectedRepos, available)
+            }!!
+        } catch (e: org.springframework.dao.DataIntegrityViolationException) {
+            // 같은 공간 첫 연결이 동시에 2건 들어와 부분유니크(uq_github_connection_*) 위반 → 이미 연결된 것으로 매핑(409).
+            throw GithubInstallationAlreadyBoundException("이미 이 공간에 연결된 설치입니다: ${selection.installationId}")
+        }.also {
             log.info {
                 "github connection created: installation=${selection.installationId} account=${info.accountLogin} " +
                     "user=${command.userId} workspace=${selection.workspaceId} selectedRepos=${selectedIds.size}"

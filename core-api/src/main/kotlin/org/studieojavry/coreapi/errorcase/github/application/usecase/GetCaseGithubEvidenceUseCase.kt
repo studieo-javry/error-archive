@@ -72,8 +72,12 @@ class GetCaseGithubEvidenceUseCase(
         val stepIdsByLink = evidence.findStepLinks(caseId).filter { it.linkId in activeLinkIds }
             .groupBy({ it.linkId }, { it.stepId })
 
+        // 공간 경계: 이 Case 공간이 지금 ACTIVE 로 선택한 레포만 내용을 노출한다. 선택 해제·연결 해제·ACCESS_LOST 된 레포는
+        // (전역 공유 스냅샷이 다른 공간을 통해 계속 갱신되더라도) 내용을 가린다 — syncStopped 플래그뿐 아니라 항목 자체를 마스킹(§6).
+        val space = GithubSpace.of(errorCase)
+        val selectedByRepo = repoIds.associateWith { connections.isRepoSelectedInSpace(space, it) }
         val canSeePrivate by lazy { policy.canSeePrivate(errorCase, viewerUserId) }
-        fun visible(repoId: Long): Boolean = policy.isVisible(repos[repoId], canSeePrivate)
+        fun visible(repoId: Long): Boolean = selectedByRepo[repoId] == true && policy.isVisible(repos[repoId], canSeePrivate)
 
         val issueLinkRefs = links.filter { it.kind == GithubRefKind.ISSUE }.map { GithubItemRef(it.repoId, it.number) }.toSet()
         val items = links.mapNotNull { link ->
@@ -103,11 +107,10 @@ class GetCaseGithubEvidenceUseCase(
         val childrenByIssue = placed.filter { it.first != null }.groupBy({ it.first!! }, { it.second })
 
         // 공간별 중단: 레포/설치 비활성뿐 아니라, 이 Case 공간이 더 이상 그 레포를 선택(연결)하지 않아도 동기화 멈춤.
-        val space = GithubSpace.of(errorCase)
         val syncStopped = links.any { link ->
             val repo = repos[link.repoId]
             repo == null || !repo.isActive || repo.installationId !in activeInstallations ||
-                !connections.isRepoSelectedInSpace(space, link.repoId)
+                selectedByRepo[link.repoId] != true
         }
 
         return EvidenceView(

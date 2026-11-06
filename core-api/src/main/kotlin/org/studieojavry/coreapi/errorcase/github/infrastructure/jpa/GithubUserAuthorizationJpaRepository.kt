@@ -11,4 +11,9 @@ interface GithubUserAuthorizationJpaRepository : JpaRepository<GithubUserAuthori
     @Modifying
     @Query("DELETE FROM GithubUserAuthorizationEntity a WHERE a.githubUserId = :githubUserId")
     fun deleteByGithubUserId(githubUserId: Long): Int
+
+    /** 토큰 무효 반응 폐기 → 이 EA 사용자 1건만 삭제. 삭제 건수 반환. */
+    @Modifying
+    @Query("DELETE FROM GithubUserAuthorizationEntity a WHERE a.eaUserId = :eaUserId")
+    fun deleteByEaUserId(eaUserId: Long): Int
 }

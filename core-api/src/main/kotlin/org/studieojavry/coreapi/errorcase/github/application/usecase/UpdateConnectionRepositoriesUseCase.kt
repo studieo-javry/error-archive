@@ -84,6 +84,15 @@ class UpdateConnectionRepositoriesUseCase(
             ?: throw GithubConnectionNotFoundException("설치를 찾을 수 없습니다: ${connection.installationId}")
 
         return tx.execute {
+            // 동시 grant-loss 웹훅(ACCESS_LOST 마킹 + repo 비활성화)과의 레이스 차단: 커밋 직전 현재 grant 를 tx 안에서
+            // 다시 읽어, 방금 접근을 잃은 레포를 replaceSelectedRepos 가 ACCESS_LOST→ACTIVE 로 되살리는 것을 막는다
+            // (markSelectionsAccessLost 는 다른 테이블 bulk UPDATE 라 연결 @Version 으로는 감지되지 않음).
+            val stillGranted = repository.findRepositories(listOf(connection.installationId))
+                .filter { it.isActive }.map { it.repoId }.toSet()
+            val lost = selectedIds - stillGranted
+            if (lost.isNotEmpty()) {
+                throw GithubRepositorySelectionInvalidException("선택한 레포의 접근이 방금 변경되었습니다 — 새로고침 후 다시 시도하세요: $lost")
+            }
             connections.replaceSelectedRepos(command.connectionId, selectedIds, Instant.now())
             // 연결을 dirty 로 만들어 저장 → @Version 증가. 동시 편집은 커밋 시 낙관적 락 충돌(→ 409).
             connection.markRepositoriesChanged()
@@ -113,7 +122,7 @@ class UpdateConnectionRepositoriesUseCase(
             githubApi.listUserInstallationRepositories(stored.token, installationId).filter { it.canAdmin }.map { it.id }.toSet()
         } catch (e: GithubApiException) {
             if (e.clientError) {
-                userAuthorizations.deleteByGithubUserId(stored.githubUserId)
+                userAuthorizations.deleteByEaUserId(userId)
                 throw GithubReauthorizationRequiredException("GitHub 인가가 만료됐습니다 — 연결을 다시 해주세요")
             }
             throw e // 5xx/한도초과는 advice 가 503/429

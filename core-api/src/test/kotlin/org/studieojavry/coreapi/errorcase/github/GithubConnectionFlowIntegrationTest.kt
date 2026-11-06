@@ -230,6 +230,19 @@ class GithubConnectionFlowIntegrationTest {
         assertEquals(null, userAuthorizations.findByEaUserId(63)) // 무효 토큰은 폐기
     }
 
+    @Test
+    fun `connection-options - 유저토큰과 무관한 4xx(설치 조회)면 토큰 유지하고 TEMPORARY_FAILURE`() {
+        saveToken(uid = 64, githubUserId = 90064, token = "utok-64")
+        // 유저 토큰 호출(설치 목록)은 성공 → 토큰 유효 확인. 그러나 설치 메타 조회(App JWT)가 4xx.
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-64")).thenReturn(setOf(7200L))
+        Mockito.`when`(githubApi.getInstallation(7200L))
+            .thenThrow(GithubApiException("installation gone", clientError = true))
+
+        val body = connectionOptions(uid = 64)
+        assertEquals("TEMPORARY_FAILURE", body["status"].asText())
+        assertNotNull(userAuthorizations.findByEaUserId(64)) // 유저 토큰은 유효 → 폐기하지 않음
+    }
+
     // ── 후보 조회 → 생성 ────────────────────────────────────────
     @Test
     fun `생성 - 후보조회로 설치를 받아 레포 일부만 선택해 연결, code 는 한 번만 교환`() {

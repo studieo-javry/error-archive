@@ -14,7 +14,9 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
@@ -208,5 +210,36 @@ class GithubMultiSpaceFanoutIntegrationTest {
         // 개인 공간엔 반영, 워크스페이스엔 ISSUE_CLOSED 없음(선택 해제로 반영 멈춤 — 기존 ISSUE_LINKED 근거는 유지).
         assertEquals(1, closedCount(personalCase))
         assertEquals(0, closedCount(wsCase))
+    }
+
+    @Test
+    fun `레포 선택 해제 후 근거 조회 - 그 공간엔 항목이 마스킹되고 syncStopped(공간 경계)`() {
+        val userA = 71_201L
+        val ws = 72_201L
+        Mockito.`when`(workspaceQuery.getViewerRole(userA, ws)).thenReturn(WorkspaceRole.ADMIN)
+
+        val s = seedInstallation(userA)
+        wireGithubConnection(connections, s.installationId, ws, userA, listOf(s.repoId))
+        val wsCase = createCase(userA, "WORKSPACE", ws)
+        stubIssueFetch(s, 30)
+        link(userA, wsCase, s, 30).andExpect(status().isCreated)
+
+        // 선택 중: 워크스페이스 멤버에게 비공개 레포 내용이 보인다.
+        mvc.perform(get("/api/v1/error-cases/$wsCase/github").with(asUser(userA)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.syncStopped").value(false))
+            .andExpect(jsonPath("$.issues[0].masked").value(false))
+            .andExpect(jsonPath("$.issues[0].title").value("주문 누락"))
+
+        // 이 공간에서 레포 선택 해제(링크는 유지 — 의도된 설계).
+        val connId = connections.findActive(s.installationId, GithubSpace.Workspace(ws))!!.connectionId!!
+        connections.replaceSelectedRepos(connId, emptyList(), Instant.now())
+
+        // 재조회: 멤버여도 더 이상 선택하지 않는 레포의 (전역 스냅샷) 내용은 마스킹 + syncStopped.
+        mvc.perform(get("/api/v1/error-cases/$wsCase/github").with(asUser(userA)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.syncStopped").value(true))
+            .andExpect(jsonPath("$.issues[0].masked").value(true))
+            .andExpect(jsonPath("$.issues[0].title").doesNotExist())
     }
 }

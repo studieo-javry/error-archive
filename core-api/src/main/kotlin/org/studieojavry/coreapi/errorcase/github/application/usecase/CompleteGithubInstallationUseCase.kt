@@ -22,8 +22,10 @@ import java.time.Instant
  * → (1) state.userId == **요청한 로그인 사용자** (2) GitHub 사용자 토큰으로 그 설치에 실제 접근 가능 — 둘 다 확인.
  *
  * 설치(github_installation) 는 GitHub 사실만 upsert 하고, state 가 가리키는 **공간에 연결(github_connection)** 을
- * 만들거나 되살린 뒤 **grant 된 레포 전부를 선택** 한다(기존 "모든 grant = 사용" 동작 보존). 같은 설치가 이미
- * 그 공간에 ACTIVE 로 연결돼 있으면 레포 선택만 최신화한다(멀티-공간이므로 다른 공간 연결은 그대로).
+ * 만들거나 되살린다. 레포 선택(github_connection_repository)은 **새 연결을 부트스트랩할 때만** grant 된 레포로 채운다.
+ * 이미 존재하던(재활성) 연결의 공간별 선택은 **절대 덮어쓰지 않는다** — 재완료가 다른 관리자가 다듬어 둔 선택을
+ * 되돌리거나 새 grant 를 자동 추가하면 안 되므로(지시서 §1). 공간별 명시 선택·변경은 candidates→connections 흐름과
+ * `PUT /connections/{id}/repositories` 가 담당한다(레거시 one-shot 부트스트랩은 2차에서 명시 선택으로 대체 예정).
  *
  * GitHub 호출(느림)은 트랜잭션 밖, 저장만 짧은 트랜잭션으로.
  */
@@ -66,13 +68,18 @@ class CompleteGithubInstallationUseCase(
         return tx.execute {
             val installation = installationSyncer.upsertInstallation(command.userId, info)
             val synced = installationSyncer.syncRepositories(installation.installationId, repos)
-            val connection = upsertConnection(installation.installationId, space, command.userId)
-            // 설치 직후엔 grant 된(활성) 레포 전부 선택 — 기존 동작 보존.
-            connections.replaceSelectedRepos(
-                requireNotNull(connection.connectionId),
-                synced.filter { it.isActive }.map { it.repoId },
-                Instant.now(),
+            val existing = connections.findAnyForSpaceAndInstallation(installation.installationId, space)
+            val connection = connections.save(
+                existing?.also { it.reactivate() } ?: GithubConnection.create(installation.installationId, space, command.userId),
             )
+            // 새 연결에서만 grant 된(활성) 레포를 선택해 부트스트랩한다. 재활성 연결의 기존 선택은 보존(덮어쓰기 금지, §1).
+            if (existing == null) {
+                connections.replaceSelectedRepos(
+                    requireNotNull(connection.connectionId),
+                    synced.filter { it.isActive }.map { it.repoId },
+                    Instant.now(),
+                )
+            }
             Result(installation, connection, synced)
         }!!.also {
             log.info {
@@ -80,12 +87,5 @@ class CompleteGithubInstallationUseCase(
                     "user=${command.userId} workspace=${state.workspaceId} repos=${repos.size}"
             }
         }
-    }
-
-    private fun upsertConnection(installationId: Long, space: GithubSpace, userId: Long): GithubConnection {
-        val existing = connections.findAnyForSpaceAndInstallation(installationId, space)
-        val connection = existing?.also { it.reactivate() }
-            ?: GithubConnection.create(installationId, space, userId)
-        return connections.save(connection)
     }
 }

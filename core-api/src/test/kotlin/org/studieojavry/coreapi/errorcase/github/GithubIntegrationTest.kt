@@ -21,7 +21,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubWebhookSignatureVerifier
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxJpaRepository
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxProcessor
@@ -72,6 +74,7 @@ class GithubIntegrationTest {
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var inboxRepo: GithubWebhookInboxJpaRepository
     @Autowired private lateinit var processor: GithubWebhookInboxProcessor
+    @Autowired private lateinit var connections: GithubConnectionRepositoryPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -221,16 +224,25 @@ class GithubIntegrationTest {
 
     // ── inbox 처리 ───────────────────────────────────────────────
     @Test
-    fun `처리 - 레포 추가·제거, 비공개 전환, 늦게 온 옛 이벤트 무시, 설치 삭제`() {
+    fun `처리 - 레포 추가는 후보로만(자동선택 금지)·제거, 비공개 전환, 늦게 온 옛 이벤트 무시, 설치 삭제`() {
         connect(uid = 9, installationId = 500, repos = listOf(GithubAppApiPort.RepositoryInfo(5001, "acme/a", isPrivate = false)))
         val inst = """"installation":{"id":500}"""
 
-        // 레포 추가
+        // 레포 추가 — grant(설치 접근)에만 더해지고, 이 공간의 선택에는 자동 반영되지 않는다(§6).
         assertEquals(InboxStatus.DONE, deliverAndProcess(
             "installation_repositories",
             """{"action":"added",$inst,"repositories_added":[{"id":5002,"full_name":"acme/b","private":false}],"repositories_removed":[]}""",
         ))
-        // 레포 제거
+        // 선택은 그대로 acme/a 1개 — 새로 grant 된 acme/b 는 후보일 뿐 자동 선택되지 않음.
+        mvc.perform(get("/api/v1/integrations/github/installations").with(asUser(9)))
+            .andExpect(jsonPath("$[0].repositories.length()").value(1))
+            .andExpect(jsonPath("$[0].repositories[0].fullName").value("acme/a"))
+
+        // 사용자가 새 후보 acme/b 를 이 공간에서 명시적으로 선택.
+        val connectionId = connections.findActive(500, GithubSpace.Personal(9))!!.connectionId!!
+        connections.replaceSelectedRepos(connectionId, listOf(5001L, 5002L), java.time.Instant.now())
+
+        // 레포 제거 — grant 에서 빠지면 선택에 남아 있어도 비활성으로 걸러진다.
         assertEquals(InboxStatus.DONE, deliverAndProcess(
             "installation_repositories",
             """{"action":"removed",$inst,"repositories_added":[],"repositories_removed":[{"id":5001,"full_name":"acme/a"}]}""",

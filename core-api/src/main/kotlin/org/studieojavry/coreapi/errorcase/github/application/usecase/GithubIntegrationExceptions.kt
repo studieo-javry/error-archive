@@ -20,6 +20,15 @@ class GithubRepositorySelectionInvalidException(message: String) : RuntimeExcept
 /** 이 사용자가 접근할 수 있는 ACTIVE 연결이 아님 / 없는 연결 id. */
 class GithubConnectionNotFoundException(message: String) : RuntimeException(message)
 
+/** 클라이언트가 보낸 expectedVersion 이 현재 연결 버전과 달라 동시 편집 충돌(다른 관리자가 먼저 바꿈). */
+class GithubConnectionVersionConflictException(message: String) : RuntimeException(message)
+
+/**
+ * 토큰 의존 검증(워크스페이스에 새 레포 공유 시 repo-admin 재확인)을 할 수 없음 — 저장된 GitHub 사용자 토큰이
+ * 없거나 만료·취소됨. FE 는 이 code 를 보고 "GitHub 다시 연결" 로 유도한다(단순 거부가 아님).
+ */
+class GithubReauthorizationRequiredException(message: String) : RuntimeException(message)
+
 /** 웹훅 서명 불일치/누락. */
 class GithubWebhookSignatureException(message: String) : RuntimeException(message)
 

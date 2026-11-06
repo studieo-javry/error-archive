@@ -10,7 +10,9 @@ import jakarta.persistence.Id
 import jakarta.persistence.IdClass
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
+import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionRepositoryStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubConnectionStatus
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import java.io.Serializable
@@ -57,6 +59,10 @@ class GithubConnectionEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime,
+
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0,
 ) {
     fun toDomain(): GithubConnection {
         val space = workspaceId?.let(GithubSpace::Workspace)
@@ -69,6 +75,7 @@ class GithubConnectionEntity(
             status = status,
             createdAt = createdAt,
             updatedAt = updatedAt,
+            version = version,
         )
     }
 
@@ -85,6 +92,7 @@ class GithubConnectionEntity(
                 status = d.status,
                 createdAt = d.createdAt,
                 updatedAt = d.updatedAt,
+                version = d.version,
             )
         }
     }
@@ -113,4 +121,8 @@ class GithubConnectionRepositoryEntity(
 
     @Column(name = "selected_at", nullable = false)
     var selectedAt: Instant,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: GithubConnectionRepositoryStatus = GithubConnectionRepositoryStatus.ACTIVE,
 )

@@ -100,6 +100,15 @@ class GithubAppApiAdapter(
         }.toSet()
     }
 
+    override fun getAuthenticatedUser(userToken: String): GithubAppApiPort.GithubUserIdentity = call("getAuthenticatedUser") {
+        val res = api.get().uri("/user")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer $userToken")
+            .retrieve()
+            .body(AuthenticatedUserResponse::class.java)
+            ?: throw GithubApiException("GitHub 사용자 정보 응답이 비어 있음")
+        GithubAppApiPort.GithubUserIdentity(res.id, res.login)
+    }
+
     override fun getInstallation(installationId: Long): GithubAppApiPort.InstallationInfo = call("getInstallation") {
         val res = api.get().uri("/app/installations/{id}", installationId)
             .header(HttpHeaders.AUTHORIZATION, "Bearer ${jwtSigner.sign()}")
@@ -291,6 +300,9 @@ class GithubAppApiAdapter(
         @JsonProperty("access_token") val accessToken: String? = null,
         @JsonProperty("error") val error: String? = null,
     )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class AuthenticatedUserResponse(val id: Long, val login: String)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class Account(val login: String, val type: String)

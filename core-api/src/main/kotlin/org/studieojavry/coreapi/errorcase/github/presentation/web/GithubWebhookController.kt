@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubWebhookSignatureException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ReceiveGithubWebhookUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 
@@ -50,11 +49,8 @@ class GithubWebhookController(
         if (deliveryId.isBlank() || deliveryId.length > 64 || event.isBlank() || event.length > 40) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid GitHub webhook headers")
         }
-        val outcome = try {
-            receiveWebhook.invoke(event, deliveryId, signature, body)
-        } catch (e: GithubWebhookSignatureException) {
-            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, e.message, e)
-        }
+        // 서명 불일치(GithubWebhookSignatureException)는 GithubExceptionHandler 가 401 로 변환한다.
+        val outcome = receiveWebhook.invoke(event, deliveryId, signature, body)
         return when (outcome) {
             ReceiveGithubWebhookUseCase.Outcome.ACCEPTED -> ResponseEntity.accepted().build()
             ReceiveGithubWebhookUseCase.Outcome.DUPLICATE -> ResponseEntity.ok().build()

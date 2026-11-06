@@ -18,17 +18,10 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DisconnectGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionCandidateInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionNotFoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallStateInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationAlreadyBoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositorySelectionInvalidException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionOptionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubAuthorizeUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
@@ -38,6 +31,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateGith
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubAuthorizeUrlResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesResponse
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionOptionsResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.RefreshRepositoriesResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.UpdateConnectionRepositoriesRequest
@@ -55,6 +49,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.UpdateConn
 @ConditionalOnGithubEnabled
 class GithubConnectionController(
     private val issueAuthorizeUrl: IssueGithubAuthorizeUrlUseCase,
+    private val getOptions: GetGithubConnectionOptionsUseCase,
     private val getCandidates: GetGithubConnectionCandidatesUseCase,
     private val createConnection: CreateGithubConnectionUseCase,
     private val listConnections: ListGithubConnectionsUseCase,
@@ -62,6 +57,23 @@ class GithubConnectionController(
     private val disconnectConnection: DisconnectGithubConnectionUseCase,
     private val refreshRepositories: RefreshInstallationRepositoriesUseCase,
 ) {
+
+    @Operation(
+        summary = "연결 옵션 조회 (시나리오 ②)",
+        description = "저장된 사용자 토큰으로 상황을 구분한다. VERIFIED_AVAILABLE 면 GitHub 재이동 없이 candidates 로 바로 " +
+            "레포를 고를 수 있다. NOT_AUTHORIZED 면 authorizeUrl, VERIFIED_EMPTY(설치 없음)면 installUrl 로 이동. " +
+            "workspaceId 를 주면 그 워크스페이스 기준(ADMIN 필요).",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "상태 + (후보 또는 이동 URL)"),
+        ApiResponse(responseCode = "401", description = "미인증"),
+        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트"),
+    )
+    @GetMapping("/connection-options")
+    fun connectionOptions(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "연결할 워크스페이스 ID (생략 시 개인 연결)") @RequestParam(required = false) workspaceId: Long?,
+    ): GithubConnectionOptionsResponse = GithubConnectionOptionsResponse.of(getOptions.invoke(userId, workspaceId))
 
     @Operation(
         summary = "연결 시작 — OAuth 인가 URL 발급",
@@ -95,11 +107,9 @@ class GithubConnectionController(
     fun connectionCandidates(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: GithubConnectionCandidatesRequest,
-    ): GithubConnectionCandidatesResponse = mapGithubErrors {
-        GithubConnectionCandidatesResponse.of(
-            getCandidates.invoke(GetGithubConnectionCandidatesUseCase.Command(userId, request.code, request.state)),
-        )
-    }
+    ): GithubConnectionCandidatesResponse = GithubConnectionCandidatesResponse.of(
+        getCandidates.invoke(GetGithubConnectionCandidatesUseCase.Command(userId, request.code, request.state)),
+    )
 
     @Operation(
         summary = "연결 생성",
@@ -119,13 +129,11 @@ class GithubConnectionController(
     fun create(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: CreateGithubConnectionRequest,
-    ): GithubConnectionResponse = mapGithubErrors {
-        GithubConnectionResponse.of(
-            createConnection.invoke(
-                CreateGithubConnectionUseCase.Command(userId, request.candidateToken, request.selectedRepoIds),
-            ),
-        )
-    }
+    ): GithubConnectionResponse = GithubConnectionResponse.of(
+        createConnection.invoke(
+            CreateGithubConnectionUseCase.Command(userId, request.candidateToken, request.selectedRepoIds),
+        ),
+    )
 
     @Operation(
         summary = "내 연결 목록(관리)",
@@ -142,26 +150,28 @@ class GithubConnectionController(
 
     @Operation(
         summary = "연결의 레포 선택 변경",
-        description = "이 연결에서 사용할 레포를 주어진 집합으로 교체(replace-set). 선택을 빼면 그 공간에선 즉시 반영이 멈춘다.",
+        description = "이 연결에서 사용할 레포를 주어진 집합으로 교체(replace-set). 선택을 빼면 그 공간에선 즉시 반영이 멈춘다. " +
+            "워크스페이스 연결에 **새로 추가**하는 레포는 사용자가 지금도 GitHub repo-admin 인지 재확인한다(§4-D).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "변경됨"),
-        ApiResponse(responseCode = "400", description = "grant 밖 레포 선택"),
-        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트"),
+        ApiResponse(responseCode = "400", description = "grant 밖 레포 선택 / 워크스페이스 공유에 repo-admin 아님"),
+        ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트 / GitHub 재연결 필요(토큰 없음·만료, code=GITHUB_REAUTHORIZATION_REQUIRED)"),
         ApiResponse(responseCode = "404", description = "없는/비활성 연결 또는 접근 불가"),
+        ApiResponse(responseCode = "409", description = "동시 편집 충돌(expectedVersion 불일치)"),
     )
     @PutMapping("/connections/{connectionId}/repositories")
     fun updateRepositories(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결 id") @PathVariable connectionId: Long,
         @Valid @RequestBody request: UpdateConnectionRepositoriesRequest,
-    ): GithubConnectionResponse = mapGithubErrors {
-        GithubConnectionResponse.of(
-            updateRepositories.invoke(
-                UpdateConnectionRepositoriesUseCase.Command(userId, connectionId, request.selectedRepoIds),
+    ): GithubConnectionResponse = GithubConnectionResponse.of(
+        updateRepositories.invoke(
+            UpdateConnectionRepositoriesUseCase.Command(
+                userId, connectionId, request.selectedRepoIds, request.expectedVersion,
             ),
-        )
-    }
+        ),
+    )
 
     @Operation(
         summary = "설치 저장소 새로고침",
@@ -179,9 +189,7 @@ class GithubConnectionController(
     fun refreshRepositories(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "GitHub installation id") @PathVariable installationId: Long,
-    ): RefreshRepositoriesResponse = mapGithubErrors {
-        RefreshRepositoriesResponse.of(refreshRepositories.invoke(userId, installationId))
-    }
+    ): RefreshRepositoriesResponse = RefreshRepositoriesResponse.of(refreshRepositories.invoke(userId, installationId))
 
     @Operation(
         summary = "공간별 연결 해제",
@@ -197,24 +205,5 @@ class GithubConnectionController(
     fun disconnect(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결 id") @PathVariable connectionId: Long,
-    ) = mapGithubErrors { disconnectConnection.invoke(userId, connectionId) }
-
-    /** github 도메인 예외 → HTTP 매핑(기존 두 컨트롤러와 동일 관례). */
-    private fun <T> mapGithubErrors(block: () -> T): T = try {
-        block()
-    } catch (e: GithubInstallStateInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubConnectionCandidateInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubRepositorySelectionInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubConnectionNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: GithubInstallationAlreadyBoundException) {
-        throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
-    } catch (e: GithubApiException) {
-        e.retryAfter?.let { throw GithubRateLimitedException(it, e) }
-        val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE
-        throw ResponseStatusException(status, e.message, e)
-    }
+    ) = disconnectConnection.invoke(userId, connectionId)
 }

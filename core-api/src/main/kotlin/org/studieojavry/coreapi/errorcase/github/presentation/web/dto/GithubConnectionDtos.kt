@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionOptionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.UpdateConnectionRepositoriesUseCase
@@ -83,6 +84,32 @@ data class GithubConnectionCandidatesResponse(
     }
 }
 
+@Schema(
+    description = "연결 옵션 — 저장된 토큰으로 상황을 구분해, 가능하면 GitHub 재이동 없이 바로 후보를 돌려준다(시나리오 ②).",
+)
+data class GithubConnectionOptionsResponse(
+    @field:Schema(
+        description = "NOT_AUTHORIZED(인가 필요→authorizeUrl) | VERIFIED_EMPTY(설치 없음→installUrl) | " +
+            "VERIFIED_AVAILABLE(후보 있음→candidates) | TEMPORARY_FAILURE(GitHub 일시 장애)",
+    )
+    val status: String,
+    @field:Schema(description = "연결하려는 워크스페이스. null = 개인 연결") val workspaceId: Long?,
+    @field:Schema(description = "NOT_AUTHORIZED 일 때 이동할 OAuth 인가 URL") val authorizeUrl: String?,
+    @field:Schema(description = "VERIFIED_EMPTY 일 때 이동할 설치 URL") val installUrl: String?,
+    @field:Schema(description = "VERIFIED_AVAILABLE 일 때 바로 쓸 후보(설치 + grant 레포 + candidateToken)")
+    val candidates: List<GithubConnectionCandidateResponse>,
+) {
+    companion object {
+        fun of(r: GetGithubConnectionOptionsUseCase.Result) = GithubConnectionOptionsResponse(
+            status = r.status.name,
+            workspaceId = r.workspaceId,
+            authorizeUrl = r.authorizeUrl,
+            installUrl = r.installUrl,
+            candidates = r.candidates.map(GithubConnectionCandidateResponse::of),
+        )
+    }
+}
+
 @Schema(description = "연결 생성 요청 — 후보 토큰 + 사용할 레포 선택")
 data class CreateGithubConnectionRequest(
     @field:Schema(description = "connection-candidates 가 준 candidateToken")
@@ -96,6 +123,8 @@ data class CreateGithubConnectionRequest(
 data class UpdateConnectionRepositoriesRequest(
     @field:Schema(description = "이 연결에서 사용할 레포 id 전체(기존 선택을 이 집합으로 교체). 빈 배열이면 전부 해제.")
     val selectedRepoIds: List<Long> = emptyList(),
+    @field:Schema(description = "마지막으로 조회한 연결 version. 지정 시 현재와 다르면 409(동시 편집 충돌). 생략 시 검사 안 함.")
+    val expectedVersion: Long? = null,
 )
 
 @Schema(description = "설치 저장소 새로고침 결과 — 새 레포는 후보로만(자동 선택되지 않음)")
@@ -126,6 +155,7 @@ data class GithubConnectionResponse(
     @field:Schema(description = "이 연결을 만든 사용자(감사용)") val connectedByUserId: Long,
     @field:Schema(description = "사용 선택된 레포") val selectedRepositories: List<GithubRepositoryResponse>,
     @field:Schema(description = "선택 가능한(설치 grant) 레포 전체") val availableRepositories: List<GithubRepositoryResponse>,
+    @field:Schema(description = "낙관적 락 버전 — 레포 선택 변경 시 expectedVersion 으로 되돌려 보내면 동시 편집 충돌을 막는다") val version: Long,
     val connectedAt: OffsetDateTime,
 ) {
     companion object {
@@ -144,6 +174,7 @@ data class GithubConnectionResponse(
             connectedByUserId = connection.connectedByUserId,
             selectedRepositories = selectedRepositories.map(GithubRepositoryResponse::of),
             availableRepositories = availableRepositories.map(GithubRepositoryResponse::of),
+            version = connection.version,
             connectedAt = connection.createdAt.toApiOffset(),
         )
 

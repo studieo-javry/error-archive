@@ -18,6 +18,12 @@ interface GithubAppApiPort {
     /** 이 사용자 토큰으로 접근 가능한 App 설치 id 목록 (`GET /user/installations`). */
     fun listUserInstallationIds(userToken: String): Set<Long>
 
+    /**
+     * 이 사용자 토큰의 GitHub 계정 (`GET /user`). 저장한 사용자 인가(암호화 토큰) 행을
+     * `github_app_authorization` revoked 웹훅의 `sender.id` 와 잇는 **안정적인 키**(id 는 rename 에도 불변)로 쓴다.
+     */
+    fun getAuthenticatedUser(userToken: String): GithubUserIdentity
+
     /** 설치 메타 (`GET /app/installations/{id}`, App JWT). */
     fun getInstallation(installationId: Long): InstallationInfo
 
@@ -83,6 +89,9 @@ interface GithubAppApiPort {
         /** GitHub 가 판정한 "이 PR 이 닫는 Issue" (closingIssuesReferences — 사이드바 수동 연결 포함). */
         val closingIssues: List<GithubItemRef>,
     ) : GithubItem
+
+    /** `GET /user` 결과 — [id] 는 GitHub 사용자 숫자 id(불변), [login] 은 표시·감사용. */
+    data class GithubUserIdentity(val id: Long, val login: String)
 
     data class InstallationInfo(val id: Long, val accountLogin: String, val accountType: String)
     data class RepositoryInfo(val id: Long, val fullName: String, val isPrivate: Boolean)

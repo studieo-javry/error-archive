@@ -20,23 +20,12 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.CaseGithubLinkNotFoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.DetachGithubLinkUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubActivityReader
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubEventCursorInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetCaseGithubEvidenceUseCase
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubStepLinkInvalidException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.LinkGithubToCaseUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListCaseGithubEventsUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.SetStepGithubLinksUseCase
-import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubEvidenceResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CaseGithubLinkResponse
@@ -93,7 +82,7 @@ class CaseGithubController(
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
         @Valid @RequestBody request: LinkGithubRequest,
     ): ResponseEntity<CaseGithubLinkResponse> {
-        val result = translate { linkGithub.invoke(caseId, userId, request.url) }
+        val result = linkGithub.invoke(caseId, userId, request.url)
         return ResponseEntity.status(if (result.created) HttpStatus.CREATED else HttpStatus.OK)
             .body(CaseGithubLinkResponse.of(result.link, result.created, result.backfill))
     }
@@ -114,7 +103,7 @@ class CaseGithubController(
         @Parameter(description = "케이스 ID") @PathVariable caseId: Long,
         @Parameter(description = "연결 ID") @PathVariable linkId: Long,
     ) {
-        translate { detachGithub.invoke(caseId, linkId, userId) }
+        detachGithub.invoke(caseId, linkId, userId)
     }
 
     @Operation(
@@ -179,7 +168,7 @@ class CaseGithubController(
         @Parameter(description = "이전 응답의 nextCursor. 첫 쪽이면 생략") @RequestParam(required = false) cursor: String?,
         @Parameter(description = "한 쪽 크기(1~100, 범위 밖이면 가까운 값으로). 기본 20")
         @RequestParam(defaultValue = GithubActivityReader.DEFAULT_SIZE.toString()) size: Int,
-    ): GithubActivityResponse = GithubActivityResponse.of(translate { listEvents.invoke(caseId, userId, cursor, size) })
+    ): GithubActivityResponse = GithubActivityResponse.of(listEvents.invoke(caseId, userId, cursor, size))
 
     @Operation(
         summary = "Step 의 GitHub 근거 꼬리표 설정",
@@ -205,28 +194,5 @@ class CaseGithubController(
         @Parameter(description = "Step ID") @PathVariable stepId: Long,
         @Valid @RequestBody request: SetStepGithubLinksRequest,
     ): StepGithubLinksResponse =
-        StepGithubLinksResponse(stepId, translate { setStepLinks.invoke(caseId, stepId, userId, request.linkIds) })
-
-    /** GitHub 연동 고유 예외 → HTTP. Case 없음/권한 없음은 ErrorCaseExceptionHandler 가 처리. */
-    private fun <T> translate(block: () -> T): T = try {
-        block()
-    } catch (e: GithubUrlInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubRepositoryNotConnectedException) {
-        throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
-    } catch (e: GithubScopeMismatchException) {
-        throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
-    } catch (e: GithubItemNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: GithubStepLinkInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubEventCursorInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: StepNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: CaseGithubLinkNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: GithubApiException) {
-        throw e.retryAfter?.let { GithubRateLimitedException(it, e) } ?: ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
-    }
+        StepGithubLinksResponse(stepId, setStepLinks.invoke(caseId, stepId, userId, request.linkIds))
 }

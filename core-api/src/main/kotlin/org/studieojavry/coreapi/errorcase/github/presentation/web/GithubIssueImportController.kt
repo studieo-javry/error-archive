@@ -16,15 +16,6 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
-import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubImportInvalidRequestException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubImportVisibilityException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubItemNotFoundException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositoryNotConnectedException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubScopeMismatchException
-import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubUrlInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ImportGithubIssueUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubIssueImportEnabled
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateCaseFromGithubIssueRequest
@@ -70,7 +61,7 @@ class GithubIssueImportController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "GitHub Issue 주소", example = "https://github.com/acme/payment-api/issues/142") @RequestParam url: String,
         @Parameter(description = "확인용 워크스페이스 ID — 저장소 연결 범위와 다르면 403") @RequestParam(required = false) workspaceId: Long?,
-    ): GithubIssuePreviewResponse = translate { GithubIssuePreviewResponse.of(importIssue.preview(userId, url, workspaceId)) }
+    ): GithubIssuePreviewResponse = GithubIssuePreviewResponse.of(importIssue.preview(userId, url, workspaceId))
 
     @Operation(
         summary = "GitHub Issue 로 Case 만들기",
@@ -94,34 +85,13 @@ class GithubIssueImportController(
     fun create(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Valid @RequestBody request: CreateCaseFromGithubIssueRequest,
-    ): CreateCaseFromGithubIssueResponse = translate {
-        CreateCaseFromGithubIssueResponse.of(
-            importIssue.create(
-                ImportGithubIssueUseCase.Command(
-                    userId, request.url, request.workspaceId, request.visibility,
-                    request.title, request.description, request.paste, request.tags,
-                    request.severity, request.occurredAt, request.includeWorkaroundStep,
-                ),
+    ): CreateCaseFromGithubIssueResponse = CreateCaseFromGithubIssueResponse.of(
+        importIssue.create(
+            ImportGithubIssueUseCase.Command(
+                userId, request.url, request.workspaceId, request.visibility,
+                request.title, request.description, request.paste, request.tags,
+                request.severity, request.occurredAt, request.includeWorkaroundStep,
             ),
-        )
-    }
-
-    /** GitHub 연동 고유 예외 → HTTP. 워크스페이스 권한 부족 등은 ErrorCaseExceptionHandler 가 처리. */
-    private fun <T> translate(block: () -> T): T = try {
-        block()
-    } catch (e: GithubUrlInvalidException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubImportVisibilityException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubImportInvalidRequestException) {
-        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
-    } catch (e: GithubRepositoryNotConnectedException) {
-        throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
-    } catch (e: GithubScopeMismatchException) {
-        throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
-    } catch (e: GithubItemNotFoundException) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
-    } catch (e: GithubApiException) {
-        throw e.retryAfter?.let { GithubRateLimitedException(it, e) } ?: ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, e.message, e)
-    }
+        ),
+    )
 }

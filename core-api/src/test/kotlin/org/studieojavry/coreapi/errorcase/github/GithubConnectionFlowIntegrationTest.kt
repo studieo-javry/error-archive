@@ -23,9 +23,13 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionSelectionCodec
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
+import java.time.Instant
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -54,6 +58,7 @@ import kotlin.test.assertNotNull
     "core.github.private-key-pem=unused-by-mock",
     "core.github.webhook-secret=whsec",
     "core.github.state-secret=state-secret",
+    "core.github.token-encryption-key=jKyPH4UiG09Bk7prFiiAmRnDMhba8qG9X1rKcUq1BwY=",
     "core.github.inbox.poll-delay-ms=3600000",
 ])
 class GithubConnectionFlowIntegrationTest {
@@ -67,6 +72,7 @@ class GithubConnectionFlowIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var selectionCodec: GithubConnectionSelectionCodec
+    @Autowired private lateinit var userAuthorizations: GithubUserAuthorizationPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -94,6 +100,8 @@ class GithubConnectionFlowIntegrationTest {
             repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
     ) {
         Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$uid")
+        Mockito.`when`(githubApi.getAuthenticatedUser("utok-$uid"))
+            .thenReturn(GithubAppApiPort.GithubUserIdentity(90000 + uid, "user-$uid"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))
         Mockito.`when`(githubApi.getInstallation(installationId))
             .thenReturn(GithubAppApiPort.InstallationInfo(installationId, "acme-$installationId", "Organization"))
@@ -130,6 +138,17 @@ class GithubConnectionFlowIntegrationTest {
                 .content(om.writeValueAsString(mapOf("candidateToken" to token, "selectedRepoIds" to selected))),
         )
 
+    private fun connectionOptions(uid: Long, workspaceId: Long? = null) =
+        get("/api/v1/integrations/github/connection-options").with(asUser(uid)).let { req ->
+            workspaceId?.let { req.param("workspaceId", it.toString()) }
+            om.readTree(mvc.perform(req).andExpect(status().isOk).andReturn().response.contentAsString)
+        }
+
+    private fun saveToken(uid: Long, githubUserId: Long, token: String) {
+        val now = Instant.now()
+        userAuthorizations.save(GithubUserAuthorization(uid, githubUserId, "login-$uid", token, now, now))
+    }
+
     private fun listConnections(uid: Long) =
         om.readTree(
             mvc.perform(get("/api/v1/integrations/github/connections").with(asUser(uid)))
@@ -150,6 +169,65 @@ class GithubConnectionFlowIntegrationTest {
         Mockito.`when`(workspaceQuery.getViewerRole(10, 9055)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
         mvc.perform(get("/api/v1/integrations/github/authorize-url").param("workspaceId", "9055").with(asUser(10)))
             .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `connection-candidates - 교환한 사용자 토큰을 암호화 저장(복호화 왕복)`() {
+        stubOAuth(uid = 44, installationId = 7001, code = "code-44", repos = listOf(repo(1, "acme/a")))
+        candidateToken(uid = 44, installationId = 7001, code = "code-44")
+
+        val stored = userAuthorizations.findByEaUserId(44)
+        assertNotNull(stored)
+        assertEquals(90044, stored.githubUserId) // getAuthenticatedUser 로 잡은 GitHub 숫자 id → revoked 웹훅 매칭 키
+        assertEquals("utok-44", stored.token) // 어댑터가 복호화해 돌려준 평문(DB 에는 ciphertext+iv 만)
+        assertEquals("user-44", stored.githubLogin)
+    }
+
+    // ── connection-options (시나리오 ②) ─────────────────────────
+    @Test
+    fun `connection-options - 저장 토큰 없으면 NOT_AUTHORIZED + authorizeUrl`() {
+        val body = connectionOptions(uid = 60)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assert(body["authorizeUrl"].asText().startsWith("https://github.com/login/oauth/authorize?client_id=cid&state="))
+        assert(body["installUrl"].isNull)
+        assertEquals(0, body["candidates"].size())
+    }
+
+    @Test
+    fun `connection-options - 접근 가능한 설치가 있으면 VERIFIED_AVAILABLE + 후보(GitHub 재이동 없이)`() {
+        // 먼저 후보 조회로 토큰을 저장(= 사용자가 이미 한 번 인가한 상태).
+        stubOAuth(uid = 61, installationId = 7100, code = "code-61", repos = listOf(repo(1, "acme/a"), repo(2, "acme/b")))
+        candidateToken(uid = 61, installationId = 7100, code = "code-61")
+
+        val body = connectionOptions(uid = 61)
+        assertEquals("VERIFIED_AVAILABLE", body["status"].asText())
+        assert(body["authorizeUrl"].isNull)
+        val candidates = body["candidates"]
+        assertEquals(1, candidates.size())
+        assertEquals(7100, candidates[0]["installationId"].asLong())
+        assert(candidates[0]["candidateToken"].asText().isNotBlank()) // 바로 POST /connections 가능
+    }
+
+    @Test
+    fun `connection-options - 인가는 됐지만 설치가 없으면 VERIFIED_EMPTY + installUrl`() {
+        saveToken(uid = 62, githubUserId = 90062, token = "utok-62")
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-62")).thenReturn(emptySet())
+
+        val body = connectionOptions(uid = 62)
+        assertEquals("VERIFIED_EMPTY", body["status"].asText())
+        assert(body["installUrl"].asText().startsWith("https://github.com/apps/error-archive-test/installations/new?state="))
+        assertEquals(0, body["candidates"].size())
+    }
+
+    @Test
+    fun `connection-options - 저장 토큰이 만료·취소면 폐기하고 NOT_AUTHORIZED`() {
+        saveToken(uid = 63, githubUserId = 90063, token = "utok-63")
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-63"))
+            .thenThrow(GithubApiException("bad credentials", clientError = true))
+
+        val body = connectionOptions(uid = 63)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assertEquals(null, userAuthorizations.findByEaUserId(63)) // 무효 토큰은 폐기
     }
 
     // ── 후보 조회 → 생성 ────────────────────────────────────────
@@ -283,6 +361,64 @@ class GithubConnectionFlowIntegrationTest {
         ).andExpect(status().isNotFound)
     }
 
+    @Test
+    fun `레포선택 변경 - 워크스페이스에 새 레포 추가 시 repo-admin 재확인(admin 통과, read 만 400)`() {
+        val uid = 96_100L
+        val inst = 961_000L
+        val wsId = 96_108L
+        Mockito.`when`(workspaceQuery.getViewerRole(uid, wsId)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
+        // A·C 는 admin, B 는 read 만. 셋 다 설치 grant.
+        stubOAuth(
+            uid, inst, "c-$inst",
+            repos = listOf(repo(961_001, "acme/a"), repo(961_002, "acme/b"), repo(961_003, "acme/c")),
+            userPerms = listOf(
+                GithubAppApiPort.UserRepositoryInfo(961_001, canAdmin = true, canPush = true, canPull = true),
+                GithubAppApiPort.UserRepositoryInfo(961_002, canAdmin = false, canPush = false, canPull = true),
+                GithubAppApiPort.UserRepositoryInfo(961_003, canAdmin = true, canPush = true, canPull = true),
+            ),
+        )
+        val connId = om.readTree(
+            createConnection(uid, candidateToken(uid, inst, "c-$inst", workspaceId = wsId), listOf(961_001))
+                .andExpect(status().isCreated).andReturn().response.contentAsString,
+        )["connectionId"].asLong()
+
+        // 새로 추가하는 C 는 admin → 통과.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(961_001, 961_003)))),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.selectedRepositories.length()").value(2))
+
+        // 새로 추가하는 B 는 read 만 → 400(워크스페이스 공유 불가).
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(961_001, 961_003, 961_002)))),
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `레포선택 변경 - 워크스페이스 새 레포인데 저장 토큰 없으면 재연결 요구(403)`() {
+        val uid = 97_100L
+        val inst = 971_000L
+        val wsId = 97_108L
+        Mockito.`when`(workspaceQuery.getViewerRole(uid, wsId)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
+        stubOAuth(uid, inst, "c-$inst", listOf(repo(971_001, "acme/a"), repo(971_002, "acme/b")))
+        val connId = om.readTree(
+            createConnection(uid, candidateToken(uid, inst, "c-$inst", workspaceId = wsId), listOf(971_001))
+                .andExpect(status().isCreated).andReturn().response.contentAsString,
+        )["connectionId"].asLong()
+
+        // 저장 토큰 폐기(예: 인가 취소됨) 후 새 레포 추가 시도 → 재연결 요구.
+        userAuthorizations.deleteByGithubUserId(90000 + uid)
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(971_001, 971_002)))),
+        ).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value("GITHUB_REAUTHORIZATION_REQUIRED"))
+    }
+
     // ── 해제(DELETE) + 재연결 reactivate ───────────────────────
     @Test
     fun `해제 - 공간 연결만 끊기고 재연결 시 같은 연결을 되살린다(멱등)`() {
@@ -350,5 +486,31 @@ class GithubConnectionFlowIntegrationTest {
     fun `새로고침 - 접근 가능한 연결이 없는 설치면 404`() {
         mvc.perform(post("/api/v1/integrations/github/installations/90909090/refresh-repositories").with(asUser(9950)))
             .andExpect(status().isNotFound)
+    }
+
+    // ── 낙관적 버전(동시 편집 충돌) ────────────────────────────
+    @Test
+    fun `레포선택 변경 - version 이 증가하고 오래된 expectedVersion 은 409`() {
+        val uid = 9850L
+        val inst = 98_500L
+        stubOAuth(uid, inst, "c-$inst", listOf(repo(98_501, "acme/a"), repo(98_502, "acme/b")))
+        createConnection(uid, candidateToken(uid, inst, "c-$inst"), listOf(98_501)).andExpect(status().isCreated)
+        val created = listConnections(uid).first { it["installationId"].asLong() == inst }
+        val connId = created["connectionId"].asLong()
+        val v0 = created["version"].asLong()
+
+        // 올바른 expectedVersion 으로 변경 → 200, version 증가.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(98_502), "expectedVersion" to v0))),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.version").value(v0 + 1))
+
+        // 이제 낡아버린 같은 expectedVersion 으로 또 변경 → 409.
+        mvc.perform(
+            put("/api/v1/integrations/github/connections/$connId/repositories").with(asUser(uid))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("selectedRepoIds" to listOf(98_501), "expectedVersion" to v0))),
+        ).andExpect(status().isConflict)
     }
 }

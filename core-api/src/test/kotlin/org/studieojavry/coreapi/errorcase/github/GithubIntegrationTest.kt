@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubWebhookSignatureVerifier
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.github.infrastructure.inbox.GithubWebhookInboxEntity.InboxStatus
@@ -32,8 +34,13 @@ import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * GitHub 연동 P0 통합 — 실 Postgres 에 Flyway(V1~V4) + `ddl-auto=validate` 로 엔티티↔스키마 정합까지 검증.
@@ -57,6 +64,7 @@ import kotlin.test.assertEquals
     "core.github.private-key-pem=unused-by-mock",
     "core.github.webhook-secret=whsec",
     "core.github.state-secret=state-secret",
+    "core.github.token-encryption-key=jKyPH4UiG09Bk7prFiiAmRnDMhba8qG9X1rKcUq1BwY=",
     // 스케줄러가 테스트 중 끼어들지 않게 — 처리는 processOne 으로 직접 구동.
     "core.github.inbox.poll-delay-ms=3600000",
 ])
@@ -75,6 +83,7 @@ class GithubIntegrationTest {
     @Autowired private lateinit var inboxRepo: GithubWebhookInboxJpaRepository
     @Autowired private lateinit var processor: GithubWebhookInboxProcessor
     @Autowired private lateinit var connections: GithubConnectionRepositoryPort
+    @Autowired private lateinit var userAuthorizations: GithubUserAuthorizationPort
     @MockitoBean private lateinit var githubApi: GithubAppApiPort
     @MockitoBean private lateinit var workspaceQuery: WorkspaceQueryPort
 
@@ -222,6 +231,28 @@ class GithubIntegrationTest {
             .andExpect(status().isOk)
     }
 
+    // ── 인가 취소 ───────────────────────────────────────────────
+    @Test
+    fun `웹훅 github_app_authorization revoked - 그 GitHub 사용자의 저장 토큰을 폐기`() {
+        val now = Instant.now()
+        userAuthorizations.save(GithubUserAuthorization(eaUserId = 501, githubUserId = 7777, githubLogin = "octo", token = "utok-x", createdAt = now, updatedAt = now))
+        userAuthorizations.save(GithubUserAuthorization(eaUserId = 502, githubUserId = 8888, githubLogin = "other", token = "utok-y", createdAt = now, updatedAt = now))
+        assertNotNull(userAuthorizations.findByEaUserId(501))
+
+        // installation 없는 payload — sender.id 로 매칭.
+        val status = deliverAndProcess("github_app_authorization", """{"action":"revoked","sender":{"id":7777,"login":"octo"}}""")
+        assertEquals(InboxStatus.DONE, status)
+
+        assertNull(userAuthorizations.findByEaUserId(501)) // 폐기됨
+        assertNotNull(userAuthorizations.findByEaUserId(502)) // 다른 사용자는 그대로
+    }
+
+    @Test
+    fun `웹훅 github_app_authorization revoked - 저장 토큰 없으면 SKIPPED`() {
+        val status = deliverAndProcess("github_app_authorization", """{"action":"revoked","sender":{"id":99999,"login":"nobody"}}""")
+        assertEquals(InboxStatus.SKIPPED, status)
+    }
+
     // ── inbox 처리 ───────────────────────────────────────────────
     @Test
     fun `처리 - 레포 추가는 후보로만(자동선택 금지)·제거, 비공개 전환, 늦게 온 옛 이벤트 무시, 설치 삭제`() {
@@ -273,5 +304,43 @@ class GithubIntegrationTest {
     @Test
     fun `처리 - 우리와 연결 안 된 설치의 이벤트는 SKIPPED`() {
         assertEquals(InboxStatus.SKIPPED, deliverAndProcess("installation", """{"action":"suspend","installation":{"id":777}}"""))
+    }
+
+    @Test
+    fun `ACCESS_LOST - grant 에서 빠진 선택은 비활성이고 재허용돼도 자동 복구되지 않는다`() {
+        connect(
+            uid = 20, installationId = 600,
+            repos = listOf(
+                GithubAppApiPort.RepositoryInfo(6001, "acme/a", isPrivate = false),
+                GithubAppApiPort.RepositoryInfo(6002, "acme/b", isPrivate = false),
+            ),
+        )
+        val inst = """"installation":{"id":600}"""
+        val space = GithubSpace.Personal(20)
+        val connId = connections.findActive(600, space)!!.connectionId!!
+        // 부트스트랩 선택 = grant 전부.
+        assertEquals(setOf(6001L, 6002L), connections.selectedRepoIds(connId))
+        assertTrue(connections.isRepoSelectedInSpace(space, 6001))
+
+        // 6001 이 grant 에서 빠짐 → 그 선택은 ACCESS_LOST → 실효 사용 중단.
+        assertEquals(InboxStatus.DONE, deliverAndProcess(
+            "installation_repositories",
+            """{"action":"removed",$inst,"repositories_added":[],"repositories_removed":[{"id":6001,"full_name":"acme/a"}]}""",
+        ))
+        assertFalse(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6002L), connections.selectedRepoIds(connId))
+
+        // 6001 재허용(added) → 여전히 비활성(자동 복구 금지).
+        assertEquals(InboxStatus.DONE, deliverAndProcess(
+            "installation_repositories",
+            """{"action":"added",$inst,"repositories_added":[{"id":6001,"full_name":"acme/a","private":false}],"repositories_removed":[]}""",
+        ))
+        assertFalse(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6002L), connections.selectedRepoIds(connId))
+
+        // 사용자가 공간에서 다시 명시 선택 → ACTIVE 복귀.
+        connections.replaceSelectedRepos(connId, listOf(6001L, 6002L), java.time.Instant.now())
+        assertTrue(connections.isRepoSelectedInSpace(space, 6001))
+        assertEquals(setOf(6001L, 6002L), connections.selectedRepoIds(connId))
     }
 }

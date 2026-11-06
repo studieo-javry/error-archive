@@ -25,6 +25,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.DisconnectG
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionCandidateInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionNotFoundException
+import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubConnectionVersionConflictException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallStateInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubInstallationAlreadyBoundException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateLimitedException
@@ -149,6 +150,7 @@ class GithubConnectionController(
         ApiResponse(responseCode = "400", description = "grant 밖 레포 선택"),
         ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트"),
         ApiResponse(responseCode = "404", description = "없는/비활성 연결 또는 접근 불가"),
+        ApiResponse(responseCode = "409", description = "동시 편집 충돌(expectedVersion 불일치)"),
     )
     @PutMapping("/connections/{connectionId}/repositories")
     fun updateRepositories(
@@ -158,7 +160,9 @@ class GithubConnectionController(
     ): GithubConnectionResponse = mapGithubErrors {
         GithubConnectionResponse.of(
             updateRepositories.invoke(
-                UpdateConnectionRepositoriesUseCase.Command(userId, connectionId, request.selectedRepoIds),
+                UpdateConnectionRepositoriesUseCase.Command(
+                    userId, connectionId, request.selectedRepoIds, request.expectedVersion,
+                ),
             ),
         )
     }
@@ -212,6 +216,10 @@ class GithubConnectionController(
         throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
     } catch (e: GithubInstallationAlreadyBoundException) {
         throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
+    } catch (e: GithubConnectionVersionConflictException) {
+        throw ResponseStatusException(HttpStatus.CONFLICT, e.message, e)
+    } catch (e: org.springframework.orm.ObjectOptimisticLockingFailureException) {
+        throw ResponseStatusException(HttpStatus.CONFLICT, "다른 관리자가 먼저 변경했습니다 — 새로고침 후 다시 시도하세요", e)
     } catch (e: GithubApiException) {
         e.retryAfter?.let { throw GithubRateLimitedException(it, e) }
         val status = if (e.clientError) HttpStatus.BAD_REQUEST else HttpStatus.SERVICE_UNAVAILABLE

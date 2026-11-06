@@ -20,8 +20,13 @@ class GithubConnection private constructor(
     var status: GithubConnectionStatus,
     val createdAt: LocalDateTime,
     var updatedAt: LocalDateTime,
+    /** 낙관적 락 버전(JPA @Version 관리). 선택/상태 변경 때마다 증가 — 동시 편집 충돌 감지에 쓴다. */
+    val version: Long = 0,
 ) {
     val isActive: Boolean get() = status == GithubConnectionStatus.ACTIVE
+
+    /** 연결의 레포 선택이 바뀌었음을 표시(엔티티를 dirty 로 만들어 저장 시 @Version 이 오르게). */
+    fun markRepositoriesChanged() = touch()
 
     /** 공간 단위 연결 해제 — 설치/레포/스냅샷은 건드리지 않는다(다른 공간 연결 유지). */
     fun disconnect() {
@@ -65,8 +70,9 @@ class GithubConnection private constructor(
             status: GithubConnectionStatus,
             createdAt: LocalDateTime,
             updatedAt: LocalDateTime,
+            version: Long = 0,
         ) = GithubConnection(
-            connectionId, installationId, space, connectedByUserId, status, createdAt, updatedAt,
+            connectionId, installationId, space, connectedByUserId, status, createdAt, updatedAt, version,
         )
     }
 }

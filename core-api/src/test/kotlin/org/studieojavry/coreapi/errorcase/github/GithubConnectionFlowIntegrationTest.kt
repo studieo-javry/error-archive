@@ -320,4 +320,35 @@ class GithubConnectionFlowIntegrationTest {
         mvc.perform(delete("/api/v1/integrations/github/connections/$connId").with(asUser(stranger)))
             .andExpect(status().isNotFound)
     }
+
+    // ── 저장소 새로고침(refresh-repositories) ──────────────────
+    @Test
+    fun `새로고침 - 새 grant 레포는 후보로만 반영되고 공간 선택엔 자동 추가되지 않는다`() {
+        val uid = 9900L
+        val inst = 99_000L
+        stubOAuth(uid, inst, "c-$inst", listOf(repo(99_001, "acme/api")))
+        createConnection(uid, candidateToken(uid, inst, "c-$inst"), listOf(99_001)).andExpect(status().isCreated)
+
+        // GitHub Configure 에서 grant 확대: acme/web 추가.
+        Mockito.`when`(githubApi.listInstallationRepositories(inst))
+            .thenReturn(listOf(repo(99_001, "acme/api"), repo(99_002, "acme/web")))
+
+        mvc.perform(post("/api/v1/integrations/github/installations/$inst/refresh-repositories").with(asUser(uid)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.availableRepositories.length()").value(2))
+            .andExpect(jsonPath("$.addedRepoIds.length()").value(1))
+            .andExpect(jsonPath("$.addedRepoIds[0]").value(99_002))
+
+        // 선택은 여전히 acme/api 1개 — 새 레포는 후보일 뿐 자동 선택되지 않는다.
+        listConnections(uid).first { it["installationId"].asLong() == inst }.let {
+            assertEquals(1, it["selectedRepositories"].size())
+            assertEquals(2, it["availableRepositories"].size())
+        }
+    }
+
+    @Test
+    fun `새로고침 - 접근 가능한 연결이 없는 설치면 404`() {
+        mvc.perform(post("/api/v1/integrations/github/installations/90909090/refresh-repositories").with(asUser(9950)))
+            .andExpect(status().isNotFound)
+    }
 }

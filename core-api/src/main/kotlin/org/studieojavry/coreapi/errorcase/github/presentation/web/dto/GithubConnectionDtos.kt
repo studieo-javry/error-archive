@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank
 import org.studieojavry.coreapi.errorcase.github.application.usecase.CreateGithubConnectionUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GetGithubConnectionCandidatesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.UpdateConnectionRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
@@ -96,6 +97,23 @@ data class UpdateConnectionRepositoriesRequest(
     @field:Schema(description = "이 연결에서 사용할 레포 id 전체(기존 선택을 이 집합으로 교체). 빈 배열이면 전부 해제.")
     val selectedRepoIds: List<Long> = emptyList(),
 )
+
+@Schema(description = "설치 저장소 새로고침 결과 — 새 레포는 후보로만(자동 선택되지 않음)")
+data class RefreshRepositoriesResponse(
+    @field:Schema(description = "GitHub installation id") val installationId: Long,
+    @field:Schema(description = "새로고침 후 선택 가능한(설치 grant) 활성 레포 전체") val availableRepositories: List<GithubRepositoryResponse>,
+    @field:Schema(description = "이번에 새로 grant 된 레포 id(후보로만)") val addedRepoIds: List<Long>,
+    @field:Schema(description = "이번에 grant 에서 빠진 레포 id") val removedRepoIds: List<Long>,
+) {
+    companion object {
+        fun of(r: RefreshInstallationRepositoriesUseCase.Result) = RefreshRepositoriesResponse(
+            installationId = r.installation.installationId,
+            availableRepositories = r.availableRepositories.map(GithubRepositoryResponse::of),
+            addedRepoIds = r.addedRepoIds,
+            removedRepoIds = r.removedRepoIds,
+        )
+    }
+}
 
 @Schema(description = "GitHub 공간 연결(관리 화면)")
 data class GithubConnectionResponse(

@@ -31,6 +31,7 @@ import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRateL
 import org.studieojavry.coreapi.errorcase.github.application.usecase.GithubRepositorySelectionInvalidException
 import org.studieojavry.coreapi.errorcase.github.application.usecase.IssueGithubAuthorizeUrlUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.ListGithubConnectionsUseCase
+import org.studieojavry.coreapi.errorcase.github.application.usecase.RefreshInstallationRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.application.usecase.UpdateConnectionRepositoriesUseCase
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.CreateGithubConnectionRequest
@@ -38,6 +39,7 @@ import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubAuth
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesRequest
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionCandidatesResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.GithubConnectionResponse
+import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.RefreshRepositoriesResponse
 import org.studieojavry.coreapi.errorcase.github.presentation.web.dto.UpdateConnectionRepositoriesRequest
 
 /**
@@ -58,6 +60,7 @@ class GithubConnectionController(
     private val listConnections: ListGithubConnectionsUseCase,
     private val updateRepositories: UpdateConnectionRepositoriesUseCase,
     private val disconnectConnection: DisconnectGithubConnectionUseCase,
+    private val refreshRepositories: RefreshInstallationRepositoriesUseCase,
 ) {
 
     @Operation(
@@ -158,6 +161,26 @@ class GithubConnectionController(
                 UpdateConnectionRepositoriesUseCase.Command(userId, connectionId, request.selectedRepoIds),
             ),
         )
+    }
+
+    @Operation(
+        summary = "설치 저장소 새로고침",
+        description = "GitHub Configure 에서 접근 범위를 바꾸고 돌아온 뒤, 설치 grant 를 다시 동기화한다. 새 레포는 " +
+            "후보로만 반영하고 어느 공간의 선택에도 자동 추가하지 않는다. 이 설치에 접근 권한 있는 연결(개인=본인/워크스페이스=ADMIN)이 있어야 한다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "새로고침됨(추가·제거 레포 id 포함)"),
+        ApiResponse(responseCode = "403", description = "게스트"),
+        ApiResponse(responseCode = "404", description = "접근 가능한 연결이 없는 설치"),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도"),
+        ApiResponse(responseCode = "503", description = "GitHub API 사용 불가"),
+    )
+    @PostMapping("/installations/{installationId}/refresh-repositories")
+    fun refreshRepositories(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "GitHub installation id") @PathVariable installationId: Long,
+    ): RefreshRepositoriesResponse = mapGithubErrors {
+        RefreshRepositoriesResponse.of(refreshRepositories.invoke(userId, installationId))
     }
 
     @Operation(

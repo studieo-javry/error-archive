@@ -23,9 +23,16 @@ interface GithubConnectionJpaRepository : JpaRepository<GithubConnectionEntity, 
         status: GithubConnectionStatus,
     ): GithubConnectionEntity?
 
-    fun findFirstByInstallationIdAndOwnerUserId(installationId: Long, ownerUserId: Long): GithubConnectionEntity?
+    // 재연결 대상(DISCONNECTED 누적 가능) — 가장 최근 연결 1건만 결정적으로 고른다(임의행 방지, §5).
+    fun findFirstByInstallationIdAndOwnerUserIdOrderByConnectionIdDesc(
+        installationId: Long,
+        ownerUserId: Long,
+    ): GithubConnectionEntity?
 
-    fun findFirstByInstallationIdAndWorkspaceId(installationId: Long, workspaceId: Long): GithubConnectionEntity?
+    fun findFirstByInstallationIdAndWorkspaceIdOrderByConnectionIdDesc(
+        installationId: Long,
+        workspaceId: Long,
+    ): GithubConnectionEntity?
 
     fun findAllByInstallationIdAndStatus(
         installationId: Long,

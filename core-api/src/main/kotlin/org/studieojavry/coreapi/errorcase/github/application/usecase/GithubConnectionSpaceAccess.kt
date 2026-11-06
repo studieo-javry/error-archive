@@ -18,3 +18,10 @@ internal fun requireSpaceAccess(workspaceQuery: WorkspaceQueryPort, userId: Long
         is GithubSpace.Workspace -> requireWorkspaceAdmin(workspaceQuery, userId, space.workspaceId)
     }
 }
+
+/** [requireSpaceAccess] 의 boolean 판정 — 예외 없이 쓰기 권한 여부만. */
+internal fun canManageSpace(workspaceQuery: WorkspaceQueryPort, userId: Long, space: GithubSpace): Boolean =
+    when (space) {
+        is GithubSpace.Personal -> space.ownerUserId == userId
+        is GithubSpace.Workspace -> workspaceQuery.getViewerRole(userId, space.workspaceId)?.canAdminister() == true
+    }

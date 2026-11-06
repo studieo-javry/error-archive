@@ -43,9 +43,9 @@ class GithubConnectionRepositoryAdapter(
     override fun findAnyForSpaceAndInstallation(installationId: Long, space: GithubSpace): GithubConnection? =
         when (space) {
             is GithubSpace.Personal ->
-                connections.findFirstByInstallationIdAndOwnerUserId(installationId, space.ownerUserId)
+                connections.findFirstByInstallationIdAndOwnerUserIdOrderByConnectionIdDesc(installationId, space.ownerUserId)
             is GithubSpace.Workspace ->
-                connections.findFirstByInstallationIdAndWorkspaceId(installationId, space.workspaceId)
+                connections.findFirstByInstallationIdAndWorkspaceIdOrderByConnectionIdDesc(installationId, space.workspaceId)
         }?.toDomain()
 
     override fun findActiveBySpaces(spaces: Collection<GithubSpace>): List<GithubConnection> {

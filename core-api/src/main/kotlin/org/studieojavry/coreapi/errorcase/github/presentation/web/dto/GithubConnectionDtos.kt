@@ -36,7 +36,7 @@ data class GithubConnectionCandidateResponse(
     @field:Schema(description = "Organization | User") val accountType: String,
     @field:Schema(description = "이 공간에 이미 ACTIVE 로 연결돼 있는지") val alreadyConnected: Boolean,
     @field:Schema(description = "레포를 고른 뒤 POST /connections 에 넘길 서명 토큰(짧은 수명)") val candidateToken: String,
-    @field:Schema(description = "이 설치에 grant 된(선택 가능) 레포") val repositories: List<GithubRepositoryResponse>,
+    @field:Schema(description = "설치 grant ∩ 사용자 접근 가능 레포(접근 불가 레포는 제외)") val repositories: List<GithubCandidateRepositoryResponse>,
 ) {
     companion object {
         fun of(c: GetGithubConnectionCandidatesUseCase.Candidate) = GithubConnectionCandidateResponse(
@@ -45,7 +45,26 @@ data class GithubConnectionCandidateResponse(
             accountType = c.accountType,
             alreadyConnected = c.alreadyConnected,
             candidateToken = c.candidateToken,
-            repositories = c.repositories.map { GithubRepositoryResponse(it.id, it.fullName, it.isPrivate) },
+            repositories = c.repositories.map(GithubCandidateRepositoryResponse::of),
+        )
+    }
+}
+
+@Schema(description = "연결 후보의 레포 — eligible 이 true 여야 이 공간에서 선택 가능")
+data class GithubCandidateRepositoryResponse(
+    @field:Schema(description = "GitHub repository id") val repoId: Long,
+    @field:Schema(description = "owner/name") val fullName: String,
+    @field:Schema(description = "비공개 레포 여부") val isPrivate: Boolean,
+    @field:Schema(description = "이 공간에서 선택 가능(개인=read / 워크스페이스=admin). false 면 선택 불가") val eligible: Boolean,
+    @field:Schema(description = "사용자 권한: ADMIN | WRITE | READ") val permission: String,
+) {
+    companion object {
+        fun of(r: GetGithubConnectionCandidatesUseCase.CandidateRepository) = GithubCandidateRepositoryResponse(
+            repoId = r.repoId,
+            fullName = r.fullName,
+            isPrivate = r.isPrivate,
+            eligible = r.eligible,
+            permission = r.permission,
         )
     }
 }

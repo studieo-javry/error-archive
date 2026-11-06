@@ -21,7 +21,8 @@ import java.time.Instant
  *
  * - 소유는 candidateToken 서명이 보증(후보 조회 때 OAuth 로 확인됨) → **code 재교환 없음**.
  * - 권한: 개인 공간은 본인, 워크스페이스는 ADMIN([requireSpaceAccess]).
- * - 레포 공유: 고른 레포는 설치에 grant 된 것의 부분집합이어야 함(아니면 400).
+ * - 레포 공유: 고른 레포는 토큰에 서명된 **eligible 집합**(후보 조회 때 사용자 권한으로 판정: 개인=read/워크스페이스=admin)의
+ *   부분집합이어야 하고, 현재 설치 grant 에도 남아 있어야 함(조회 후 grant 축소 방어). 아니면 400.
  * - 같은 공간에 이미 ACTIVE 연결이 있으면 409(멀티-공간이라 다른 공간 연결은 무관).
  *
  * GitHub 호출(설치/레포 조회)은 트랜잭션 밖, 저장만 짧은 트랜잭션으로.
@@ -60,7 +61,14 @@ class CreateGithubConnectionUseCase(
         val info = githubApi.getInstallation(selection.installationId)
         val grant = githubApi.listInstallationRepositories(selection.installationId)
         val grantIds = grant.map { it.id }.toSet()
+        val eligibleIds = selection.eligibleRepoIds.toSet()
         val selectedIds = command.selectedRepoIds.toSet()
+        // 공간 권한 밖(개인=read/워크스페이스=admin 미충족) 레포 — 후보 조회 때 서명된 eligible 집합으로 판정.
+        val notEligible = selectedIds - eligibleIds
+        if (notEligible.isNotEmpty()) {
+            throw GithubRepositorySelectionInvalidException("이 공간에서 선택할 수 없는 레포입니다(접근·공유 권한): $notEligible")
+        }
+        // 후보 조회 후 설치 grant 가 축소됐을 수 있어 현재 grant 로도 재확인.
         val notGranted = selectedIds - grantIds
         if (notGranted.isNotEmpty()) {
             throw GithubRepositorySelectionInvalidException("설치에 포함되지 않은 레포를 선택했습니다: $notGranted")

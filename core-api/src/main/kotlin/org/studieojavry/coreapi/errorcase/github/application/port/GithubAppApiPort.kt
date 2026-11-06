@@ -25,6 +25,14 @@ interface GithubAppApiPort {
     fun listInstallationRepositories(installationId: Long): List<RepositoryInfo>
 
     /**
+     * 이 **사용자 토큰**으로 설치 [installationId] 에서 접근 가능한 레포 + 사용자 권한
+     * (`GET /user/installations/{installation_id}/repositories`). 설치 grant 와 **교집합**해 후보의
+     * "이 사용자가 실제로 볼 수 있고, 공간에 쓸 권한이 있는가"(개인=read / 워크스페이스 공유=admin)를 서버가 판정한다.
+     * 설치 grant 에는 있어도 사용자가 접근 못 하는 레포는 목록에 넣지 않는다(비공개 이름 노출 방지).
+     */
+    fun listUserInstallationRepositories(userToken: String, installationId: Long): List<UserRepositoryInfo>
+
+    /**
      * Issue 또는 PR 한 건 (GraphQL `issueOrPullRequest`). 없거나 접근 불가면 null.
      * 주소가 `/issues/N` 이어도 실제가 PR 이면 [PullRequestItem] — GitHub 웹도 그렇게 리다이렉트한다.
      */
@@ -78,6 +86,9 @@ interface GithubAppApiPort {
 
     data class InstallationInfo(val id: Long, val accountLogin: String, val accountType: String)
     data class RepositoryInfo(val id: Long, val fullName: String, val isPrivate: Boolean)
+
+    /** 사용자 토큰 기준 레포 접근 권한. [canPull] 이면 최소 읽기 가능(후보에 노출), [canAdmin] 이면 워크스페이스 공유 가능. */
+    data class UserRepositoryInfo(val id: Long, val canAdmin: Boolean, val canPush: Boolean, val canPull: Boolean)
 }
 
 /** [retryAfter] 가 있으면 호출 한도 초과(403/429) — 그 시간 뒤에 다시 시도하면 된다(웹훅 inbox 는 시도 횟수를 쓰지 않고 미룬다). */

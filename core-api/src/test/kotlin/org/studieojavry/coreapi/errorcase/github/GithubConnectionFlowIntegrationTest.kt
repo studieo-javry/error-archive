@@ -84,12 +84,21 @@ class GithubConnectionFlowIntegrationTest {
 
     private fun repo(id: Long, name: String, private: Boolean = false) = GithubAppApiPort.RepositoryInfo(id, name, private)
 
-    private fun stubOAuth(uid: Long, installationId: Long, code: String, repos: List<GithubAppApiPort.RepositoryInfo>) {
+    private fun stubOAuth(
+        uid: Long,
+        installationId: Long,
+        code: String,
+        repos: List<GithubAppApiPort.RepositoryInfo>,
+        // 기본: 모든 레포에 사용자 admin 권한(개인·워크스페이스 모두 선택 가능). 권한 정책 테스트는 명시 전달.
+        userPerms: List<GithubAppApiPort.UserRepositoryInfo> =
+            repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
+    ) {
         Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$uid")
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))
         Mockito.`when`(githubApi.getInstallation(installationId))
             .thenReturn(GithubAppApiPort.InstallationInfo(installationId, "acme-$installationId", "Organization"))
         Mockito.`when`(githubApi.listInstallationRepositories(installationId)).thenReturn(repos)
+        Mockito.`when`(githubApi.listUserInstallationRepositories("utok-$uid", installationId)).thenReturn(userPerms)
     }
 
     /** authorize-url 엔드포인트에서 서명된 state 를 뽑는다(개인 연결). */
@@ -205,8 +214,33 @@ class GithubConnectionFlowIntegrationTest {
         val other = 9401L
         val inst = 94_000L
         // 다른 사용자(other) 용으로 서명된 토큰을 requester 가 사용 시도.
-        val forged = selectionCodec.issue(other, null, inst)
+        val forged = selectionCodec.issue(other, null, inst, emptyList())
         createConnection(requester, forged, selected = emptyList()).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `생성 - 워크스페이스 공유는 그 레포의 admin 권한이 필요(read 만이면 400)`() {
+        val uid = 9800L
+        val inst = 98_000L
+        val wsId = 9808L
+        Mockito.`when`(workspaceQuery.getViewerRole(uid, wsId)).thenReturn(WorkspaceQueryPort.WorkspaceRole.ADMIN)
+        // admin 가능 레포 1 + read 만 가능 레포 1.
+        stubOAuth(
+            uid, inst, "c-$inst",
+            repos = listOf(repo(98_001, "acme/admin-ok"), repo(98_002, "acme/read-only")),
+            userPerms = listOf(
+                GithubAppApiPort.UserRepositoryInfo(98_001, canAdmin = true, canPush = true, canPull = true),
+                GithubAppApiPort.UserRepositoryInfo(98_002, canAdmin = false, canPush = false, canPull = true),
+            ),
+        )
+        val token = candidateToken(uid, inst, "c-$inst", workspaceId = wsId)
+        // read 만 가능한 레포를 워크스페이스에 공유 시도 → 400.
+        createConnection(uid, token, selected = listOf(98_002)).andExpect(status().isBadRequest)
+        // admin 가능 레포는 성공.
+        createConnection(uid, token, selected = listOf(98_001))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.workspaceId").value(wsId))
+            .andExpect(jsonPath("$.selectedRepositories.length()").value(1))
     }
 
     // ── 레포 선택 변경(PUT) ────────────────────────────────────

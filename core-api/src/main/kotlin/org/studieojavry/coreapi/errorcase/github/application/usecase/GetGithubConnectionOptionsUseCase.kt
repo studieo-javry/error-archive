@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.errorcase.github.application.usecase
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubApiException
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
@@ -24,6 +25,7 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQuery
 @ConditionalOnGithubEnabled
 class GetGithubConnectionOptionsUseCase(
     private val userAuthorizations: GithubUserAuthorizationPort,
+    private val githubApi: GithubAppApiPort,
     private val candidates: GetGithubConnectionCandidatesUseCase,
     private val issueAuthorizeUrl: IssueGithubAuthorizeUrlUseCase,
     private val issueInstallUrl: IssueGithubInstallUrlUseCase,
@@ -51,24 +53,34 @@ class GetGithubConnectionOptionsUseCase(
         val stored = userAuthorizations.findByEaUserId(userId)
             ?: return notAuthorized(userId, workspaceId)
 
-        val result = try {
-            candidates.candidatesFor(userId, workspaceId, space, stored.token)
+        // 1) 설치 목록 조회는 **사용자 토큰** 호출 — 여기의 4xx(만료·취소)만 토큰 폐기 근거로 본다(그 사용자 1건만).
+        val installationIds = try {
+            githubApi.listUserInstallationIds(stored.token)
         } catch (e: GithubApiException) {
             if (e.clientError) {
-                // 저장 토큰이 만료·취소됨 — 폐기하고 재인가로 유도.
-                userAuthorizations.deleteByGithubUserId(stored.githubUserId)
+                userAuthorizations.deleteByEaUserId(userId)
                 log.info { "stored github token invalid for user=$userId — purged, re-auth required" }
                 return notAuthorized(userId, workspaceId)
             }
-            log.warn(e) { "github connection options temporary failure for user=$userId" }
-            return Result(DiscoveryStatus.TEMPORARY_FAILURE, workspaceId, authorizeUrl = null, installUrl = null, candidates = emptyList())
+            return temporaryFailure(workspaceId, e, userId)
+        }
+        if (installationIds.isEmpty()) {
+            return Result(DiscoveryStatus.VERIFIED_EMPTY, workspaceId, authorizeUrl = null, installUrl = issueInstallUrl.invoke(userId, workspaceId), candidates = emptyList())
         }
 
-        return if (result.candidates.isEmpty()) {
-            Result(DiscoveryStatus.VERIFIED_EMPTY, workspaceId, authorizeUrl = null, installUrl = issueInstallUrl.invoke(userId, workspaceId), candidates = emptyList())
-        } else {
-            Result(DiscoveryStatus.VERIFIED_AVAILABLE, workspaceId, authorizeUrl = null, installUrl = null, candidates = result.candidates)
+        // 2) 토큰은 1)에서 유효 확인됨 — 이후 후보 조립에서 나는 GitHub 오류(설치 메타/레포 등 App·설치토큰 호출 포함)는
+        //    토큰 문제가 아니므로 폐기하지 않고 일시 장애로 본다.
+        val result = try {
+            candidates.candidatesFor(userId, workspaceId, space, stored.token, installationIds)
+        } catch (e: GithubApiException) {
+            return temporaryFailure(workspaceId, e, userId)
         }
+        return Result(DiscoveryStatus.VERIFIED_AVAILABLE, workspaceId, authorizeUrl = null, installUrl = null, candidates = result.candidates)
+    }
+
+    private fun temporaryFailure(workspaceId: Long?, e: GithubApiException, userId: Long): Result {
+        log.warn(e) { "github connection options temporary failure for user=$userId" }
+        return Result(DiscoveryStatus.TEMPORARY_FAILURE, workspaceId, authorizeUrl = null, installUrl = null, candidates = emptyList())
     }
 
     private fun notAuthorized(userId: Long, workspaceId: Long?) =

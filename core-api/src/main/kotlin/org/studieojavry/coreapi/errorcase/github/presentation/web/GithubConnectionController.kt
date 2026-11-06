@@ -159,6 +159,8 @@ class GithubConnectionController(
         ApiResponse(responseCode = "403", description = "워크스페이스 ADMIN 아님 / 게스트 / GitHub 재연결 필요(토큰 없음·만료, code=GITHUB_REAUTHORIZATION_REQUIRED)"),
         ApiResponse(responseCode = "404", description = "없는/비활성 연결 또는 접근 불가"),
         ApiResponse(responseCode = "409", description = "동시 편집 충돌(expectedVersion 불일치)"),
+        ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과(워크스페이스 repo-admin 재검증 시) — Retry-After(초) 뒤 다시 시도"),
+        ApiResponse(responseCode = "503", description = "GitHub API 사용 불가(워크스페이스 repo-admin 재검증 시)"),
     )
     @PutMapping("/connections/{connectionId}/repositories")
     fun updateRepositories(
@@ -180,6 +182,7 @@ class GithubConnectionController(
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "새로고침됨(추가·제거 레포 id 포함)"),
+        ApiResponse(responseCode = "401", description = "미인증"),
         ApiResponse(responseCode = "403", description = "게스트"),
         ApiResponse(responseCode = "404", description = "접근 가능한 연결이 없는 설치"),
         ApiResponse(responseCode = "429", description = "GitHub 호출 한도 초과 — Retry-After(초) 뒤 다시 시도"),

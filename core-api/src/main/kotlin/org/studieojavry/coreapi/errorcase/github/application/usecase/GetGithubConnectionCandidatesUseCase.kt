@@ -79,16 +79,16 @@ class GetGithubConnectionCandidatesUseCase(
                 updatedAt = now,
             ),
         )
-        return candidatesFor(command.userId, state.workspaceId, space, userToken)
+        val installationIds = githubApi.listUserInstallationIds(userToken)
+        return candidatesFor(command.userId, state.workspaceId, space, userToken, installationIds)
     }
 
     /**
-     * 유효한 **사용자 토큰**으로 접근 가능한 설치를 후보로 조립한다(code 교환과 분리) — OAuth 콜백 흐름과,
-     * 저장된 토큰을 재사용하는 흐름([GetGithubConnectionOptionsUseCase], 시나리오 ②)이 공유한다.
+     * 유효한 **사용자 토큰**으로 [installationIds] 설치를 후보로 조립한다(code 교환·설치목록 조회와 분리) — OAuth 콜백 흐름과,
+     * 저장된 토큰을 재사용하는 흐름([GetGithubConnectionOptionsUseCase], 시나리오 ②)이 공유한다. 설치목록 조회(사용자 토큰)는
+     * 호출 쪽이 먼저 하므로, 옵션 흐름은 그 호출의 4xx(토큰 무효)만 토큰 폐기로 구분할 수 있다.
      */
-    fun candidatesFor(userId: Long, workspaceId: Long?, space: GithubSpace, userToken: String): Result {
-        val installationIds = githubApi.listUserInstallationIds(userToken)
-
+    fun candidatesFor(userId: Long, workspaceId: Long?, space: GithubSpace, userToken: String, installationIds: Set<Long>): Result {
         val candidates = installationIds.map { installationId ->
             val info = githubApi.getInstallation(installationId)
             val grant = githubApi.listInstallationRepositories(installationId)

@@ -2,8 +2,10 @@ package org.studieojavry.coreapi.errorcase.case.infrastructure.jpa
 
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.entity.ErrorCaseEntity
 
 
@@ -12,20 +14,18 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
     @Query("SELECT e.ownerUserId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findOwnerUserIdById(@Param("id") id: Long): Long?
 
-    /**
-     * 데모 게스트 개인 케이스 id — 개인(workspaceId null) **AND 지정 데모 태그 보유분만**. id ASC.
-     *
-     * ⚠️ 2026-10-19 인시던트: 과거 `findIdsWithNullWorkspace` 는 소유자/태그 무관 "모든 개인 케이스"를
-     *    반환해, 야간 데모 purge 가 실사용자 개인 케이스까지 하드 삭제했다. 반드시 데모 태그로 스코프한다.
-     *    실사용자 개인 케이스는 이 태그가 없으므로 절대 선택되지 않는다.
-     */
-    @Query(
-        "SELECT e.id FROM ErrorCaseEntity e " +
-            "WHERE e.meta.workspaceId IS NULL " +
-            "AND e.id IN (SELECT t.errorCaseId FROM ErrorCaseTagEntity t WHERE t.tag = :tag) " +
-            "ORDER BY e.id ASC",
-    )
-    fun findDemoPersonalCaseIds(@Param("tag") tag: String, pageable: Pageable): List<Long>
+    @Query("SELECT e.meta.workspaceId FROM ErrorCaseEntity e WHERE e.id = :id")
+    fun findWorkspaceIdById(@Param("id") id: Long): Long?
+
+    /** 데모 시드 표식 — 엔티티 매핑에서 제외된 컬럼이라 native update 로만 기록. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE error_case SET demo_seed_version = :v WHERE id IN (:ids)", nativeQuery = true)
+    fun markDemo(@Param("ids") ids: Collection<Long>, @Param("v") seedVersion: Int): Int
+
+    /** 공개 쇼케이스(워크스페이스 없는 데모 시드) id → 시드 버전. */
+    @Query("SELECT e.id AS id, e.demoSeedVersion AS version FROM ErrorCaseEntity e WHERE e.demoSeedVersion IS NOT NULL AND e.meta.workspaceId IS NULL")
+    fun findDemoShowcase(): List<DemoSeedProjection>
 
     fun findAllByOwnerUserIdOrderByUpdatedAtDescIdDesc(
         ownerUserId: Long,
@@ -60,6 +60,7 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
         select e.ownerUserId as userId, count(e) as count
           from ErrorCaseEntity e
          where e.visibility = org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility.PUBLIC
+           and e.demoSeedVersion is null
            and e.createdAt >= :since
          group by e.ownerUserId
          order by count(e) desc
@@ -84,6 +85,7 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
             select owner_user_id
               from error_case tablesample system (2)
              where visibility = 'PUBLIC'
+               and demo_seed_version is null
              group by owner_user_id
              order by random()
              limit :lim
@@ -94,4 +96,9 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
 
     // 동적 필터 + keyset 목록 조회는 ErrorCaseRepositoryAdapter 가 Criteria API 로 구현
     // (`:param IS NULL` + null 바인드의 Postgres 타입 추론 문제 회피).
+}
+
+interface DemoSeedProjection {
+    val id: Long
+    val version: Int
 }

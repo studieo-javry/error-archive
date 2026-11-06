@@ -22,6 +22,12 @@ class DemoBootstrap(
         if (!props.enabled) return
         runCatching { provisioner.ensureProvisioned() }
             .onSuccess { log.info("demo workspace provisioned: ws={} bot={}", it.workspaceId, it.botUserId) }
-            .onFailure { log.warn("demo workspace provisioning deferred (will retry on login/schedule): {}", it.message) }
+            .onFailure {
+                if (it is DemoIdentityConflictException) {
+                    log.error("demo DISABLED — demo name taken by a member account/workspace: {}", it.message)
+                } else {
+                    log.warn("demo workspace provisioning deferred (will retry on login/schedule): {}", it.message)
+                }
+            }
     }
 }

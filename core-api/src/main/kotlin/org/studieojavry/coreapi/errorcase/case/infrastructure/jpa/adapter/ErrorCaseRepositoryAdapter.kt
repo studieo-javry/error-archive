@@ -41,8 +41,15 @@ class ErrorCaseRepositoryAdapter(
     override fun findOwnerUserIdById(errorCaseId: Long): Long? =
         errorCaseRepo.findOwnerUserIdById(errorCaseId)
 
-    override fun findDemoGuestPersonalCaseIds(tag: String, limit: Int): List<Long> =
-        errorCaseRepo.findDemoPersonalCaseIds(tag, PageRequest.of(0, limit))
+    override fun findWorkspaceIdById(errorCaseId: Long): Long? =
+        errorCaseRepo.findWorkspaceIdById(errorCaseId)
+
+    override fun markDemo(errorCaseIds: Collection<Long>, seedVersion: Int) {
+        if (errorCaseIds.isNotEmpty()) errorCaseRepo.markDemo(errorCaseIds, seedVersion)
+    }
+
+    override fun findDemoShowcase(): Map<Long, Int> =
+        errorCaseRepo.findDemoShowcase().associate { it.id to it.version }
 
     override fun deleteById(errorCaseId: Long) = errorCaseRepo.deleteById(errorCaseId)
 
@@ -253,6 +260,7 @@ class ErrorCaseRepositoryAdapter(
             descriptionRaw = description,
             resolvedAt = resolvedAt,
             resolvedByUserId = resolvedByUserId,
+            demo = demoSeedVersion != null,
         )
     }
 
@@ -369,6 +377,7 @@ class ErrorCaseRepositoryAdapter(
             updatedAt = updatedAt,
             resolvedAt = resolvedAt,
             resolvedByUserId = resolvedByUserId,
+            demo = demoSeedVersion != null,
         )
     }
 }

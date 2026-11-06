@@ -28,6 +28,8 @@ data class ErrorCaseDetailResponse(
     val meToo: MeTooDto,
     /** viewer 본인이 이 케이스를 watchlist 에 담고 있는지. FE 별(Watch) 상태 초기화용. */
     val watchedByMe: Boolean,
+    /** 데모 시드가 만든 케이스 — FE 가 "데모" 배지로 표시. */
+    val demo: Boolean = false,
 ) {
     /** "나도 겪었어요" — count + viewer 본인의 표시 여부 + 누른 사용자 ID 목록(최신 30명). */
     data class MeTooDto(
@@ -142,6 +144,7 @@ data class ErrorCaseDetailResponse(
             },
             meToo = meToo,
             watchedByMe = watchedByMe,
+            demo = c.demo,
         )
     }
 }

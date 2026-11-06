@@ -12,6 +12,7 @@ import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import org.springframework.http.HttpStatus
+import org.springframework.security.core.Authentication
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.studieojavry.coreapi.demo.application.DemoGuestWritePolicy
 import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentPresigner
 import org.studieojavry.coreapi.errorcase.attachment.config.PresignTtlProperties
 import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCaseCommand
@@ -89,6 +91,7 @@ class ErrorCaseController(
     private val attachmentPresigner: AttachmentPresigner,
     private val presignTtl: PresignTtlProperties,
     private val findSimilarCasesUseCase: FindSimilarCasesUseCase,
+    private val demoGuestWritePolicy: DemoGuestWritePolicy,
 ) {
 
     /**
@@ -114,6 +117,7 @@ class ErrorCaseController(
             **권한**
             - `workspaceId` 지정 시: 그 워크스페이스의 **WRITE 이상** 역할 필요(없거나 READ 면 403).
             - `workspaceId` 미지정 시: 본인 개인 케이스로 생성.
+            - 게스트(둘러보기)는 **데모 워크스페이스에만** 생성 가능(개인·다른 워크스페이스는 403).
 
             **검증**
             - `paste` 에서 예외 클래스/메시지/스택트레이스를 추출, fingerprint(SHA-256) 자동 생성.
@@ -135,7 +139,7 @@ class ErrorCaseController(
         ),
         ApiResponse(responseCode = "401", description = "인증 실패(X-Internal-Auth 없음/위조/만료)", content = [Content()]),
         ApiResponse(
-            responseCode = "403", description = "워크스페이스 비멤버 또는 READ 권한(쓰기 불가)",
+            responseCode = "403", description = "워크스페이스 비멤버 또는 READ 권한(쓰기 불가), 게스트의 데모 워크스페이스 밖 생성",
             content = [Content(examples = [ExampleObject(value = """
                 {"type":"about:blank","title":"Forbidden","status":403,"detail":"WRITE role required to create an error case in workspace 1 (current=READ)","instance":"/api/v1/error-cases"}
             """)])]
@@ -145,8 +149,12 @@ class ErrorCaseController(
     @ResponseStatus(HttpStatus.CREATED)
     fun create(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
-        @Valid @RequestBody request: CreateErrorCaseRequest
+        @Valid @RequestBody request: CreateErrorCaseRequest,
+        @Parameter(hidden = true) authentication: Authentication,
     ): CreateErrorCaseResponse {
+        if (demoGuestWritePolicy.isGuest(authentication) && !demoGuestWritePolicy.canCreateIn(request.workspaceId)) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "guests can only create cases in the demo workspace")
+        }
         val result = try {
             createErrorCaseUseCase.invoke(
                 CreateErrorCaseCommand(

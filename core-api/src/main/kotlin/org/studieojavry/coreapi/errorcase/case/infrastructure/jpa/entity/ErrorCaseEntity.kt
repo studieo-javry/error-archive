@@ -68,4 +68,11 @@ class ErrorCaseEntity(
 
     @Column(name = "resolved_by_user_id")
     var resolvedByUserId: Long? = null,
+
+    /**
+     * 데모 시드 버전 — null 이 아니면 데모 시드 케이스("데모" 배지). 시드 경로만 bulk update(`markDemo`) 로 기록하고,
+     * 일반 저장/수정(도메인 → 새 엔티티 merge)은 이 컬럼을 덮어쓰지 않도록 insert/update 에서 제외한다.
+     */
+    @Column(name = "demo_seed_version", insertable = false, updatable = false)
+    var demoSeedVersion: Int? = null,
 )

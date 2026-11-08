@@ -13,6 +13,7 @@ import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
+import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import java.time.Instant
@@ -183,6 +184,50 @@ class CaptureSessionLinkEntity(
 
     @Column(name = "capture_id", nullable = false)
     var captureId: Long,
+)
+
+@Entity
+@Table(
+    name = "capture_artifact",
+    uniqueConstraints = [
+        UniqueConstraint(name = "uq_capture_artifact_client_id", columnNames = ["capture_id", "client_artifact_id"]),
+    ],
+    indexes = [Index(name = "ix_capture_artifact_capture", columnList = "capture_id")],
+)
+class CaptureArtifactEntity(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    var id: Long? = null,
+
+    @Column(name = "capture_id", nullable = false)
+    var captureId: Long,
+
+    @Column(name = "client_artifact_id", nullable = false, length = 200)
+    var clientArtifactId: String,
+
+    @Column(name = "object_key", nullable = false, length = 300)
+    var objectKey: String,
+
+    @Column(name = "sha256", nullable = false, length = 64)
+    var sha256: String,
+
+    @Column(name = "content_type", nullable = false, length = 100)
+    var contentType: String,
+
+    @Column(name = "size_bytes", nullable = false)
+    var sizeBytes: Long,
+
+    @Column(name = "file_name", length = 300)
+    var fileName: String? = null,
+
+    @Column(name = "uploader_user_id", nullable = false)
+    var uploaderUserId: Long,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: ArtifactStatus,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant,
 )
 
 @Entity

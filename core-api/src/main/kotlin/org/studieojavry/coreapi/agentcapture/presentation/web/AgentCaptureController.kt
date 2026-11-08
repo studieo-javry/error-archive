@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -15,7 +16,10 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddAttemptCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddAttemptUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddSolutionCommand
@@ -31,8 +35,11 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCapture
 import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.UpdateAttemptCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.UpdateAttemptUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.UploadArtifactCommand
+import org.studieojavry.coreapi.agentcapture.application.usecase.UploadCaptureArtifactUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddAttemptRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddSolutionRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AttemptResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureDetailResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
@@ -61,6 +68,7 @@ class AgentCaptureController(
     private val updateAttempt: UpdateAttemptUseCase,
     private val addSolution: AddSolutionUseCase,
     private val completeCapture: CompleteCaptureUseCase,
+    private val uploadArtifact: UploadCaptureArtifactUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
@@ -148,7 +156,46 @@ class AgentCaptureController(
             capture = CaptureResponse.from(view.capture),
             attempts = view.attempts.map(AttemptResponse::from),
             solutions = view.solutions.map(SolutionResponse::from),
+            artifacts = view.artifacts.map(ArtifactResponse::from),
         )
+    }
+
+    @Operation(
+        summary = "근거 첨부 업로드(multipart)",
+        description = """
+            로컬 파일을 실제로 전송해 Capture 근거로 저장한다(로컬 경로 문자열만 보내는 것 금지).
+            허용: PNG/JPEG/WebP, UTF-8 텍스트·로그·diff, JSON. 파일당 10 MiB, Capture당 20개·총 50 MiB.
+            멱등: 같은 clientArtifactId·같은 내용은 기존 첨부 반환(200), 다른 내용은 409. OPEN 에서만.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "201", description = "업로드됨"),
+        ApiResponse(responseCode = "200", description = "동일 첨부 재업로드(멱등)"),
+        ApiResponse(responseCode = "409", description = "같은 clientArtifactId·다른 해시 / 봉인", content = [Content()]),
+        ApiResponse(responseCode = "413", description = "파일/총량 한도 초과", content = [Content()]),
+        ApiResponse(responseCode = "415", description = "허용되지 않은 형식(SVG/HTML/실행/압축)", content = [Content()]),
+    )
+    @PostMapping("/captures/{captureUuid}/artifacts", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun uploadArtifact(
+        principal: AgentPrincipal,
+        @PathVariable captureUuid: UUID,
+        @RequestParam("clientArtifactId") clientArtifactId: String,
+        @RequestPart("file") file: MultipartFile,
+    ): ResponseEntity<ArtifactResponse> {
+        principal.requireScope(AgentScopes.ARTIFACT_WRITE)
+        val contentType = file.contentType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val outcome = uploadArtifact.invoke(
+            UploadArtifactCommand(
+                captureUuid = captureUuid,
+                ownerUserId = principal.userId,
+                clientArtifactId = clientArtifactId,
+                declaredContentType = contentType,
+                fileName = file.originalFilename?.takeIf { it.isNotBlank() },
+                bytes = file.bytes,
+            )
+        )
+        val status = if (outcome.deduplicated) 200 else 201
+        return ResponseEntity.status(status).body(ArtifactResponse.from(outcome.artifact))
     }
 
     @Operation(summary = "OPEN 초안 기본 정보 수정", description = "expectedRevision 불일치 → 409. title/project/content 전체 교체.")

@@ -295,6 +295,40 @@ class GithubConnectionFlowIntegrationTest {
     }
 
     @Test
+    fun `connection-options - refresh 가 일시 장애(비-clientError)면 토큰 보존하고 TEMPORARY_FAILURE`() {
+        saveExpiringToken(uid = 73, githubUserId = 90073, token = "utok-73", refreshToken = "rtok-73")
+        Mockito.`when`(githubApi.refreshUserToken("rtok-73"))
+            .thenThrow(GithubApiException("github 5xx", clientError = false)) // 일시 장애
+
+        val body = connectionOptions(uid = 73)
+        assertEquals("TEMPORARY_FAILURE", body["status"].asText())
+        // 토큰 문제가 아니라 GitHub 장애 → 폐기하지 않음(다음 시도에 갱신 재시도).
+        val stored = userAuthorizations.findByEaUserId(73)
+        assertNotNull(stored)
+        assertEquals("utok-73", stored.token) // 그대로
+        Mockito.verify(githubApi, Mockito.never()).listUserInstallationIds(Mockito.anyString())
+    }
+
+    @Test
+    fun `connection-options - 갱신은 됐지만 새 토큰 설치조회가 4xx 면 안전망으로 폐기하고 NOT_AUTHORIZED`() {
+        saveExpiringToken(uid = 74, githubUserId = 90074, token = "utok-74", refreshToken = "rtok-74")
+        val now = Instant.now()
+        Mockito.`when`(githubApi.refreshUserToken("rtok-74")).thenReturn(
+            GithubAppApiPort.UserAccessToken(
+                token = "utok-74b", refreshToken = "rtok-74b",
+                expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+            ),
+        )
+        // 갱신 직후 새 토큰이 곧바로 취소된 드문 경우 — 설치 조회가 4xx → 기존 폐기 경로(안전망).
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-74b"))
+            .thenThrow(GithubApiException("bad credentials", clientError = true))
+
+        val body = connectionOptions(uid = 74)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assertEquals(null, userAuthorizations.findByEaUserId(74)) // 안전망 폐기
+    }
+
+    @Test
     fun `connection-options - refresh 토큰이 있어도 만료 전이면 갱신 없이 저장 토큰으로 조회`() {
         val now = Instant.now()
         userAuthorizations.save(

@@ -6,12 +6,15 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubAppApiPort
 import org.studieojavry.coreapi.errorcase.github.application.port.GithubConnectionRepositoryPort
+import org.studieojavry.coreapi.errorcase.github.application.port.GithubUserAuthorizationPort
 import org.studieojavry.coreapi.errorcase.github.config.ConditionalOnGithubEnabled
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubConnection
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubInstallation
 import org.studieojavry.coreapi.errorcase.github.domain.model.GithubRepository
+import org.studieojavry.coreapi.errorcase.github.domain.model.GithubUserAuthorization
 import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubSpace
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceQueryPort
+import java.time.Clock
 import java.time.Instant
 
 /**
@@ -27,6 +30,9 @@ import java.time.Instant
  * 되돌리거나 새 grant 를 자동 추가하면 안 되므로(지시서 §1). 공간별 명시 선택·변경은 candidates→connections 흐름과
  * `PUT /connections/{id}/repositories` 가 담당한다(레거시 one-shot 부트스트랩은 2차에서 명시 선택으로 대체 예정).
  *
+ * Flow A(OAuth 후보)와 통일 — 설치에 쓴 **사용자 인가도 저장**(암호화)해 시나리오 ②(재이동 없는 재연결)를 Flow B 연결에도
+ * 준다. refresh 토큰은 "6개월 기억" 동의(state.remember) 시에만 보관(기본 미동의=단명 토큰만=B).
+ *
  * GitHub 호출(느림)은 트랜잭션 밖, 저장만 짧은 트랜잭션으로.
  */
 @Component
@@ -36,8 +42,10 @@ class CompleteGithubInstallationUseCase(
     private val githubApi: GithubAppApiPort,
     private val installationSyncer: GithubInstallationSyncer,
     private val connections: GithubConnectionRepositoryPort,
+    private val userAuthorizations: GithubUserAuthorizationPort,
     private val workspaceQuery: WorkspaceQueryPort,
     transactionManager: PlatformTransactionManager,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val log = KotlinLogging.logger {}
     private val tx = TransactionTemplate(transactionManager)
@@ -57,10 +65,27 @@ class CompleteGithubInstallationUseCase(
         // 발급 이후 권한이 바뀌었을 수 있어 완료 시점에 다시 확인.
         state.workspaceId?.let { requireWorkspaceAdmin(workspaceQuery, command.userId, it) }
 
-        val userToken = githubApi.exchangeUserCode(command.code).token
-        if (command.installationId !in githubApi.listUserInstallationIds(userToken)) {
+        val userToken = githubApi.exchangeUserCode(command.code)
+        if (command.installationId !in githubApi.listUserInstallationIds(userToken.token)) {
             throw GithubInstallationNotOwnedException("이 GitHub 계정으로 접근할 수 없는 설치입니다: ${command.installationId}")
         }
+        // Flow A(후보)와 통일 — 설치 완료 사용자의 인가도 저장해 시나리오 ②(재이동 없는 재연결)를 Flow B 연결에도 제공한다.
+        // refresh 토큰·만료는 "6개월 기억" 동의(state.remember) 시에만 저장(기본 미동의=단명 토큰만=B). GitHub 숫자 id 로 revoked 웹훅과 잇는다.
+        val ghUser = githubApi.getAuthenticatedUser(userToken.token)
+        val now = Instant.now(clock)
+        userAuthorizations.save(
+            GithubUserAuthorization(
+                eaUserId = command.userId,
+                githubUserId = ghUser.id,
+                githubLogin = ghUser.login,
+                token = userToken.token,
+                createdAt = now,
+                updatedAt = now,
+                refreshToken = if (state.remember) userToken.refreshToken else null,
+                expiresAt = if (state.remember) userToken.expiresAt else null,
+                refreshTokenExpiresAt = if (state.remember) userToken.refreshTokenExpiresAt else null,
+            ),
+        )
         val info = githubApi.getInstallation(command.installationId)
         val repos = githubApi.listInstallationRepositories(command.installationId)
         val space: GithubSpace = state.workspaceId?.let(GithubSpace::Workspace) ?: GithubSpace.Personal(command.userId)

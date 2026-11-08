@@ -87,7 +87,7 @@ class GetGithubConnectionOptionsUseCase(
             return temporaryFailure(workspaceId, e, userId)
         }
         if (installationIds.isEmpty()) {
-            return Result(DiscoveryStatus.VERIFIED_EMPTY, workspaceId, authorizeUrl = null, installUrl = issueInstallUrl.invoke(userId, workspaceId), candidates = emptyList())
+            return Result(DiscoveryStatus.VERIFIED_EMPTY, workspaceId, authorizeUrl = null, installUrl = issueInstallUrl.invoke(userId, workspaceId, remember), candidates = emptyList())
         }
 
         // 2) 토큰은 1)에서 유효 확인됨 — 이후 후보 조립에서 나는 GitHub 오류(설치 메타/레포 등 App·설치토큰 호출 포함)는

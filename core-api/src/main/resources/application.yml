@@ -87,6 +87,11 @@ core:
     issue-import:
       enabled: ${CORE_GITHUB_ISSUE_IMPORT_ENABLED:false}
 
+  # Sentry 연동(Inbound 감지 → Case 후보). 기본 꺼짐. 켜면 client-secret 비었거나 미해소면 부팅 중단(fail-fast).
+  sentry:
+    enabled: ${CORE_SENTRY_ENABLED:false}
+    client-secret: ${CORE_SENTRY_CLIENT_SECRET:}
+
 # 알림 publisher 기본값 — 명시 안 하면 `http` (직접 RestClient). local 은 yml override 로 kafka.
 # default 가 없으면 어느 adapter 도 활성화되지 않아 createCommentUseCase 가 깨진다.
 noti:

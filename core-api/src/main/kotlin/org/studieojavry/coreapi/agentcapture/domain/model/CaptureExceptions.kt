@@ -23,3 +23,20 @@ class IdempotencyConflictException(val key: String) :
  */
 class UnknownAttemptReferenceException(val captureUuid: UUID, val clientAttemptId: String) :
     RuntimeException("solution references unknown attempt '$clientAttemptId' in $captureUuid")
+
+/** 허용되지 않은 첨부 형식(SVG/HTML/실행/압축 등) → 415. */
+class UnsupportedArtifactException(message: String) : RuntimeException(message)
+
+/** 파일 또는 Capture 총량 한도 초과 → 413. */
+class ArtifactTooLargeException(message: String) : RuntimeException(message)
+
+/** 같은 clientArtifactId 인데 다른 해시 → 409. */
+class ArtifactHashMismatchException(val clientArtifactId: String) :
+    RuntimeException("artifact '$clientArtifactId' already exists with a different hash")
+
+/**
+ * complete 시 참조한 근거(evidenceRef)가 아직 업로드되지 않았거나 누락 → 422 EVIDENCE_NOT_READY.
+ * 사용자는 필요 없는 근거를 제외한 뒤 완료할 수 있다(웹 검토 경로, PR4).
+ */
+class EvidenceNotReadyException(val captureUuid: UUID, val missingRefs: List<String>) :
+    RuntimeException("evidence not ready for $captureUuid: missing=$missingRefs")

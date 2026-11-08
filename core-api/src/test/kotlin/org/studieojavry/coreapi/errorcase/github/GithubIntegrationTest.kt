@@ -109,7 +109,7 @@ class GithubIntegrationTest {
     }
 
     private fun stubGithub(installationId: Long, code: String, repos: List<GithubAppApiPort.RepositoryInfo>) {
-        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$code")
+        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(GithubAppApiPort.UserAccessToken("utok-$code"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$code")).thenReturn(setOf(installationId))
         Mockito.`when`(githubApi.getInstallation(installationId))
             .thenReturn(GithubAppApiPort.InstallationInfo(installationId, "acme-$installationId", "Organization"))

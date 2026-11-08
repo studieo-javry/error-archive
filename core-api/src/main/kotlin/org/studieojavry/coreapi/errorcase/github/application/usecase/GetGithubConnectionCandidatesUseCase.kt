@@ -67,20 +67,24 @@ class GetGithubConnectionCandidatesUseCase(
 
         val userToken = githubApi.exchangeUserCode(command.code)
         // 재연결 시 GitHub 재이동 없이 쓰려고 사용자 토큰을 암호화 저장(어댑터가 암호화). GitHub 숫자 id 로 revoked 웹훅과 잇는다.
-        val ghUser = githubApi.getAuthenticatedUser(userToken)
+        // App 이 토큰 만료를 켰다면 refresh 토큰·만료도 함께 저장해 만료 전 갱신할 수 있게 한다(없으면 null — 무기한 토큰).
+        val ghUser = githubApi.getAuthenticatedUser(userToken.token)
         val now = Instant.now(clock)
         userAuthorizations.save(
             GithubUserAuthorization(
                 eaUserId = command.userId,
                 githubUserId = ghUser.id,
                 githubLogin = ghUser.login,
-                token = userToken,
+                token = userToken.token,
                 createdAt = now,
                 updatedAt = now,
+                refreshToken = userToken.refreshToken,
+                expiresAt = userToken.expiresAt,
+                refreshTokenExpiresAt = userToken.refreshTokenExpiresAt,
             ),
         )
-        val installationIds = githubApi.listUserInstallationIds(userToken)
-        return candidatesFor(command.userId, state.workspaceId, space, userToken, installationIds)
+        val installationIds = githubApi.listUserInstallationIds(userToken.token)
+        return candidatesFor(command.userId, state.workspaceId, space, userToken.token, installationIds)
     }
 
     /**

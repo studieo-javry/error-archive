@@ -99,7 +99,7 @@ class GithubConnectionFlowIntegrationTest {
         userPerms: List<GithubAppApiPort.UserRepositoryInfo> =
             repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
     ) {
-        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$uid")
+        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(GithubAppApiPort.UserAccessToken("utok-$uid"))
         Mockito.`when`(githubApi.getAuthenticatedUser("utok-$uid"))
             .thenReturn(GithubAppApiPort.GithubUserIdentity(90000 + uid, "user-$uid"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))

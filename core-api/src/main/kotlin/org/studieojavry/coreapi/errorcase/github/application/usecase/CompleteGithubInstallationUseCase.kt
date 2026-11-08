@@ -57,7 +57,7 @@ class CompleteGithubInstallationUseCase(
         // 발급 이후 권한이 바뀌었을 수 있어 완료 시점에 다시 확인.
         state.workspaceId?.let { requireWorkspaceAdmin(workspaceQuery, command.userId, it) }
 
-        val userToken = githubApi.exchangeUserCode(command.code)
+        val userToken = githubApi.exchangeUserCode(command.code).token
         if (command.installationId !in githubApi.listUserInstallationIds(userToken)) {
             throw GithubInstallationNotOwnedException("이 GitHub 계정으로 접근할 수 없는 설치입니다: ${command.installationId}")
         }

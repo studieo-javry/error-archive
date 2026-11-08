@@ -55,21 +55,40 @@ class InternalTokenIssuer(
     /** 재사용 윈도우: TTL 에서 여유분을 뺀 만큼(최소 1초). 이 시간이 지나면 다시 서명한다. */
     private val reuseWindowSeconds: Long = (ttlSeconds - refreshMarginSeconds).coerceAtLeast(1)
 
-    fun issue(subject: String, audience: String, roles: List<String>): String {
+    /**
+     * @param connectionId agent 연결 토큰 경로에서만 사용. 비사용자(agent) principal 의 연결 식별자를
+     *        `cid` 클레임으로 실어 downstream 이 연결별 범위(ProjectBinding)를 판정하게 한다. 사용자
+     *        JWT 경로에선 null → 클레임 미포함(기존 토큰과 바이트 동일, 캐시 재사용 영향 없음).
+     * @param scopes agent 토큰의 세분 권한(capture:write 등). `scp` 클레임으로 전달. 비면 미포함.
+     */
+    fun issue(
+        subject: String,
+        audience: String,
+        roles: List<String>,
+        connectionId: String? = null,
+        scopes: List<String> = emptyList(),
+    ): String {
         val now = Instant.now()
-        if (!cacheEnabled) return sign(subject, audience, roles, now)
+        if (!cacheEnabled) return sign(subject, audience, roles, connectionId, scopes, now)
 
-        val key = cacheKey(subject, audience, roles)
+        val key = cacheKey(subject, audience, roles, connectionId, scopes)
         cache[key]?.let { if (now.isBefore(it.refreshAt)) return it.token }
 
         // 미스이거나 만료 임박 → 새로 서명하고 캐시 갱신.
-        val token = sign(subject, audience, roles, now)
+        val token = sign(subject, audience, roles, connectionId, scopes, now)
         cache[key] = CachedToken(token, now.plusSeconds(reuseWindowSeconds))
         if (cache.size > maxCacheEntries) evictStale(now)
         return token
     }
 
-    private fun sign(subject: String, audience: String, roles: List<String>, now: Instant): String {
+    private fun sign(
+        subject: String,
+        audience: String,
+        roles: List<String>,
+        connectionId: String?,
+        scopes: List<String>,
+        now: Instant,
+    ): String {
         val header = JWSHeader.Builder(JWSAlgorithm.RS256)
             .keyID(keyId)
             .type(JOSEObjectType.JWT)
@@ -82,16 +101,29 @@ class InternalTokenIssuer(
             .expirationTime(Date.from(now.plusSeconds(ttlSeconds)))
             .jwtID(UUID.randomUUID().toString())
             .claim("roles", roles)
+            .apply {
+                if (connectionId != null) claim(CLAIM_CONNECTION_ID, connectionId)
+                if (scopes.isNotEmpty()) claim(CLAIM_SCOPES, scopes)
+            }
             .build()
         return SignedJWT(header, claims).apply { sign(signer) }.serialize()
     }
 
-    /** roles 순서에 무관하도록 정렬. 값에 등장하지 않는 제어문자를 구분자로 사용. */
-    private fun cacheKey(subject: String, audience: String, roles: List<String>): String =
+    /** roles/scopes 순서에 무관하도록 정렬. 값에 등장하지 않는 제어문자를 구분자로 사용. */
+    private fun cacheKey(
+        subject: String,
+        audience: String,
+        roles: List<String>,
+        connectionId: String?,
+        scopes: List<String>,
+    ): String =
         buildString {
             append(subject).append(SEP)
             append(audience).append(SEP)
             roles.sorted().joinTo(this, ROLE_SEP)
+            append(SEP).append(connectionId ?: "")
+            append(SEP)
+            scopes.sorted().joinTo(this, ROLE_SEP)
         }
 
     /** 상한 초과 시 재서명 시점이 지난(어차피 다시 서명될) 엔트리를 제거해 증가를 억제. */
@@ -104,6 +136,10 @@ class InternalTokenIssuer(
     companion object {
         const val DEFAULT_REFRESH_MARGIN_SECONDS = 10L
         const val DEFAULT_MAX_CACHE_ENTRIES = 10_000
+        /** agent 연결 식별자(비사용자 principal) 클레임. */
+        const val CLAIM_CONNECTION_ID = "cid"
+        /** agent 세분 권한 클레임(capture:write 등). */
+        const val CLAIM_SCOPES = "scp"
         private const val SEP = '\u001f'       // Unit Separator
         private const val ROLE_SEP = "\u001e"  // Record Separator
     }

@@ -63,6 +63,46 @@ class InternalTokenRoundTripTest {
     }
 
     @Test
+    fun `agent token carries connectionId and scopes as cid scp claims`() {
+        val token = issuer.issue(
+            subject = "777",
+            audience = "core-api",
+            roles = emptyList(),
+            connectionId = "conn-abc",
+            scopes = listOf("capture:write", "case:read"),
+        )
+        val request = MockHttpServletRequest().apply {
+            addHeader(InternalTokenAuthenticationFilter.HEADER_NAME, token)
+        }
+        val chain = CapturingChain()
+
+        filter("core-api").doFilter(request, MockHttpServletResponse(), chain)
+
+        val auth = chain.captured
+        assertTrue(auth is InternalAuthentication)
+        assertEquals(777L, auth.principal)
+        assertEquals("conn-abc", auth.connectionId)
+        assertEquals(listOf("capture:write", "case:read"), auth.scopes)
+        assertTrue(auth.authorities.any { it.authority == "SCOPE_capture:write" })
+        assertTrue(auth.authorities.any { it.authority == "SCOPE_case:read" })
+    }
+
+    @Test
+    fun `user token without cid scp yields null connectionId and empty scopes`() {
+        val token = issuer.issue(subject = "12345", audience = "core-api", roles = listOf("USER"))
+        val request = MockHttpServletRequest().apply {
+            addHeader(InternalTokenAuthenticationFilter.HEADER_NAME, token)
+        }
+        val chain = CapturingChain()
+
+        filter("core-api").doFilter(request, MockHttpServletResponse(), chain)
+
+        val auth = chain.captured as InternalAuthentication
+        assertNull(auth.connectionId)
+        assertTrue(auth.scopes.isEmpty())
+    }
+
+    @Test
     fun `wrong audience is rejected with 401`() {
         val token = issuer.issue(subject = "12345", audience = "iam-api", roles = emptyList())
         val request = MockHttpServletRequest().apply {

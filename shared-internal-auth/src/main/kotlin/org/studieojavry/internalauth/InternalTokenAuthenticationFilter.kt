@@ -91,9 +91,13 @@ class InternalTokenAuthenticationFilter(
         val userId = claims.subject?.toLongOrNull()
             ?: throw IllegalArgumentException("missing/invalid sub")
         val roles = runCatching { claims.getStringListClaim("roles") }.getOrNull().orEmpty()
-        val authorities = roles.map { SimpleGrantedAuthority("ROLE_$it") }
+        // agent 토큰 경로에서만 존재하는 세분 권한/연결 식별자(없으면 null/empty — 사용자 JWT 호환).
+        val connectionId = runCatching { claims.getStringClaim(InternalTokenIssuer.CLAIM_CONNECTION_ID) }.getOrNull()
+        val scopes = runCatching { claims.getStringListClaim(InternalTokenIssuer.CLAIM_SCOPES) }.getOrNull().orEmpty()
+        val authorities = roles.map { SimpleGrantedAuthority("ROLE_$it") } +
+            scopes.map { SimpleGrantedAuthority("SCOPE_$it") }
 
-        return InternalAuthentication(userId, authorities, issuer)
+        return InternalAuthentication(userId, authorities, issuer, connectionId, scopes)
     }
 
     companion object {

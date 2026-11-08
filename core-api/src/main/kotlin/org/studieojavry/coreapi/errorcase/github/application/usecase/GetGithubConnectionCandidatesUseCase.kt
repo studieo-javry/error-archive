@@ -67,9 +67,12 @@ class GetGithubConnectionCandidatesUseCase(
 
         val userToken = githubApi.exchangeUserCode(command.code)
         // 재연결 시 GitHub 재이동 없이 쓰려고 사용자 토큰을 암호화 저장(어댑터가 암호화). GitHub 숫자 id 로 revoked 웹훅과 잇는다.
-        // App 이 토큰 만료를 켰다면 refresh 토큰·만료도 함께 저장해 만료 전 갱신할 수 있게 한다(없으면 null — 무기한 토큰).
+        // "6개월 기억" 동의(state.remember)한 경우에만 refresh 토큰·만료를 함께 저장 → 만료 전 선제 갱신으로 재인가 없이 유지(A).
+        // 미동의(기본)면 access 토큰만 저장 → 약 8시간 뒤 만료되면 폐기·재인가(B). (App 만료 설정이 꺼져 refresh 토큰이 애초에
+        // 안 오면 동의해도 null — 그땐 토큰이 무기한이라 갱신이 불필요.)
         val ghUser = githubApi.getAuthenticatedUser(userToken.token)
         val now = Instant.now(clock)
+        val remember = state.remember
         userAuthorizations.save(
             GithubUserAuthorization(
                 eaUserId = command.userId,
@@ -78,9 +81,9 @@ class GetGithubConnectionCandidatesUseCase(
                 token = userToken.token,
                 createdAt = now,
                 updatedAt = now,
-                refreshToken = userToken.refreshToken,
-                expiresAt = userToken.expiresAt,
-                refreshTokenExpiresAt = userToken.refreshTokenExpiresAt,
+                refreshToken = if (remember) userToken.refreshToken else null,
+                expiresAt = if (remember) userToken.expiresAt else null,
+                refreshTokenExpiresAt = if (remember) userToken.refreshTokenExpiresAt else null,
             ),
         )
         val installationIds = githubApi.listUserInstallationIds(userToken.token)

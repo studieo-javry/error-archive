@@ -24,10 +24,12 @@ import java.time.Instant
  *
  * "설치가 없음"(VERIFIED_EMPTY)과 "인가가 안 됨"(NOT_AUTHORIZED)을 구분하는 게 핵심 — 둘을 뭉치면 FE 가 잘못 안내한다.
  *
- * 토큰 수명: GitHub App 이 사용자 토큰 만료를 켰다면 저장 토큰은 ~8h 뒤 만료되므로, 설치 조회 **전에** 만료가 임박했으면
- * refresh 토큰으로 선제 갱신한다([needsRefresh]). 이 선제 갱신이 있어야 시나리오 ②가 8h 뒤에도 재인가 없이 동작한다.
- * refresh 토큰이 만료·취소됐으면 폐기하고 NOT_AUTHORIZED. 갱신 재료가 없는 토큰(App 만료 꺼짐=무기한, V18 레거시 행)은
- * 선제 갱신을 건너뛴다. 갱신 뒤에도(또는 갱신 없이) 설치 조회가 4xx 면(취소 등) 그 토큰을 폐기하고 NOT_AUTHORIZED.
+ * 토큰 수명: 저장 토큰은 refresh 토큰이 **함께 저장돼 있을 때만** 선제 갱신한다([needsRefresh]). refresh 토큰은
+ * "6개월 기억" 동의([remember])를 한 사용자에게만 저장되므로(후보 조회 단계에서 결정), 기본(미동의)은 단명 토큰만 있어
+ * ~8h 뒤 만료되면 폐기→NOT_AUTHORIZED(재인가)로 떨어진다. 동의한 사용자는 만료 임박 시 refresh 토큰으로 선제 갱신해
+ * 시나리오 ②가 재인가 없이 이어진다. refresh 토큰이 만료·취소됐으면 폐기하고 NOT_AUTHORIZED. 갱신 뒤에도(또는 갱신 없이)
+ * 설치 조회가 4xx 면(취소 등) 그 토큰을 폐기하고 NOT_AUTHORIZED. [remember] 는 재인가가 필요할 때 authorizeUrl state 로
+ * 다시 실어 보내, 왕복 뒤 동의가 보존되게 한다.
  */
 @Component
 @ConditionalOnGithubEnabled
@@ -55,18 +57,18 @@ class GetGithubConnectionOptionsUseCase(
         val candidates: List<GetGithubConnectionCandidatesUseCase.Candidate>,
     )
 
-    fun invoke(userId: Long, workspaceId: Long?): Result {
+    fun invoke(userId: Long, workspaceId: Long?, remember: Boolean = false): Result {
         workspaceId?.let { requireWorkspaceAdmin(workspaceQuery, userId, it) }
         val space: GithubSpace = workspaceId?.let(GithubSpace::Workspace) ?: GithubSpace.Personal(userId)
 
         val found = userAuthorizations.findByEaUserId(userId)
-            ?: return notAuthorized(userId, workspaceId)
+            ?: return notAuthorized(userId, workspaceId, remember)
 
         // 0) 만료 임박이면 설치 조회 전에 선제 갱신(App 이 토큰 만료를 켠 경우). 갱신 재료 없으면 그대로 둔다.
         val stored = if (found.needsRefresh(Instant.now(clock), REFRESH_MARGIN)) {
             when (val outcome = refresh(userId, found)) {
                 is Refreshed -> outcome.authorization
-                Reauthorize -> return notAuthorized(userId, workspaceId)
+                Reauthorize -> return notAuthorized(userId, workspaceId, remember)
                 is Transient -> return temporaryFailure(workspaceId, outcome.cause, userId)
             }
         } else {
@@ -80,7 +82,7 @@ class GetGithubConnectionOptionsUseCase(
             if (e.clientError) {
                 userAuthorizations.deleteByEaUserId(userId)
                 log.info { "stored github token invalid for user=$userId — purged, re-auth required" }
-                return notAuthorized(userId, workspaceId)
+                return notAuthorized(userId, workspaceId, remember)
             }
             return temporaryFailure(workspaceId, e, userId)
         }
@@ -103,8 +105,8 @@ class GetGithubConnectionOptionsUseCase(
         return Result(DiscoveryStatus.TEMPORARY_FAILURE, workspaceId, authorizeUrl = null, installUrl = null, candidates = emptyList())
     }
 
-    private fun notAuthorized(userId: Long, workspaceId: Long?) =
-        Result(DiscoveryStatus.NOT_AUTHORIZED, workspaceId, authorizeUrl = issueAuthorizeUrl.invoke(userId, workspaceId), installUrl = null, candidates = emptyList())
+    private fun notAuthorized(userId: Long, workspaceId: Long?, remember: Boolean) =
+        Result(DiscoveryStatus.NOT_AUTHORIZED, workspaceId, authorizeUrl = issueAuthorizeUrl.invoke(userId, workspaceId, remember), installUrl = null, candidates = emptyList())
 
     /**
      * refresh 토큰으로 사용자 토큰을 갱신하고 새 토큰(+회전된 refresh 토큰·만료)을 저장한다. GitHub 가 refresh 토큰을

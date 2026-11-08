@@ -98,8 +98,10 @@ class GithubConnectionFlowIntegrationTest {
         // 기본: 모든 레포에 사용자 admin 권한(개인·워크스페이스 모두 선택 가능). 권한 정책 테스트는 명시 전달.
         userPerms: List<GithubAppApiPort.UserRepositoryInfo> =
             repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
+        // 기본 교환 토큰은 refresh 없음. remember 게이팅 테스트는 refresh 포함 토큰을 명시 전달(.token 은 "utok-$uid" 유지).
+        token: GithubAppApiPort.UserAccessToken = GithubAppApiPort.UserAccessToken("utok-$uid"),
     ) {
-        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(GithubAppApiPort.UserAccessToken("utok-$uid"))
+        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(token)
         Mockito.`when`(githubApi.getAuthenticatedUser("utok-$uid"))
             .thenReturn(GithubAppApiPort.GithubUserIdentity(90000 + uid, "user-$uid"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))
@@ -109,18 +111,19 @@ class GithubConnectionFlowIntegrationTest {
         Mockito.`when`(githubApi.listUserInstallationRepositories("utok-$uid", installationId)).thenReturn(userPerms)
     }
 
-    /** authorize-url 엔드포인트에서 서명된 state 를 뽑는다(개인 연결). */
-    private fun authorizeState(uid: Long, workspaceId: Long? = null): String {
+    /** authorize-url 엔드포인트에서 서명된 state 를 뽑는다(개인 연결). remember=true 면 "6개월 기억" 동의를 state 에 싣는다. */
+    private fun authorizeState(uid: Long, workspaceId: Long? = null, remember: Boolean = false): String {
         val req = get("/api/v1/integrations/github/authorize-url").with(asUser(uid))
         workspaceId?.let { req.param("workspaceId", it.toString()) }
+        if (remember) req.param("remember", "true")
         val url = om.readTree(mvc.perform(req).andExpect(status().isOk).andReturn().response.contentAsString)["url"].asText()
         assert(url.startsWith("https://github.com/login/oauth/authorize?client_id=cid&state=")) { url }
         return url.substringAfter("state=")
     }
 
     /** connection-candidates 호출 → 지정 설치의 candidateToken 반환. */
-    private fun candidateToken(uid: Long, installationId: Long, code: String, workspaceId: Long? = null): String {
-        val state = authorizeState(uid, workspaceId)
+    private fun candidateToken(uid: Long, installationId: Long, code: String, workspaceId: Long? = null, remember: Boolean = false): String {
+        val state = authorizeState(uid, workspaceId, remember)
         val body = mvc.perform(
             post("/api/v1/integrations/github/connection-candidates").with(asUser(uid))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -181,6 +184,40 @@ class GithubConnectionFlowIntegrationTest {
         assertEquals(90044, stored.githubUserId) // getAuthenticatedUser 로 잡은 GitHub 숫자 id → revoked 웹훅 매칭 키
         assertEquals("utok-44", stored.token) // 어댑터가 복호화해 돌려준 평문(DB 에는 ciphertext+iv 만)
         assertEquals("user-44", stored.githubLogin)
+    }
+
+    /** refresh 토큰이 오는 교환 토큰(App 만료 설정 켜짐 가정). */
+    private fun tokenWithRefresh(uid: Long): GithubAppApiPort.UserAccessToken {
+        val now = Instant.now()
+        return GithubAppApiPort.UserAccessToken(
+            token = "utok-$uid", refreshToken = "rtok-$uid",
+            expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+        )
+    }
+
+    @Test
+    fun `connection-candidates - remember 미동의(기본)면 refresh 토큰을 저장하지 않는다(B)`() {
+        stubOAuth(uid = 80, installationId = 8000, code = "c80", repos = listOf(repo(1, "acme/a")), token = tokenWithRefresh(80))
+        candidateToken(uid = 80, installationId = 8000, code = "c80") // remember 기본 false
+
+        val stored = userAuthorizations.findByEaUserId(80)
+        assertNotNull(stored)
+        assertEquals("utok-80", stored.token) // access 토큰은 저장(시나리오 ② ~8h)
+        assertEquals(null, stored.refreshToken) // 미동의 → refresh 미저장 → 선제 갱신 없음(8h 뒤 재인가)
+        assertEquals(null, stored.expiresAt)
+    }
+
+    @Test
+    fun `connection-candidates - remember 동의면 refresh 토큰·만료를 저장한다(A)`() {
+        stubOAuth(uid = 81, installationId = 8100, code = "c81", repos = listOf(repo(1, "acme/a")), token = tokenWithRefresh(81))
+        candidateToken(uid = 81, installationId = 8100, code = "c81", remember = true)
+
+        val stored = userAuthorizations.findByEaUserId(81)
+        assertNotNull(stored)
+        assertEquals("utok-81", stored.token)
+        assertEquals("rtok-81", stored.refreshToken) // 동의 → refresh 보관 → 선제 갱신으로 ~6개월 유지
+        assertNotNull(stored.expiresAt)
+        assertNotNull(stored.refreshTokenExpiresAt)
     }
 
     // ── connection-options (시나리오 ②) ─────────────────────────

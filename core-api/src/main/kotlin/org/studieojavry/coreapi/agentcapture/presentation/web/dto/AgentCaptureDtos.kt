@@ -189,3 +189,17 @@ data class CaptureDetailResponse(
     val solutions: List<SolutionResponse>,
     val artifacts: List<ArtifactResponse>,
 )
+
+// ── 검토 반영(PR4) ────────────────────────────────────────────────────────────
+
+@Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록.")
+data class ReviewQueueResponse(
+    val items: List<CaptureResponse>,
+)
+
+@Schema(description = "반영 결과. caseId 는 생성된(또는 이미 생성돼 있던) ErrorCase. alreadyImported 는 멱등 재요청.")
+data class ImportCaptureResponse(
+    val captureUuid: UUID,
+    val caseId: Long,
+    val alreadyImported: Boolean,
+)

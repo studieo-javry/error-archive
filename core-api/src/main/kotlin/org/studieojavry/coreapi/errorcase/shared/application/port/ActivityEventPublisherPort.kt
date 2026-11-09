@@ -30,6 +30,12 @@ interface ActivityEventPublisherPort {
         val occurredAt: Instant,
         val idempotencyKey: String,
         val meta: Map<String, Any?>? = null,
+        /**
+         * 활동의 출처. null(=USER)이면 사람이 직접 한 활동 — 평소처럼 잔디/KPI 집계.
+         * AGENT_IMPORT 는 에이전트 초안 반영으로 생성된 활동 — consumer 가 origin 게이트로 집계에서 제외하되
+         * raw 원장엔 적재(감사·rebuild 용). 기본 null 이라 기존 발행 경로는 바이트 동일.
+         */
+        val origin: Origin? = null,
     )
 
     /** core-api 가 발행하는 type. insight-api 의 ActivityType enum 의 부분 집합. */
@@ -41,5 +47,13 @@ interface ActivityEventPublisherPort {
         COMMENT_POSTED,
         COMMENT_REACTION,
         COMMENT_HELPFUL,
+        /** 에이전트 초안을 사용자가 검토·확정(반영)한 1건 — 집계되는 유일한 "검토 기여". */
+        CAPTURE_REVIEWED,
+    }
+
+    /** 활동 출처. insight-api 의 origin 게이트와 같은 문자열로 매핑. */
+    enum class Origin {
+        USER,
+        AGENT_IMPORT,
     }
 }

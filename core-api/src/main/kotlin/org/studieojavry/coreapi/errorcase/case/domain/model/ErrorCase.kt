@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.errorcase.case.domain.model
 
 import org.studieojavry.coreapi.errorcase.attachment.domain.model.Attachment
 import org.studieojavry.coreapi.errorcase.snippet.domain.model.CodeSnippet
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorSnapshot
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
@@ -34,6 +35,12 @@ class ErrorCase private constructor(
     var resolvedByUserId: Long? = null,
     /** 데모 시드가 만든 케이스 — 읽기 전용 표식("데모" 배지). 시드 경로만 저장소에서 기록한다. */
     val demo: Boolean = false,
+    /** 출처(직접 작성 vs 에이전트 초안 반영). 기본 MANUAL. */
+    val source: ContentSource = ContentSource.MANUAL,
+    /** AGENT_IMPORT 케이스를 검토·확정한 사용자. 그 외엔 null. */
+    val reviewedByUserId: Long? = null,
+    /** 반영의 출처가 된 agent_capture 의 id(추적용). 그 외엔 null. */
+    val sourceCaptureId: Long? = null,
 ) {
     init {
         require(title.isNotBlank()) { "Title cannot be blank" }
@@ -110,7 +117,10 @@ class ErrorCase private constructor(
             snippets: List<CodeSnippet>,
             attachments: List<Attachment>,
             tags: List<String> = emptyList(),
-            occurredAt: LocalDateTime?
+            occurredAt: LocalDateTime?,
+            source: ContentSource = ContentSource.MANUAL,
+            reviewedByUserId: Long? = null,
+            sourceCaptureId: Long? = null,
         ): ErrorCase {
             val now = LocalDateTime.now()
             return ErrorCase(
@@ -128,7 +138,10 @@ class ErrorCase private constructor(
                 status = ErrorCaseStatus.OPEN,
                 occurredAt = occurredAt,
                 createdAt = now,
-                updatedAt = now
+                updatedAt = now,
+                source = source,
+                reviewedByUserId = reviewedByUserId,
+                sourceCaptureId = sourceCaptureId,
             )
         }
 
@@ -151,6 +164,9 @@ class ErrorCase private constructor(
             resolvedAt: LocalDateTime? = null,
             resolvedByUserId: Long? = null,
             demo: Boolean = false,
+            source: ContentSource = ContentSource.MANUAL,
+            reviewedByUserId: Long? = null,
+            sourceCaptureId: Long? = null,
         ): ErrorCase = ErrorCase(
             id = id,
             ownerUserId = ownerUserId,
@@ -170,6 +186,9 @@ class ErrorCase private constructor(
             resolvedAt = resolvedAt,
             resolvedByUserId = resolvedByUserId,
             demo = demo,
+            source = source,
+            reviewedByUserId = reviewedByUserId,
+            sourceCaptureId = sourceCaptureId,
         )
     }
 }

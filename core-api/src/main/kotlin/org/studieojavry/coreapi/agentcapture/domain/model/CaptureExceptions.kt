@@ -40,3 +40,14 @@ class ArtifactHashMismatchException(val clientArtifactId: String) :
  */
 class EvidenceNotReadyException(val captureUuid: UUID, val missingRefs: List<String>) :
     RuntimeException("evidence not ready for $captureUuid: missing=$missingRefs")
+
+/**
+ * 반영(import)은 봉인된(READY_FOR_REVIEW) 초안에서만 가능 → 409 CAPTURE_NOT_REVIEWABLE.
+ * OPEN(미봉인)·DISCARDED 에 import 를 시도하면 던진다. (IMPORTED 는 use case 가 멱등 반환으로 처리.)
+ */
+class CaptureNotReviewableException(val captureUuid: UUID, val status: CaptureStatus) :
+    RuntimeException("capture $captureUuid is not reviewable (status=$status)")
+
+/** 이미 반영된(IMPORTED) 초안은 폐기할 수 없다 → 409 CAPTURE_ALREADY_IMPORTED. */
+class CaptureAlreadyImportedException(val captureUuid: UUID) :
+    RuntimeException("capture $captureUuid is already imported and cannot be discarded")

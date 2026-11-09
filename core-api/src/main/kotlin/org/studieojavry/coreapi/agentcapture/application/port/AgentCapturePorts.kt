@@ -5,6 +5,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import java.time.Instant
 import java.util.UUID
 
@@ -12,6 +13,8 @@ interface AgentCaptureRepositoryPort {
     fun save(capture: AgentCapture): AgentCapture
     fun findByUuid(captureUuid: UUID): AgentCapture?
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
+    /** 소유자의 특정 상태 초안 목록(검토 큐 = READY_FOR_REVIEW). 최근 갱신순. */
+    fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
 }
 
 interface CaptureAttemptRepositoryPort {

@@ -34,6 +34,7 @@ class OutboxActivityEventPublisherAdapter(
                 score = 0,
                 idempotencyKey = event.idempotencyKey,
                 meta = event.meta,
+                origin = event.origin?.name,
             )
             val payload = objectMapper.writeValueAsString(msg)
             outboxRepo.save(
@@ -58,6 +59,8 @@ class OutboxActivityEventPublisherAdapter(
         val score: Int,
         val idempotencyKey: String,
         val meta: Map<String, Any?>? = null,
+        /** null 이면 USER(평소 집계). "AGENT_IMPORT" 면 consumer 가 daily 집계에서 제외. */
+        val origin: String? = null,
     )
 
     companion object {

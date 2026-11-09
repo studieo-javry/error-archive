@@ -1,0 +1,115 @@
+# error-archive-agent (MCP 커넥터)
+
+Claude Code 등 로컬 AI 코딩 도구가 **개발 중 오류·해결 과정**을 error-archive 의 비공개 초안으로
+수집하도록 돕는 [MCP](https://modelcontextprotocol.io) 서버입니다. 수집된 초안은 나중에 사용자가 웹에서
+검토·확정하면 기존 Case/Step/Solution 으로 반영됩니다(검토 전에는 알림·검색·통계에 노출되지 않음).
+
+> AI Agent Capture Assistant (#144 P0). 서버 측 계약은 게이트웨이 `/api/v1/agent/**` 입니다.
+
+## 동작 개요
+
+```
+Claude Code  ──(MCP, stdio)──▶  error-archive-agent  ──(HTTPS, Bearer eaa_…)──▶  gateway /api/v1/agent/**
+                                                                                      │ introspection
+                                                                                      ▼  core-api(초안 저장)
+```
+
+커넥터는 **연결 토큰(`eaa_…`)만** 실어 보냅니다. 서버가 토큰을 사용자·연결·scope 로 해석하므로,
+사용자 로그인(JWT)과는 분리됩니다. 파일 근거는 **실제 바이트를 업로드**하며(경로 문자열 금지), 서버가
+형식·크기를 다시 검사합니다.
+
+## 준비물
+
+1. **연결 토큰 발급** — error-archive 웹의 *설정 › 에이전트 연결* 에서 새 연결을 만들고 토큰(`eaa_…`)을
+   1회 복사합니다(다시 보여주지 않음). scope: `capture:read`, `capture:write`, `artifact:write`.
+2. **게이트웨이 base URL** — 예: `https://api.error-archive.com`.
+
+## 설치 / 빌드
+
+```bash
+cd tools/error-archive-agent
+npm install
+npm run build        # dist/ 생성
+npm test             # 단위·MCP 배선 테스트
+```
+
+## 설정
+
+환경변수(우선) 또는 설정 파일로 지정합니다.
+
+| 항목 | 환경변수 | 설정 파일 키 |
+| --- | --- | --- |
+| 게이트웨이 base URL | `ERROR_ARCHIVE_BASE_URL` | `baseUrl` |
+| 연결 토큰(`eaa_…`) | `ERROR_ARCHIVE_AGENT_TOKEN` | `token` |
+
+설정 파일 경로: `$ERROR_ARCHIVE_CONFIG` 또는 `~/.config/error-archive-agent/config.json`
+
+```json
+{ "baseUrl": "https://api.error-archive.com", "token": "eaa_…" }
+```
+
+## 진단(doctor)
+
+연결이 올바른지 먼저 확인하세요. 토큰은 마스킹돼 출력됩니다.
+
+```bash
+ERROR_ARCHIVE_BASE_URL=https://api.error-archive.com \
+ERROR_ARCHIVE_AGENT_TOKEN=eaa_… \
+node dist/index.js doctor
+# ✓ 연결 OK  / userId / connectionId / scopes
+```
+
+## Claude Code 에 등록
+
+`claude mcp add` 또는 MCP 설정에 아래처럼 등록합니다(토큰은 환경변수로 주입 — 설정 파일에 평문 저장 지양).
+
+```json
+{
+  "mcpServers": {
+    "error-archive": {
+      "command": "node",
+      "args": ["/absolute/path/to/tools/error-archive-agent/dist/index.js"],
+      "env": {
+        "ERROR_ARCHIVE_BASE_URL": "https://api.error-archive.com",
+        "ERROR_ARCHIVE_AGENT_TOKEN": "eaa_…"
+      }
+    }
+  }
+}
+```
+
+## 제공 도구
+
+| 도구 | 설명 |
+| --- | --- |
+| `diagnose` | 토큰이 어떤 사용자·연결·scope 로 해석되는지(진단) |
+| `capture_start` | 새 OPEN 초안 생성. `captureUuid` 반환(이후 도구에 전달) |
+| `capture_add_attempt` | 시도(조사·수정·검증) 1건 기록(결과→상태) |
+| `capture_add_solution` | 해결 후보 기록(참조 시도 1개 이상) |
+| `capture_attach_evidence` | 로컬 파일(스크린샷·로그·diff·JSON)을 근거로 업로드 |
+| `capture_update` | 초안 기본 정보·서사 교체(`expectedRevision` 낙관 검사) |
+| `capture_get` | 초안 현재 상태 조회 |
+| `capture_complete` | 초안 봉인(READY_FOR_REVIEW). **자동 호출 금지** — 사용자 지시로만 |
+
+### 기록 원칙(이슈 #144)
+
+- **근거 없는 단정 금지**: 원인·검증 결과(PASSED 등)는 실제 실행 근거가 있을 때만. 재현/검증의
+  `executed` 는 명시하지 않으면 `false`.
+- 봉인(`capture_complete`)은 Stop Hook 등으로 **자동 호출하지 않습니다**. 미검토 기록이 함부로
+  올라오지 않게, 사용자/정책이 명시적으로 부를 때만 호출하세요.
+
+## 보안
+
+- 토큰은 비밀입니다. 로그·에러 메시지에 원문을 싣지 않습니다(마스킹). 설정 파일보다 환경변수 주입을
+  권장합니다.
+- 폐기/만료된 토큰은 게이트웨이에서 이미 401 로 차단됩니다(웹 *에이전트 연결* 에서 즉시 폐기 가능).
+- 서버가 첨부 형식(PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON)·크기(파일 10 MiB, 초안당 20개·총
+  50 MiB)를 재검사합니다. 허용되지 않는 형식은 거부됩니다.
+
+## 개발
+
+```bash
+npm run typecheck    # 타입 검사
+npm run dev          # tsx 로 소스 직접 실행(빌드 없이)
+npm run doctor       # tsx 로 doctor 실행
+```

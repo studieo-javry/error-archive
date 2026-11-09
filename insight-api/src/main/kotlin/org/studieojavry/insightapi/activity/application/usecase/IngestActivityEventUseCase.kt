@@ -8,6 +8,7 @@ import org.studieojavry.insightapi.activity.application.port.ActivityEventReposi
 import org.studieojavry.insightapi.activity.application.port.UserTimezonePort
 import org.studieojavry.insightapi.activity.config.ActivityWeightProperties
 import org.studieojavry.insightapi.activity.domain.ActivityEvent
+import org.studieojavry.insightapi.activity.domain.ActivityOrigin
 import org.studieojavry.insightapi.activity.domain.ActivityType
 import java.time.Instant
 
@@ -44,10 +45,17 @@ class IngestActivityEventUseCase(
             score = score,
             idempotencyKey = input.idempotencyKey,
             metaJson = input.metaJson,
+            origin = input.origin,
         )
         val newId = eventRepository.insertIfAbsent(event)
         if (newId == null) {
             log.debug { "duplicate activity event skipped: key=${input.idempotencyKey}" }
+            return
+        }
+        // origin 게이트: AGENT_IMPORT(에이전트 초안 반영)는 raw 원장엔 적재하되 잔디/KPI(daily)엔 집계하지
+        // 않는다. raw 에 origin 을 남겨, 정책 변경 시 daily 를 rebuild 해도 동일하게 제외된다.
+        if (input.origin == ActivityOrigin.AGENT_IMPORT) {
+            log.debug { "agent-import activity excluded from daily: key=${input.idempotencyKey}" }
             return
         }
         val tz = userTimezone.fetch(input.userId)
@@ -62,5 +70,6 @@ class IngestActivityEventUseCase(
         val score: Int,
         val idempotencyKey: String,
         val metaJson: String?,
+        val origin: ActivityOrigin = ActivityOrigin.USER,
     )
 }

@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.studieojavry.coreapi.agentcapture.application.usecase.ConcurrentRequestException
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactHashMismatchException
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactTooLargeException
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAlreadyImportedException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
@@ -63,6 +65,14 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnsupportedArtifactException::class)
     fun unsupported(ex: UnsupportedArtifactException): ProblemDetail =
         problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_ARTIFACT", ex.message)
+
+    @ExceptionHandler(CaptureNotReviewableException::class)
+    fun notReviewable(ex: CaptureNotReviewableException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "CAPTURE_NOT_REVIEWABLE", ex.message)
+
+    @ExceptionHandler(CaptureAlreadyImportedException::class)
+    fun alreadyImported(ex: CaptureAlreadyImportedException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "CAPTURE_ALREADY_IMPORTED", ex.message)
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(ex: IllegalArgumentException): ProblemDetail =

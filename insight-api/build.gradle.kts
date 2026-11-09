@@ -71,6 +71,11 @@ dependencies {
   testImplementation("org.springframework.security:spring-security-test")
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  // 네이티브 upsert(ON CONFLICT ... RETURNING)·Flyway 마이그레이션은 H2 가 아닌 실 Postgres 로만 검증.
+  testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.6"))
+  testImplementation("org.springframework.boot:spring-boot-testcontainers")
+  testImplementation("org.testcontainers:junit-jupiter")
+  testImplementation("org.testcontainers:postgresql")
 }
 
 configure<KotlinJvmProjectExtension> {

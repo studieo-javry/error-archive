@@ -23,8 +23,8 @@ class ActivityEventRepositoryAdapter(
         jdbcTemplate.query(
             """
             INSERT INTO insight_activity_event
-              (user_id, type, occurred_at, score, idempotency_key, meta_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)
+              (user_id, type, occurred_at, score, idempotency_key, meta_json, created_at, origin)
+            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)
             ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
             """.trimIndent(),
@@ -36,5 +36,6 @@ class ActivityEventRepositoryAdapter(
             event.idempotencyKey,
             event.metaJson,
             Timestamp.from(event.createdAt),
+            event.origin.name,
         ).firstOrNull()
 }

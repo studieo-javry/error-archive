@@ -18,6 +18,9 @@ enum class ActivityType {
     COMMENT_REACTION,
     COMMENT_HELPFUL,
     FOLLOWED_USER,
+
+    /** 에이전트 초안을 사용자가 검토·확정(반영)한 1건. origin=USER 로 집계되는 유일한 반영 기여. */
+    CAPTURE_REVIEWED,
     ;
 
     companion object {

@@ -305,6 +305,9 @@ class ErrorCaseRepositoryAdapter(
         ownerUserId = ownerUserId,
         resolvedAt = resolvedAt,
         resolvedByUserId = resolvedByUserId,
+        source = source,
+        reviewedByUserId = reviewedByUserId,
+        sourceCaptureId = sourceCaptureId,
     )
 
     private fun ErrorSnapshot.toEmbeddable(): ErrorSnapshotEmbeddable = ErrorSnapshotEmbeddable(
@@ -378,6 +381,9 @@ class ErrorCaseRepositoryAdapter(
             resolvedAt = resolvedAt,
             resolvedByUserId = resolvedByUserId,
             demo = demoSeedVersion != null,
+            source = source,
+            reviewedByUserId = reviewedByUserId,
+            sourceCaptureId = sourceCaptureId,
         )
     }
 }

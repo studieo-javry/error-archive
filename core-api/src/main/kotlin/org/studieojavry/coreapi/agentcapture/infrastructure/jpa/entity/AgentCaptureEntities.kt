@@ -69,6 +69,9 @@ class AgentCaptureEntity(
 
     @Column(name = "completed_at")
     var completedAt: Instant? = null,
+
+    @Column(name = "imported_case_id")
+    var importedCaseId: Long? = null,
 )
 
 @Entity

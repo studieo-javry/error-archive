@@ -23,6 +23,8 @@ class AgentCapture private constructor(
     val createdAt: Instant,
     var updatedAt: Instant,
     var completedAt: Instant?,
+    /** 반영(import) 성공 시 생성된 ErrorCase 의 id. IMPORTED 상태에서만 non-null. */
+    var importedCaseId: Long?,
 ) {
     /** 에이전트 쓰기(수정/시도/해결/봉인)는 OPEN 에서만. 봉인/종료 후엔 409. */
     fun requireAgentWritable() {
@@ -55,6 +57,34 @@ class AgentCapture private constructor(
         this.updatedAt = now
     }
 
+    /**
+     * 사용자 검토 확정 → 반영 완료(IMPORTED). 봉인된(READY_FOR_REVIEW) 초안에서만.
+     * OPEN(미봉인)·DISCARDED 는 CAPTURE_NOT_REVIEWABLE. IMPORTED 재시도는 use case 가 멱등 처리한다.
+     */
+    fun markImported(caseId: Long, now: Instant) {
+        if (status != CaptureStatus.READY_FOR_REVIEW) {
+            throw CaptureNotReviewableException(captureUuid, status)
+        }
+        this.status = CaptureStatus.IMPORTED
+        this.importedCaseId = caseId
+        this.updatedAt = now
+    }
+
+    /**
+     * 사용자 폐기 → DISCARDED. OPEN·READY_FOR_REVIEW 에서 가능, 이미 DISCARDED 면 멱등(no-op),
+     * IMPORTED(반영 완료)는 폐기 불가 → CAPTURE_ALREADY_IMPORTED.
+     */
+    fun discard(now: Instant) {
+        when (status) {
+            CaptureStatus.OPEN, CaptureStatus.READY_FOR_REVIEW -> {
+                this.status = CaptureStatus.DISCARDED
+                this.updatedAt = now
+            }
+            CaptureStatus.DISCARDED -> Unit
+            CaptureStatus.IMPORTED -> throw CaptureAlreadyImportedException(captureUuid)
+        }
+    }
+
     companion object {
         fun start(
             captureUuid: UUID,
@@ -77,6 +107,7 @@ class AgentCapture private constructor(
             createdAt = now,
             updatedAt = now,
             completedAt = null,
+            importedCaseId = null,
         )
 
         fun reconstitute(
@@ -92,9 +123,10 @@ class AgentCapture private constructor(
             createdAt: Instant,
             updatedAt: Instant,
             completedAt: Instant?,
+            importedCaseId: Long?,
         ): AgentCapture = AgentCapture(
             id, captureUuid, ownerUserId, originatingConnectionId, status, revision,
-            title, project, content, createdAt, updatedAt, completedAt,
+            title, project, content, createdAt, updatedAt, completedAt, importedCaseId,
         )
     }
 }

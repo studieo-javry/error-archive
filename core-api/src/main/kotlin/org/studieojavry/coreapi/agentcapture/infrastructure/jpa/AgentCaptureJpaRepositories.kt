@@ -9,12 +9,17 @@ import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureAt
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionLinkEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSolutionCandidateEntity
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.IdempotencyReceiptEntity
 import java.util.UUID
 
 interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
     fun findByCaptureUuid(captureUuid: UUID): AgentCaptureEntity?
     fun findByCaptureUuidAndOwnerUserId(captureUuid: UUID, ownerUserId: Long): AgentCaptureEntity?
+    fun findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(
+        ownerUserId: Long,
+        status: CaptureStatus,
+    ): List<AgentCaptureEntity>
 }
 
 interface CaptureAttemptJpaRepository : JpaRepository<CaptureAttemptEntity, Long> {

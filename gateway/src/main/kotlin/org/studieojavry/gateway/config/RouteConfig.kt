@@ -312,4 +312,16 @@ class RouteConfig(
             .before(uri(downstream.coreApi))
             .before(setPath("/v3/api-docs"))
             .build()
+
+    /**
+     * `agent` 그룹 docs — core-api 의 `/v3/api-docs/agent`(GroupedOpenApi, 에이전트 경로만).
+     * 커넥터(TS) 계약 타입 생성(openapi-typescript)의 소스. `/api-docs` 하위는 permitAll.
+     */
+    @Bean
+    fun agentDocsRoute(): RouterFunction<ServerResponse> =
+        route("agent-docs")
+            .GET("/api-docs/agent", http())
+            .before(uri(downstream.coreApi))
+            .before(setPath("/v3/api-docs/agent"))
+            .build()
 }

@@ -100,31 +100,36 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike): Api
     }
     if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
 
-    let res: Response;
-    try {
-      res = await doFetch(`${config.baseUrl}${opts.path}`, { method: opts.method, headers, body });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new ApiError(0, 'NETWORK', `요청 실패(${opts.method} ${opts.path}): ${reason}`);
-    }
-
-    const text = await res.text();
-    if (!res.ok) {
-      let code: string | undefined;
-      let detail = text;
+    // 같은 멱등키가 동시에 in-flight 면 서버가 409 CONCURRENT_REQUEST(재시도 가능)를 준다. 같은 키로
+    // 다시 보내는 건 구성상 안전하므로(중복 생성 불가) 한 번만 재시도한다. 그 외 오류는 그대로 올린다.
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
       try {
-        const problem = JSON.parse(text) as { code?: string; detail?: string; title?: string };
-        code = problem.code;
-        detail = problem.detail ?? problem.title ?? text;
-      } catch {
-        /* 비 JSON 오류 본문 — 원문 유지 */
+        res = await doFetch(`${config.baseUrl}${opts.path}`, { method: opts.method, headers, body });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new ApiError(0, 'NETWORK', `요청 실패(${opts.method} ${opts.path}): ${reason}`);
       }
-      if (res.status === 401) {
-        throw new ApiError(401, code, `인증 실패(토큰 ${maskToken(config.token)} 무효/폐기/만료).`);
+
+      const text = await res.text();
+      if (!res.ok) {
+        let code: string | undefined;
+        let detail = text;
+        try {
+          const problem = JSON.parse(text) as { code?: string; detail?: string; title?: string };
+          code = problem.code;
+          detail = problem.detail ?? problem.title ?? text;
+        } catch {
+          /* 비 JSON 오류 본문 — 원문 유지 */
+        }
+        if (res.status === 409 && code === 'CONCURRENT_REQUEST' && attempt < 1) continue;
+        if (res.status === 401) {
+          throw new ApiError(401, code, `인증 실패(토큰 ${maskToken(config.token)} 무효/폐기/만료).`);
+        }
+        throw new ApiError(res.status, code, `${opts.method} ${opts.path} → ${res.status}${code ? ` ${code}` : ''}: ${detail}`);
       }
-      throw new ApiError(res.status, code, `${opts.method} ${opts.path} → ${res.status}${code ? ` ${code}` : ''}: ${detail}`);
+      return (text ? JSON.parse(text) : undefined) as T;
     }
-    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   return {

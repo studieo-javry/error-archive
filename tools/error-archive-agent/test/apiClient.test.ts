@@ -73,6 +73,39 @@ test('401 은 토큰을 마스킹한 ApiError(원문 노출 금지)', async () =
   );
 });
 
+test('409 CONCURRENT_REQUEST 는 같은 키로 한 번 재시도한다', async () => {
+  const responses = [
+    { status: 409, body: { code: 'CONCURRENT_REQUEST', detail: 'in flight' } },
+    { status: 201, body: { captureUuid: 'u1', status: 'OPEN', revision: 0, content: {} } },
+  ];
+  const calls: Captured[] = [];
+  const fetch: FetchLike = async (url, init) => {
+    calls.push({ url, init });
+    const r = responses.shift()!;
+    return new Response(JSON.stringify(r.body), { status: r.status });
+  };
+  const created = await createApiClient(config, fetch).createCapture(
+    { captureUuid: 'u1', content: { observedFacts: [], hypotheses: [], unknowns: [] } },
+    'idem-stable',
+  );
+  assert.equal(created.captureUuid, 'u1');
+  assert.equal(calls.length, 2);
+  // 재시도는 같은 멱등키를 그대로 보내야 중복 생성이 방지된다.
+  assert.equal(header(calls[0]?.init, 'Idempotency-Key'), 'idem-stable');
+  assert.equal(header(calls[1]?.init, 'Idempotency-Key'), 'idem-stable');
+});
+
+test('CONCURRENT_REQUEST 가 계속되면 1회 재시도 후 ApiError', async () => {
+  const { fetch } = fakeFetch(409, { code: 'CONCURRENT_REQUEST', detail: 'still in flight' });
+  await assert.rejects(
+    () => createApiClient(config, fetch).createCapture(
+      { captureUuid: 'u1', content: { observedFacts: [], hypotheses: [], unknowns: [] } },
+      'idem-stable',
+    ),
+    (err: unknown) => err instanceof ApiError && err.status === 409 && err.code === 'CONCURRENT_REQUEST',
+  );
+});
+
 test('네트워크 예외는 status 0 NETWORK ApiError', async () => {
   const fetch: FetchLike = async () => {
     throw new Error('ECONNREFUSED');

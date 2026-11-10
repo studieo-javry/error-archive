@@ -4,8 +4,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { ApiClient } from '../src/apiClient.js';
 import { ApiError } from '../src/apiClient.js';
+import { idempotencyKeyFor } from '../src/idempotency.js';
 import { createServer } from '../src/server.js';
 import type { CaptureContent, CaptureResponse, CreateCaptureRequest } from '../src/types.js';
+
+const AUUID = '00000000-0000-4000-8000-000000000000';
 
 /** 호출을 기록하는 가짜 ApiClient — 네트워크 없이 서버 배선을 검증한다. */
 function fakeClient(overrides: Partial<ApiClient> = {}) {
@@ -93,6 +96,60 @@ test('capture_start 는 captureUuid 를 생성하고 서사를 구조화해 전�
   assert.equal(content.symptom, 'npe');
   assert.deepEqual(content.observedFacts, ['log']);
   assert.deepEqual(content.reproduction, { steps: ['run'], executed: false });
+});
+
+test('capture_start 는 captureUuid 에서 파생한 결정론적 멱등키를 보낸다', async () => {
+  let sentUuid: string | undefined;
+  let sentKey: string | undefined;
+  const { client } = fakeClient({
+    createCapture: async (req: CreateCaptureRequest, key?: string): Promise<CaptureResponse> => {
+      sentUuid = req.captureUuid;
+      sentKey = key;
+      return {
+        captureUuid: req.captureUuid,
+        status: 'OPEN',
+        revision: 0,
+        title: req.title ?? null,
+        project: req.project ?? null,
+        content: req.content,
+        createdAt: 't',
+        updatedAt: 't',
+        completedAt: null,
+      };
+    },
+  });
+  const mcp = await connect(client);
+  await mcp.callTool({ name: 'capture_start', arguments: { title: 'x' } });
+  assert.ok(sentUuid);
+  assert.equal(sentKey, idempotencyKeyFor('capture.create', sentUuid!));
+});
+
+test('capture_attach_evidence 기본 clientArtifactId 는 파일경로 기반(동명 다른 파일 구분)', async () => {
+  const ids: string[] = [];
+  const { client } = fakeClient({
+    uploadArtifact: async (_uuid: string, clientArtifactId: string) => {
+      ids.push(clientArtifactId);
+      return {
+        artifact: {
+          clientArtifactId,
+          sha256: 'h',
+          contentType: 'text/plain',
+          sizeBytes: 1,
+          fileName: 'error.log',
+          status: 'STORED',
+          createdAt: 't',
+        },
+        deduplicated: false,
+      };
+    },
+  });
+  const mcp = await connect(client);
+  await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: 'a/error.log' } });
+  await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: 'b/error.log' } });
+  assert.equal(ids.length, 2);
+  assert.ok(ids[0]!.startsWith('error.log-'));
+  assert.ok(ids[1]!.startsWith('error.log-'));
+  assert.notEqual(ids[0], ids[1]);
 });
 
 test('API 오류는 isError 결과로 보고된다(코드 포함)', async () => {

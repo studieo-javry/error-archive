@@ -98,6 +98,20 @@ node dist/index.js doctor
 - 봉인(`capture_complete`)은 Stop Hook 등으로 **자동 호출하지 않습니다**. 미검토 기록이 함부로
   올라오지 않게, 사용자/정책이 명시적으로 부를 때만 호출하세요.
 
+### 멱등성과 재시도
+
+- 생성·봉인 계열 요청의 `Idempotency-Key` 는 **클라이언트 식별자에서 결정론적으로 파생**됩니다
+  (`capture.create`←`captureUuid`, `attempt.add`←`captureUuid:clientAttemptId`,
+  `solution.add`←`captureUuid:clientSolutionId`, `capture.complete`←`captureUuid`). 따라서 **같은
+  식별자를 다시 넘기면** 서버가 재시도를 하나로 합쳐 중복 생성이 방지됩니다. 안전한 재시도를 원하면
+  `capture_start` 가 돌려준 `captureUuid`, `capture_add_attempt` 가 돌려준 `clientAttemptId` 를
+  그대로 재사용하세요. (식별자를 생략하면 매번 새로 발급되어 새 기록으로 간주됩니다.)
+- 서버가 `409 CONCURRENT_REQUEST`(같은 키가 동시에 처리 중) 를 주면 커넥터가 **같은 키로 한 번
+  재시도**합니다. 그 외 오류는 그대로 보고합니다.
+- 근거 파일의 `clientArtifactId` 를 생략하면 **파일 경로 기반**으로 자동 생성됩니다. 파일명이 같아도
+  경로가 다르면 서로 다른 ID 가 되어, 동명 파일의 거짓 충돌(`409 ARTIFACT_HASH_MISMATCH`)을
+  피합니다. 같은 파일을 다시 올리면 같은 ID → 서버가 내용 해시로 중복 제거(200)합니다.
+
 ## 보안
 
 - 토큰은 비밀입니다. 로그·에러 메시지에 원문을 싣지 않습니다(마스킹). 설정 파일보다 환경변수 주입을

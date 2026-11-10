@@ -10,7 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
-import { newUuid } from './idempotency.js';
+import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
 
 function ok(data: unknown): CallToolResult {
@@ -81,13 +81,16 @@ export function createServer(client: ApiClient): McpServer {
     (args) =>
       guard(async () => {
         const captureUuid = newUuid();
-        const created = await client.createCapture({
-          captureUuid,
-          title: args.title,
-          project: args.project,
-          content: buildCaptureContent(args),
-          sessionUuid: args.sessionUuid,
-        });
+        const created = await client.createCapture(
+          {
+            captureUuid,
+            title: args.title,
+            project: args.project,
+            content: buildCaptureContent(args),
+            sessionUuid: args.sessionUuid,
+          },
+          idempotencyKeyFor('capture.create', captureUuid),
+        );
         return ok({ captureUuid: created.captureUuid, status: created.status, revision: created.revision });
       }),
   );
@@ -114,12 +117,16 @@ export function createServer(client: ApiClient): McpServer {
     (args) =>
       guard(async () => {
         const clientAttemptId = args.clientAttemptId?.trim() || newUuid();
-        const saved = await client.addAttempt(args.captureUuid, {
-          clientAttemptId,
-          result: args.result,
-          attemptType: args.attemptType,
-          detail: buildAttemptDetail(args),
-        });
+        const saved = await client.addAttempt(
+          args.captureUuid,
+          {
+            clientAttemptId,
+            result: args.result,
+            attemptType: args.attemptType,
+            detail: buildAttemptDetail(args),
+          },
+          idempotencyKeyFor('attempt.add', `${args.captureUuid}:${clientAttemptId}`),
+        );
         return ok({ clientAttemptId: saved.clientAttemptId, orderIndex: saved.orderIndex, result: saved.result });
       }),
   );
@@ -155,15 +162,19 @@ export function createServer(client: ApiClient): McpServer {
               evidence: args.verificationEvidence,
             }
           : undefined;
-        const saved = await client.addSolution(args.captureUuid, {
-          clientSolutionId,
-          title: args.title,
-          content: buildSolutionContent({
-            description: args.description,
-            clientAttemptIds: args.clientAttemptIds,
-            verification,
-          }),
-        });
+        const saved = await client.addSolution(
+          args.captureUuid,
+          {
+            clientSolutionId,
+            title: args.title,
+            content: buildSolutionContent({
+              description: args.description,
+              clientAttemptIds: args.clientAttemptIds,
+              verification,
+            }),
+          },
+          idempotencyKeyFor('solution.add', `${args.captureUuid}:${clientSolutionId}`),
+        );
         return ok({ clientSolutionId: saved.clientSolutionId, title: saved.title });
       }),
   );
@@ -177,13 +188,12 @@ export function createServer(client: ApiClient): McpServer {
       inputSchema: {
         captureUuid: z.string().uuid(),
         filePath: z.string().describe('업로드할 로컬 파일의 절대/상대 경로'),
-        clientArtifactId: z.string().optional().describe('근거 식별자(생략 시 파일명 기반 자동)'),
+        clientArtifactId: z.string().optional().describe('근거 식별자(생략 시 파일경로 기반 자동 — 동명 다른 파일도 구분)'),
       },
     },
     (args) =>
       guard(async () => {
-        const clientArtifactId =
-          args.clientArtifactId?.trim() || args.filePath.split(/[\\/]/).pop() || newUuid();
+        const clientArtifactId = args.clientArtifactId?.trim() || defaultArtifactId(args.filePath);
         const outcome = await client.uploadArtifact(args.captureUuid, clientArtifactId, args.filePath);
         return ok({
           clientArtifactId: outcome.artifact.clientArtifactId,
@@ -244,7 +254,11 @@ export function createServer(client: ApiClient): McpServer {
     },
     (args) =>
       guard(async () => {
-        const sealed = await client.completeCapture(args.captureUuid, { expectedRevision: args.expectedRevision });
+        const sealed = await client.completeCapture(
+          args.captureUuid,
+          { expectedRevision: args.expectedRevision },
+          idempotencyKeyFor('capture.complete', args.captureUuid),
+        );
         return ok({ captureUuid: sealed.captureUuid, status: sealed.status, revision: sealed.revision });
       }),
   );

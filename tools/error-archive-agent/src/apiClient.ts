@@ -15,6 +15,8 @@ import { newIdempotencyKey } from './idempotency.js';
 import type {
   AddAttemptRequest,
   AddSolutionRequest,
+  AgentCaseDetail,
+  AgentCaseListResponse,
   AgentIdentity,
   AttemptResponse,
   CaptureDetailResponse,
@@ -85,6 +87,10 @@ export interface ApiClient {
   addSolution(captureUuid: string, req: AddSolutionRequest, idempotencyKey?: string): Promise<SolutionResponse>;
   uploadArtifact(captureUuid: string, clientArtifactId: string, filePath: string): Promise<UploadArtifactResult>;
   completeCapture(captureUuid: string, req: CompleteCaptureRequest, idempotencyKey?: string): Promise<CaptureResponse>;
+  /** 허용 범위(본인 소유 + 바인딩 귀속)의 과거 사례 검색. */
+  searchCases(projectBindingId?: number, limit?: number): Promise<AgentCaseListResponse>;
+  /** 과거 사례 상세(본인 소유 + 바인딩 귀속만, 아니면 404). */
+  getCase(caseId: number): Promise<AgentCaseDetail>;
 }
 
 /** 파일 확장자 → MIME(서버가 매직 바이트로 재검사하므로 추정이면 충분). */
@@ -182,6 +188,17 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     completeCapture: (uuid, req, key) =>
       request<CaptureResponse>({ method: 'POST', path: `/api/v1/agent/captures/${uuid}/complete`, body: req, idempotencyKey: key ?? newIdempotencyKey() }),
+
+    searchCases: (projectBindingId, limit) => {
+      const qs = new URLSearchParams();
+      if (projectBindingId != null) qs.set('projectBindingId', String(projectBindingId));
+      if (limit != null) qs.set('limit', String(limit));
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<AgentCaseListResponse>({ method: 'GET', path: `/api/v1/agent/cases${suffix}` });
+    },
+
+    getCase: (caseId) =>
+      request<AgentCaseDetail>({ method: 'GET', path: `/api/v1/agent/cases/${caseId}` }),
 
     async uploadArtifact(uuid, clientArtifactId, filePath) {
       const bytes = await readFile(filePath);

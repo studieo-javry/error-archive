@@ -187,3 +187,37 @@ export interface UploadArtifactResult {
   artifact: ArtifactResponse;
   deduplicated: boolean;
 }
+
+// ── case:read (허용 범위 과거 사례 조회) ──────────────────────────────────────
+
+/** 검색 결과 요약(본인 소유 + ProjectBinding 귀속 케이스만). */
+export interface AgentCaseSummary {
+  id: number;
+  title: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface AgentCaseListResponse {
+  items: AgentCaseSummary[];
+}
+
+export interface AgentCaseStep {
+  title: string;
+  status: string;
+}
+
+export interface AgentCaseSolution {
+  title: string;
+}
+
+/** 상세(Step·Solution 포함). */
+export interface AgentCaseDetail {
+  id: number;
+  title: string;
+  status: string;
+  project: string | null;
+  projectBindingId: number | null;
+  steps: AgentCaseStep[];
+  solutions: AgentCaseSolution[];
+}

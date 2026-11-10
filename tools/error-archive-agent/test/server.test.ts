@@ -68,6 +68,8 @@ test('모든 기대 도구가 등록돼 있다', async () => {
     'capture_start',
     'capture_update',
     'diagnose',
+    'find_cases',
+    'get_case',
   ]);
 });
 

@@ -7,6 +7,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import java.time.Instant
 import java.util.UUID
@@ -31,6 +32,14 @@ interface CaptureImportRepositoryPort {
 interface CaptureEventRepositoryPort {
     fun findByConnectionAndClientId(connectionId: UUID, clientEventId: String): CaptureEvent?
     fun save(event: CaptureEvent): CaptureEvent
+}
+
+/** 프로젝트 바인딩(P1 토대). 소유자별 projectKey 유일. */
+interface ProjectBindingRepositoryPort {
+    fun save(binding: ProjectBinding): ProjectBinding
+    fun findById(id: Long): ProjectBinding?
+    fun findByOwnerAndKey(ownerUserId: Long, projectKey: String): ProjectBinding?
+    fun listByOwner(ownerUserId: Long): List<ProjectBinding>
 }
 
 interface CaptureAttemptRepositoryPort {

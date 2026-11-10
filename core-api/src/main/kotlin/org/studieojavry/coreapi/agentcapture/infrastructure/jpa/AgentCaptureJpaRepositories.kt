@@ -15,6 +15,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureEventEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.IdempotencyReceiptEntity
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.ProjectBindingEntity
 import java.util.UUID
 
 interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
@@ -91,4 +92,9 @@ interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> 
 
 interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
     fun findByConnectionIdAndClientEventId(connectionId: UUID, clientEventId: String): CaptureEventEntity?
+}
+
+interface ProjectBindingJpaRepository : JpaRepository<ProjectBindingEntity, Long> {
+    fun findByOwnerUserIdAndProjectKey(ownerUserId: Long, projectKey: String): ProjectBindingEntity?
+    fun findByOwnerUserIdOrderByProjectKeyAsc(ownerUserId: Long): List<ProjectBindingEntity>
 }

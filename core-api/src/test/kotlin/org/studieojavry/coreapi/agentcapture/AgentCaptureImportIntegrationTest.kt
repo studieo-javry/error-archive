@@ -12,6 +12,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.ActiveProfiles
@@ -139,11 +140,22 @@ class AgentCaptureImportIntegrationTest {
         return uuid to captureId
     }
 
+    // seedCapture 봉인 후 revision=1. 전체 선택(a1,a2 순서 + s1).
+    private val fullImport = """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":["s1"]}"""
+
+    private fun doImport(uuid: UUID, user: Long, key: String, body: String = fullImport) =
+        mvc.perform(
+            post("/api/v1/captures/$uuid/import").with(asUser(user))
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body),
+        )
+
     @Test
     fun `봉인된 초안 반영 - 신규 PRIVATE·OPEN 케이스 + Step·Solution 매핑 + IMPORTED`() {
         val (uuid, captureId) = seedCapture(userId, seal = true)
 
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "imp-happy")
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.alreadyImported").value(false))
             .andExpect(jsonPath("$.caseId").isNumber)
@@ -185,24 +197,68 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
-    fun `반영 멱등 - 이미 IMPORTED 면 같은 케이스를 200 으로 반환`() {
+    fun `같은 요청 재반영은 다른 키여도 같은 케이스를 200 으로 (CaptureImport 해시 멱등)`() {
         val (uuid, _) = seedCapture(userId, seal = true)
 
-        val first = mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        val first = doImport(uuid, userId, "imp-a")
             .andExpect(status().isCreated).andReturn().response.contentAsString
         val caseId1 = Regex("\"caseId\":(\\d+)").find(first)!!.groupValues[1]
 
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        // 다른 Idempotency-Key + 같은 선택 → IMPORTED 상태에서 요청해시 일치 → 같은 케이스 200.
+        doImport(uuid, userId, "imp-b")
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.alreadyImported").value(true))
             .andExpect(jsonPath("$.caseId").value(caseId1.toInt()))
     }
 
     @Test
+    fun `승인한 항목만 반영된다 (선택 Attempt 만 Step 으로)`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        // a2 만 선택(성공 시도). s1 은 a2 참조 → 반영됨.
+        doImport(uuid, userId, "imp-sel", """{"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"]}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val createdSteps = steps.findAllByErrorCaseId(caseId)
+        assertEquals(1, createdSteps.size)
+        assertEquals(StepStatus.RESOLVED, createdSteps[0].status)
+        assertEquals(1, caseSolutions.findAllByErrorCaseId(caseId).size)
+    }
+
+    @Test
+    fun `오래된 reviewedRevision 반영은 409 REVISION_CONFLICT`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        doImport(uuid, userId, "imp-rev", """{"reviewedRevision":999,"selectedAttemptIds":["a1"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("REVISION_CONFLICT"))
+    }
+
+    @Test
+    fun `다른 선택으로 재반영은 409 CAPTURE_ALREADY_IMPORTED + caseId 안내`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        val first = doImport(uuid, userId, "imp-x").andExpect(status().isCreated).andReturn().response.contentAsString
+        val caseId1 = Regex("\"caseId\":(\\d+)").find(first)!!.groupValues[1].toInt()
+
+        // 다른 선택(a1 만) → 요청해시 불일치 → 409 + 이미 생성된 caseId 안내.
+        doImport(uuid, userId, "imp-y", """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("CAPTURE_ALREADY_IMPORTED"))
+            .andExpect(jsonPath("$.caseId").value(caseId1))
+    }
+
+    @Test
+    fun `markResolved=true 면 케이스가 RESOLVED 로 생성된다`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        doImport(uuid, userId, "imp-res", """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":["s1"],"markResolved":true}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertEquals(ErrorCaseStatus.RESOLVED, errorCases.findById(caseId)!!.status)
+    }
+
+    @Test
     fun `봉인되지 않은(OPEN) 초안 반영은 409`() {
         val (uuid, _) = seedCapture(userId, seal = false)
 
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "imp-open")
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CAPTURE_NOT_REVIEWABLE"))
     }
@@ -216,7 +272,7 @@ class AgentCaptureImportIntegrationTest {
 
         // 이미 반영된 초안은 폐기 불가
         val (imported, _) = seedCapture(userId, seal = true)
-        mvc.perform(post("/api/v1/captures/$imported/import").with(asUser(userId))).andExpect(status().isCreated)
+        doImport(imported, userId, "imp-disc").andExpect(status().isCreated)
         mvc.perform(post("/api/v1/captures/$imported/discard").with(asUser(userId)))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CAPTURE_ALREADY_IMPORTED"))
@@ -225,7 +281,7 @@ class AgentCaptureImportIntegrationTest {
     @Test
     fun `타인 소유 초안 반영은 404`() {
         val (uuid, _) = seedCapture(owner = 9999L, seal = true)
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "imp-404")
             .andExpect(status().isNotFound)
     }
 }

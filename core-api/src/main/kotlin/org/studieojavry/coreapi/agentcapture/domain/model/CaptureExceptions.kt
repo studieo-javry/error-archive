@@ -59,6 +59,10 @@ class EvidenceNotReadyException(val captureUuid: UUID, val missingRefs: List<Str
 class CaptureNotReviewableException(val captureUuid: UUID, val status: CaptureStatus) :
     RuntimeException("capture $captureUuid is not reviewable (status=$status)")
 
-/** 이미 반영된(IMPORTED) 초안은 폐기할 수 없다 → 409 CAPTURE_ALREADY_IMPORTED. */
-class CaptureAlreadyImportedException(val captureUuid: UUID) :
-    RuntimeException("capture $captureUuid is already imported and cannot be discarded")
+/**
+ * 이미 반영된(IMPORTED) 초안에 대한 충돌 → 409 CAPTURE_ALREADY_IMPORTED.
+ *  - 폐기 시도(caseId 불필요), 또는
+ *  - **다른 반영 내용으로 재반영** 시도(이미 생성된 caseId 를 권한 범위 안에서 안내).
+ */
+class CaptureAlreadyImportedException(val captureUuid: UUID, val caseId: Long? = null) :
+    RuntimeException("capture $captureUuid is already imported" + (caseId?.let { " as case $it" } ?: ""))

@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture.application.port
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
@@ -15,6 +16,12 @@ interface AgentCaptureRepositoryPort {
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
     /** 소유자의 특정 상태 초안 목록(검토 큐 = READY_FOR_REVIEW). 최근 갱신순. */
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
+}
+
+/** 검토 반영 기록(Capture 당 1건). 재반영 멱등·충돌 판정의 기준. */
+interface CaptureImportRepositoryPort {
+    fun save(record: CaptureImport): CaptureImport
+    fun findByCaptureId(captureId: Long): CaptureImport?
 }
 
 interface CaptureAttemptRepositoryPort {

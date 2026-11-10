@@ -83,6 +83,7 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(CaptureAlreadyImportedException::class)
     fun alreadyImported(ex: CaptureAlreadyImportedException): ProblemDetail =
         problem(HttpStatus.CONFLICT, "CAPTURE_ALREADY_IMPORTED", ex.message)
+            .apply { ex.caseId?.let { setProperty("caseId", it) } }
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(ex: IllegalArgumentException): ProblemDetail =

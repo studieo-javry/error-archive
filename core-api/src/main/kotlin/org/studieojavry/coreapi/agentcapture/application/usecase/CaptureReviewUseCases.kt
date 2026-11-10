@@ -4,19 +4,26 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAlreadyImportedException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
+import tools.jackson.databind.ObjectMapper
+import java.security.MessageDigest
 import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
@@ -44,10 +51,12 @@ class ImportCaptureUseCase(
     private val captures: AgentCaptureRepositoryPort,
     private val attempts: CaptureAttemptRepositoryPort,
     private val solutions: CaptureSolutionRepositoryPort,
+    private val captureImports: CaptureImportRepositoryPort,
     private val errorCases: ErrorCaseRepositoryPort,
     private val steps: StepRepositoryPort,
     private val caseSolutions: SolutionRepositoryPort,
     private val activity: ActivityEventPublisherPort,
+    private val objectMapper: ObjectMapper,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
@@ -55,17 +64,32 @@ class ImportCaptureUseCase(
         val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
 
-        // 멱등: 이미 반영됨 → 생성해둔 케이스를 그대로 반환.
+        val requestHash = requestHash(cmd)
+
+        // 이미 반영됨: 같은 요청(hash)이면 같은 케이스를 멱등 반환, 다른 요청이면 409 + 기존 caseId 안내.
         if (capture.status == CaptureStatus.IMPORTED) {
-            return ImportResult(caseId = capture.importedCaseId!!, alreadyImported = true)
+            val prior = captureImports.findByCaptureId(capture.id!!)
+            val priorCaseId = prior?.targetCaseId ?: capture.importedCaseId
+            if (prior != null && prior.requestHash == requestHash) {
+                return ImportResult(caseId = priorCaseId!!, alreadyImported = true)
+            }
+            throw CaptureAlreadyImportedException(capture.captureUuid, priorCaseId)
         }
         if (capture.status != CaptureStatus.READY_FOR_REVIEW) {
             throw CaptureNotReviewableException(capture.captureUuid, capture.status)
         }
+        // 검토 시점 revision 일치 확인(봉인 후 편집이 끼면 409 REVISION_CONFLICT).
+        capture.requireRevision(cmd.reviewedRevision)
 
         val now = Instant.now(clock)
         val reviewer = cmd.reviewerUserId
         val captureId = capture.id!!
+
+        // 사용자가 선택한 Attempt 만, 선택 순서대로. 없는 참조는 422.
+        val attemptByClientId = attempts.listByCapture(captureId).associateBy { it.clientAttemptId }
+        val selectedAttempts = cmd.selectedAttemptIds.map {
+            attemptByClientId[it] ?: throw UnknownAttemptReferenceException(cmd.captureUuid, it)
+        }
 
         // 1) 신규 케이스(PRIVATE, OPEN). 자동 RESOLVED 하지 않는다.
         val case = errorCases.save(
@@ -91,9 +115,9 @@ class ImportCaptureUseCase(
         )
         val caseId = case.id!!
 
-        // 2) Attempt → Step(순서 보존). clientAttemptId → 저장된 stepId 매핑(Solution 참조 해소용).
+        // 2) 선택 Attempt → Step(선택 순서 보존). clientAttemptId → 저장된 stepId 매핑(Solution 참조 해소용).
         val stepIdByClientAttempt = LinkedHashMap<String, Long>()
-        attempts.listByCapture(captureId).forEachIndexed { index, attempt ->
+        selectedAttempts.forEachIndexed { index, attempt ->
             val step = steps.save(
                 Step.create(
                     errorCaseId = caseId,
@@ -109,8 +133,9 @@ class ImportCaptureUseCase(
             stepIdByClientAttempt[attempt.clientAttemptId] = step.id!!
         }
 
-        // 3) SolutionCandidate → Solution. 참조 clientAttemptId 를 저장된 stepId 로 해소(순서·유일 보존).
-        solutions.listByCapture(captureId).forEach { candidate ->
+        // 3) 선택 SolutionCandidate → Solution. 참조 clientAttemptId 를 (선택된) stepId 로 해소.
+        val selectedSolutionIds = cmd.selectedSolutionIds.toSet()
+        solutions.listByCapture(captureId).filter { it.clientSolutionId in selectedSolutionIds }.forEach { candidate ->
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
             if (stepIds.isNotEmpty()) {
                 caseSolutions.save(
@@ -124,9 +149,28 @@ class ImportCaptureUseCase(
             }
         }
 
-        // 4) 초안 종료(IMPORTED) + 케이스 백링크.
+        // 4) 사용자가 명시적으로 해결 표시한 경우에만 RESOLVED(OPEN→IN_PROGRESS→RESOLVED). 기본은 OPEN 유지.
+        if (cmd.markResolved) {
+            case.transitionTo(ErrorCaseStatus.IN_PROGRESS, reviewer)
+            case.transitionTo(ErrorCaseStatus.RESOLVED, reviewer)
+            errorCases.save(case)
+        }
+
+        // 5) 초안 종료(IMPORTED) + 케이스 백링크 + CaptureImport(요청해시·매핑 보존 — 재반영 멱등/충돌 기준).
         capture.markImported(caseId, now)
         captures.save(capture)
+        captureImports.save(
+            CaptureImport(
+                captureId = captureId,
+                reviewedRevision = cmd.reviewedRevision,
+                reviewerUserId = reviewer,
+                reviewedAt = now,
+                targetCaseId = caseId,
+                requestHash = requestHash,
+                attemptStepMap = stepIdByClientAttempt,
+                createdAt = now,
+            )
+        )
 
         // 5) 활동 이벤트(같은 트랜잭션의 아웃박스).
         //    CASE_CREATED: origin=AGENT_IMPORT → raw 원장엔 남되 잔디/KPI 집계에서 제외(게이트).
@@ -152,6 +196,18 @@ class ImportCaptureUseCase(
         )
 
         return ImportResult(caseId = caseId, alreadyImported = false)
+    }
+
+    /** 정규화한 반영 요청 해시 — 같은 선택·revision·markResolved 면 동일(재반영 멱등/충돌 판정). */
+    private fun requestHash(cmd: ImportCaptureCommand): String {
+        val normalized = buildString {
+            append(cmd.reviewedRevision).append('|')
+            append(cmd.selectedAttemptIds.sorted().joinToString(",")).append('|')
+            append(cmd.selectedSolutionIds.sorted().joinToString(",")).append('|')
+            append(cmd.markResolved)
+        }
+        return MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 
     /** Attempt 결과 → Step 상태. SUCCEEDED→RESOLVED, FAILED→FAILED, 그 외(진행/불명)→IN_PROGRESS. */
@@ -212,6 +268,15 @@ class ImportCaptureUseCase(
 data class ImportCaptureCommand(
     val captureUuid: UUID,
     val reviewerUserId: Long,
+    val reviewedRevision: Int,
+    /** 반영할 Attempt(clientAttemptId), 사용자 지정 순서 = Step 순서. */
+    val selectedAttemptIds: List<String> = emptyList(),
+    val selectedSolutionIds: List<String> = emptyList(),
+    /** P0: 저장만(artifact→Case 연결은 후속). */
+    val selectedArtifactIds: List<String> = emptyList(),
+    /** 사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지). */
+    val markResolved: Boolean = false,
+    val note: String? = null,
 )
 
 /**

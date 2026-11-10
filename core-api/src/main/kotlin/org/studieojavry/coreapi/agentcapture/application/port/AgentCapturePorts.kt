@@ -76,4 +76,6 @@ interface IdempotencyReceiptPort {
     fun find(scopeKey: String, operation: String, key: String): IdempotencyReceipt?
     /** UNIQUE(scope_key, operation, key) 위반 시 예외를 던진다(동시 요청 → service 가 재조회). */
     fun save(receipt: IdempotencyReceipt): IdempotencyReceipt
+    /** 보존 기간 지난 영수증 정리(벌크 삭제). 반환=삭제 건수. 엔티티 원본·CaptureImport 매핑은 건드리지 않는다. */
+    fun deleteOlderThan(threshold: Instant): Int
 }

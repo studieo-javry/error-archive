@@ -101,6 +101,10 @@ class EvidenceNotReadyException(val captureUuid: UUID, val missingRefs: List<Str
 class CaptureNotReviewableException(val captureUuid: UUID, val status: CaptureStatus) :
     RuntimeException("capture $captureUuid is not reviewable (status=$status)")
 
+/** 지정한 ProjectBinding 이 없거나 본인 소유가 아님 → 404(존재 노출 회피). */
+class ProjectBindingNotFoundException(val projectBindingId: Long) :
+    RuntimeException("project binding $projectBindingId not found")
+
 /**
  * 이미 반영된(IMPORTED) 초안에 대한 충돌 → 409 CAPTURE_ALREADY_IMPORTED.
  *  - 폐기 시도(caseId 불필요), 또는

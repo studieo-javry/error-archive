@@ -43,6 +43,12 @@ interface ErrorCaseRepositoryPort {
     /** 내 케이스 중 updatedAt DESC, id DESC 순 limit 개. 활동 식별 source. */
     fun findRecentByOwner(ownerUserId: Long, limit: Int): List<ErrorCaseSummary>
 
+    /**
+     * 에이전트 case:read 스코프 — 본인 소유 + ProjectBinding 에 귀속된 케이스만. projectBindingId 지정 시 그 바인딩만.
+     * 공개 사례·타인 데이터는 포함하지 않는다(이름/ repo 동일만으로 확대 금지).
+     */
+    fun findBoundByOwner(ownerUserId: Long, projectBindingId: Long?, limit: Int): List<ErrorCaseSummary>
+
     /** caseIds 의 summary 일괄 (lastActivityAt 계산 후 다른 case 가 추가 식별되면 보충). */
     fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary>
 

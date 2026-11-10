@@ -56,6 +56,7 @@ class ImportCaptureUseCase(
     private val steps: StepRepositoryPort,
     private val caseSolutions: SolutionRepositoryPort,
     private val activity: ActivityEventPublisherPort,
+    private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
     private val objectMapper: ObjectMapper,
     private val clock: Clock = Clock.systemUTC(),
 ) {
@@ -194,6 +195,10 @@ class ImportCaptureUseCase(
                 meta = mapOf("caseId" to caseId, "captureUuid" to capture.captureUuid.toString()),
             )
         )
+
+        // 캐시 무효화 — 신규 Case owner 의 recent-active + my-recent-activities (CASE_CREATED 반영, 생성 경로와 대칭).
+        runCatching { cacheInvalidator.evictRecentActive(reviewer) }
+        runCatching { cacheInvalidator.evictMyRecentActivities(reviewer) }
 
         return ImportResult(caseId = caseId, alreadyImported = false)
     }

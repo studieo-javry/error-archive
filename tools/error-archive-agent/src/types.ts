@@ -188,6 +188,53 @@ export interface UploadArtifactResult {
   deduplicated: boolean;
 }
 
+// ── Hook 자동수집 이벤트(P1) ─────────────────────────────────────────────────
+
+/**
+ * 정규화한 CaptureEvent 1건(서버 EventItemRequest 와 1:1). `clientEventId` 는 최초 로컬 저장 시
+ * 1회 생성해 재전송에서도 유지한다 — (connectionId, clientEventId) 로 서버가 멱등 처리한다.
+ * `redactedPayload` 는 마스킹된 JSON(≤64 KiB). 더 큰 근거는 첨부로 올린다.
+ */
+export interface EventItemRequest {
+  clientEventId: string;
+  eventType: string;
+  localSequence: number;
+  /** 클라이언트 관측 시각(ISO-8601). 서버 수신 시각과 구분 저장된다. */
+  observedAt: string;
+  redactedPayload: unknown;
+  projectBindingId?: number | null;
+  clientKind?: string | null;
+  clientVersion?: string | null;
+  sessionId?: string | null;
+  streamId?: string | null;
+  toolCallId?: string | null;
+  truncated?: boolean;
+  evidenceRefs?: string[];
+}
+
+export interface EventBatchRequest {
+  events: EventItemRequest[];
+}
+
+/** 이벤트별 적재 결과: ACCEPTED(저장) | DUPLICATE(재전송) | REJECTED(충돌·과대 등). */
+export type EventResultType = 'ACCEPTED' | 'DUPLICATE' | 'REJECTED';
+
+export interface EventResultResponse {
+  clientEventId: string;
+  result: EventResultType;
+  reason?: string | null;
+}
+
+export interface EventBatchResponse {
+  results: EventResultResponse[];
+}
+
+/** 미분류 이벤트를 OPEN 초안에 연결한 결과(linked=연결됨/멱등 포함, skipped=없음/타 초안 소속). */
+export interface LinkEventsResponse {
+  linked: string[];
+  skipped: string[];
+}
+
 // ── case:read (허용 범위 과거 사례 조회) ──────────────────────────────────────
 
 /** 검색 결과 요약(본인 소유 + ProjectBinding 귀속 케이스만). */

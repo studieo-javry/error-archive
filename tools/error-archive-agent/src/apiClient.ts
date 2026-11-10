@@ -23,6 +23,9 @@ import type {
   CaptureResponse,
   CompleteCaptureRequest,
   CreateCaptureRequest,
+  EventBatchRequest,
+  EventBatchResponse,
+  LinkEventsResponse,
   PatchCaptureRequest,
   RegisterSessionRequest,
   SessionResponse,
@@ -91,6 +94,10 @@ export interface ApiClient {
   searchCases(projectBindingId?: number, limit?: number): Promise<AgentCaseListResponse>;
   /** 과거 사례 상세(본인 소유 + 바인딩 귀속만, 아니면 404). */
   getCase(caseId: number): Promise<AgentCaseDetail>;
+  /** Hook 자동수집 이벤트 배치 적재(≤100건·≤1 MiB). HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
+  ingestEvents(req: EventBatchRequest): Promise<EventBatchResponse>;
+  /** 미분류 이벤트를 OPEN 초안에 연결(멱등). */
+  linkEvents(captureUuid: string, clientEventIds: string[]): Promise<LinkEventsResponse>;
 }
 
 /** 파일 확장자 → MIME(서버가 매직 바이트로 재검사하므로 추정이면 충분). */
@@ -199,6 +206,12 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     getCase: (caseId) =>
       request<AgentCaseDetail>({ method: 'GET', path: `/api/v1/agent/cases/${caseId}` }),
+
+    ingestEvents: (req) =>
+      request<EventBatchResponse>({ method: 'POST', path: '/api/v1/agent/events/batch', body: req }),
+
+    linkEvents: (captureUuid, clientEventIds) =>
+      request<LinkEventsResponse>({ method: 'POST', path: `/api/v1/agent/captures/${captureUuid}/events`, body: { clientEventIds } }),
 
     async uploadArtifact(uuid, clientArtifactId, filePath) {
       const bytes = await readFile(filePath);

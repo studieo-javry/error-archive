@@ -118,6 +118,21 @@ node dist/index.js doctor
 # ✓ 연결 OK  / userId / connectionId / scopes
 ```
 
+## 오프라인 큐(status / flush)
+
+자동수집 이벤트와 초안 전송은 로컬 **오프라인 큐**(SQLite)를 거칩니다. 네트워크가 끊겨도 로컬에
+쌓였다가 복구되면 전송되며, 전송 성공(ACK) 전에는 폐기되지 않습니다. 큐 파일 위치는
+`$ERROR_ARCHIVE_QUEUE` → `$XDG_STATE_HOME/error-archive-agent/queue.db` →
+`~/.local/state/error-archive-agent/queue.db` 순으로 정해집니다.
+
+```bash
+node dist/index.js status   # 대기/전송중/완료/차단/확인필요 요약 + 확인 필요 항목 나열(네트워크 불필요)
+node dist/index.js flush    # 큐를 한 차례 전송(네트워크 복구 후 수동 비우기). 확인 필요 항목 있으면 종료코드 1
+```
+
+자동 재시도는 7일까지 지수 backoff 로 반복하고, 이후에는 **확인 필요(NEEDS_ATTENTION)** 로 남겨
+`status` 에 드러냅니다(조용한 폐기 없음). 큐가 256 MiB 상한에 닿으면 수집을 멈추고 알립니다.
+
 ## Claude Code 에 등록 (소스 빌드 경로)
 
 게시 전/개발용으로 로컬 `dist` 를 직접 가리키는 등록. **게시 후에는 위 [npx](#npx-게시-후--권장) 흐름을

@@ -157,6 +157,18 @@ Claude Code `settings.json` 에 다음을 추가하세요(수집 대상: PostToo
 > 빠릅니다. 특정 프로젝트에만 수집을 묶으려면 `ERROR_ARCHIVE_PROJECT_BINDING=<id>` 환경변수를 주세요.
 > payload 안의 토큰·비밀키·PEM 등은 전송 전에 마스킹되고, 64 KiB 를 넘으면 잘립니다(큰 근거는 첨부로).
 
+## 근거 파일 수집 정책
+
+`capture_attach_evidence` 로 올리는 로컬 파일은 **승인된 디렉터리 내부**만 허용합니다(심볼릭 링크로 밖을
+가리켜도 차단). 전송 전 로컬 사본으로 복사·해시해 재시도 중 원본이 바뀌어도 다른 내용이 같은 ID 로 가지
+않게 하고, 텍스트는 비밀정보를 마스킹합니다(마스킹 불가 시 전송 보류). `.har` 는 수집하지 않습니다.
+
+- `ERROR_ARCHIVE_EVIDENCE_ROOTS` — 수집 허용 루트(`:` 구분). 생략 시 현재 작업 디렉터리.
+- `ERROR_ARCHIVE_SCREENSHOTS` — `1`/`true` 면 이미지(스크린샷) 수집 허용. 기본은 OFF(프로젝트 opt-in).
+
+근거 유형(`evidenceKind`)은 확장자로 추정합니다 — 이미지=`SCREENSHOT`, 로그/diff/JSON=`EXECUTION_RESULT`.
+모델 산출물은 `kind: AI_GENERATED` 로 명시하세요.
+
 ## Claude Code 에 등록 (소스 빌드 경로)
 
 게시 전/개발용으로 로컬 `dist` 를 직접 가리키는 등록. **게시 후에는 위 [npx](#npx-게시-후--권장) 흐름을

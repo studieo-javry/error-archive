@@ -7,9 +7,13 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
+import { loadEvidencePolicy } from './evidence/config.js';
+import { EvidenceError, stageEvidence, type StagedEvidence } from './evidence/collect.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
 
@@ -209,24 +213,42 @@ export function createServer(client: ApiClient): McpServer {
     {
       title: '근거 첨부',
       description:
-        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
+        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 승인된 디렉터리 내부 파일만 허용하며(심볼릭 링크 이탈 차단), 전송 전 로컬 사본으로 복사·해시하고 텍스트는 비밀정보를 마스킹한다. 스크린샷(이미지)은 opt-in 시에만. 반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
       inputSchema: {
         captureUuid: z.string().uuid(),
-        filePath: z.string().describe('업로드할 로컬 파일의 절대/상대 경로'),
+        filePath: z.string().describe('업로드할 로컬 파일의 절대/상대 경로(승인 디렉터리 내부)'),
         clientArtifactId: z.string().optional().describe('근거 식별자(생략 시 파일경로 기반 자동 — 동명 다른 파일도 구분)'),
+        kind: z
+          .enum(['EXECUTION_RESULT', 'SCREENSHOT', 'AI_GENERATED'])
+          .optional()
+          .describe('근거 유형(생략 시 확장자로 추정). 이미지=SCREENSHOT 은 수집 허용(opt-in) 시에만.'),
       },
     },
     (args) =>
       guard(async () => {
         const clientArtifactId = args.clientArtifactId?.trim() || defaultArtifactId(args.filePath);
-        const outcome = await client.uploadArtifact(args.captureUuid, clientArtifactId, args.filePath);
-        return ok({
-          clientArtifactId: outcome.artifact.clientArtifactId,
-          sha256: outcome.artifact.sha256,
-          contentType: outcome.artifact.contentType,
-          sizeBytes: outcome.artifact.sizeBytes,
-          deduplicated: outcome.deduplicated,
-        });
+        const policy = loadEvidencePolicy();
+        let staged: StagedEvidence;
+        try {
+          staged = stageEvidence(args.filePath, { roots: policy.roots, screenshotsEnabled: policy.screenshotsEnabled, kind: args.kind });
+        } catch (err) {
+          if (err instanceof EvidenceError) return fail(`근거 수집 거절(${err.code}): ${err.message}`);
+          throw err;
+        }
+        try {
+          const outcome = await client.uploadArtifact(args.captureUuid, clientArtifactId, staged.stagedPath);
+          return ok({
+            clientArtifactId: outcome.artifact.clientArtifactId,
+            sha256: outcome.artifact.sha256,
+            contentType: outcome.artifact.contentType,
+            sizeBytes: outcome.artifact.sizeBytes,
+            evidenceKind: staged.evidenceKind,
+            masked: staged.masked,
+            deduplicated: outcome.deduplicated,
+          });
+        } finally {
+          rmSync(dirname(staged.stagedPath), { recursive: true, force: true }); // 스테이징 정리
+        }
       }),
   );
 

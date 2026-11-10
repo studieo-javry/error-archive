@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -160,32 +163,55 @@ test('capture_start 는 captureUuid 에서 파생한 결정론적 멱등키를 �
   assert.equal(sentKey, idempotencyKeyFor('capture.create', sentUuid!));
 });
 
-test('capture_attach_evidence 기본 clientArtifactId 는 파일경로 기반(동명 다른 파일 구분)', async () => {
+test('capture_attach_evidence: 경계 내부 파일을 스테이징·마스킹해 업로드하고 path 기반 ID·evidenceKind 반환', async () => {
   const ids: string[] = [];
   const { client } = fakeClient({
     uploadArtifact: async (_uuid: string, clientArtifactId: string) => {
       ids.push(clientArtifactId);
       return {
-        artifact: {
-          clientArtifactId,
-          sha256: 'h',
-          contentType: 'text/plain',
-          sizeBytes: 1,
-          fileName: 'error.log',
-          status: 'STORED',
-          createdAt: 't',
-        },
+        artifact: { clientArtifactId, sha256: 'h', contentType: 'text/plain', sizeBytes: 1, fileName: 'error.log', status: 'STORED', createdAt: 't' },
         deduplicated: false,
       };
     },
   });
-  const mcp = await connect(client);
-  await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: 'a/error.log' } });
-  await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: 'b/error.log' } });
-  assert.equal(ids.length, 2);
-  assert.ok(ids[0]!.startsWith('error.log-'));
-  assert.ok(ids[1]!.startsWith('error.log-'));
-  assert.notEqual(ids[0], ids[1]);
+  const r = mkdtempSync(join(tmpdir(), 'ea-srv-'));
+  mkdirSync(join(r, 'a'));
+  mkdirSync(join(r, 'b'));
+  writeFileSync(join(r, 'a', 'error.log'), 'boom');
+  writeFileSync(join(r, 'b', 'error.log'), 'boom');
+  const prev = process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS;
+  process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS = r;
+  try {
+    const mcp = await connect(client);
+    const res1 = (await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: join(r, 'a', 'error.log') } })) as any;
+    await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: join(r, 'b', 'error.log') } });
+    assert.equal(ids.length, 2);
+    assert.ok(ids[0]!.startsWith('error.log-'));
+    assert.ok(ids[1]!.startsWith('error.log-'));
+    assert.notEqual(ids[0], ids[1]); // 경로가 달라 ID 도 다름
+    assert.equal(JSON.parse(textOf(res1)).evidenceKind, 'EXECUTION_RESULT');
+  } finally {
+    if (prev === undefined) delete process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS;
+    else process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS = prev;
+  }
+});
+
+test('capture_attach_evidence: 경계 밖 파일은 수집 거절(isError, OUT_OF_BOUNDARY)', async () => {
+  const { client } = fakeClient();
+  const r = mkdtempSync(join(tmpdir(), 'ea-srv-'));
+  const outside = mkdtempSync(join(tmpdir(), 'ea-out-'));
+  writeFileSync(join(outside, 'secret.log'), 'x');
+  const prev = process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS;
+  process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS = r;
+  try {
+    const mcp = await connect(client);
+    const res = (await mcp.callTool({ name: 'capture_attach_evidence', arguments: { captureUuid: AUUID, filePath: join(outside, 'secret.log') } })) as any;
+    assert.equal(res.isError, true);
+    assert.match(textOf(res), /OUT_OF_BOUNDARY/);
+  } finally {
+    if (prev === undefined) delete process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS;
+    else process.env.ERROR_ARCHIVE_EVIDENCE_ROOTS = prev;
+  }
 });
 
 test('API 오류는 isError 결과로 보고된다(코드 포함)', async () => {

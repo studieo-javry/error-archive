@@ -46,3 +46,15 @@ data class EventResultResponse(
 data class EventBatchResponse(
     val results: List<EventResultResponse>,
 )
+
+@Schema(description = "미분류 이벤트를 OPEN Capture 에 연결하는 요청.")
+data class LinkEventsRequest(
+    @field:jakarta.validation.constraints.NotEmpty
+    val clientEventIds: List<String>,
+)
+
+@Schema(description = "연결 결과. linked=연결됨(멱등 포함), skipped=없음/타 Capture 소속이라 가로채지 않음.")
+data class LinkEventsResponse(
+    val linked: List<String>,
+    val skipped: List<String>,
+)

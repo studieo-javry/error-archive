@@ -24,7 +24,26 @@ Claude Code  ──(MCP, stdio)──▶  error-archive-agent  ──(HTTPS, Bea
    1회 복사합니다(다시 보여주지 않음). scope: `capture:read`, `capture:write`, `artifact:write`.
 2. **게이트웨이 base URL** — 예: `https://api.error-archive.com`.
 
-## 설치 / 빌드
+## 설치
+
+### npx (게시 후 — 권장)
+
+패키지가 npm 에 게시되면 clone·빌드 없이 바로 쓸 수 있습니다.
+
+```bash
+npx @error-archive/agent doctor   # 연결 진단
+```
+
+Claude Code 등록도 `npx` 로:
+
+```bash
+claude mcp add --scope user --transport stdio error-archive \
+  -e ERROR_ARCHIVE_BASE_URL=https://api.error-archive.com \
+  -e ERROR_ARCHIVE_AGENT_TOKEN=eaa_… \
+  -- npx -y @error-archive/agent
+```
+
+### 소스에서 빌드 (게시 전 / 개발)
 
 ```bash
 cd tools/error-archive-agent

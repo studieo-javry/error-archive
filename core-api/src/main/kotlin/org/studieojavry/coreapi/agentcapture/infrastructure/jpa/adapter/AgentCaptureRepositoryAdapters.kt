@@ -268,6 +268,9 @@ class IdempotencyReceiptAdapter(
     override fun find(scopeKey: String, operation: String, key: String): IdempotencyReceipt? =
         jpa.findByScopeKeyAndOperationAndIdempotencyKey(scopeKey, operation, key)?.toDomain()
 
+    override fun deleteOlderThan(threshold: java.time.Instant): Int =
+        jpa.deleteByCreatedAtBefore(threshold)
+
     override fun save(receipt: IdempotencyReceipt): IdempotencyReceipt {
         val entity = IdempotencyReceiptEntity(
             scopeKey = receipt.scopeKey,

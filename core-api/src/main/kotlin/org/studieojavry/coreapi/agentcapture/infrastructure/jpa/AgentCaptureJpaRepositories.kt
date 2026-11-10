@@ -63,6 +63,10 @@ interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEnti
         operation: String,
         idempotencyKey: String,
     ): IdempotencyReceiptEntity?
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("delete from IdempotencyReceiptEntity r where r.createdAt < :threshold")
+    fun deleteByCreatedAtBefore(@Param("threshold") threshold: java.time.Instant): Int
 }
 
 interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> {

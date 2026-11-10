@@ -128,6 +128,23 @@ class RouteConfig(
             .filter(retry(2))
             .build()
 
+    /**
+     * 프로젝트 바인딩 관리(생성/조회) — 웹 세션 전용, **core-api** 소속(cases/captures/project 가 core).
+     * api/v1/me 하위라 기존 라우트에 안 잡히므로 명시. audience 는 HeaderInjectionFilter 에서 core-api 로 정합.
+     */
+    @Bean
+    fun projectBindingsRoute(): RouterFunction<ServerResponse> =
+        route("project-bindings")
+            .route(
+                path("/api/v1/me/project-bindings/**")
+                    .or(path("/api/v1/me/project-bindings")),
+                http()
+            )
+            .before(uri(downstream.coreApi))
+            .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
+            .filter(retry(2))
+            .build()
+
     @Bean
     fun iamApiRoute(): RouterFunction<ServerResponse> =
         route("iam-api")

@@ -13,6 +13,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContentSanitizer
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -67,7 +68,7 @@ class CreateCaptureUseCase(
                 originatingConnectionId = cmd.connectionId,
                 title = cmd.title,
                 project = cmd.project,
-                content = cmd.content,
+                content = CaptureContentSanitizer.sanitize(cmd.content),
                 now = Instant.now(clock),
             )
         )
@@ -127,7 +128,7 @@ class PatchCaptureUseCase(
         val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireRevision(cmd.expectedRevision)
-        capture.edit(cmd.title, cmd.project, cmd.content, Instant.now(clock))
+        capture.edit(cmd.title, cmd.project, CaptureContentSanitizer.sanitize(cmd.content), Instant.now(clock))
         return captures.save(capture)
     }
 }
@@ -161,7 +162,7 @@ class AddAttemptUseCase(
                 orderIndex = order,
                 result = cmd.result,
                 attemptType = cmd.attemptType,
-                detail = cmd.detail,
+                detail = CaptureContentSanitizer.sanitize(cmd.detail),
                 now = Instant.now(clock),
             )
         )
@@ -191,7 +192,7 @@ class UpdateAttemptUseCase(
         capture.requireAgentWritable()
         val attempt = attempts.findByCaptureAndClientId(capture.id!!, cmd.clientAttemptId)
             ?: throw UnknownAttemptReferenceException(cmd.captureUuid, cmd.clientAttemptId)
-        attempt.update(cmd.result, cmd.attemptType, cmd.detail, Instant.now(clock))
+        attempt.update(cmd.result, cmd.attemptType, CaptureContentSanitizer.sanitize(cmd.detail), Instant.now(clock))
         return attempts.save(attempt)
     }
 }
@@ -227,7 +228,7 @@ class AddSolutionUseCase(
                 captureId = capture.id!!,
                 clientSolutionId = cmd.clientSolutionId,
                 title = cmd.title,
-                content = cmd.content,
+                content = CaptureContentSanitizer.sanitize(cmd.content),
                 now = Instant.now(clock),
             )
         )

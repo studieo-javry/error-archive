@@ -140,3 +140,24 @@ npm run typecheck    # 타입 검사
 npm run dev          # tsx 로 소스 직접 실행(빌드 없이)
 npm run doctor       # tsx 로 doctor 실행
 ```
+
+## API 계약 (OpenAPI)
+
+커넥터가 호출하는 에이전트 API(`/api/v1/agent/**`)의 계약을 core-api 의 OpenAPI `agent` 그룹에서
+스냅샷으로 떠서, TypeScript 타입을 생성해 커밋한다. Kotlin DTO ↔ TS 타입 드리프트를 CI 에서 감시한다.
+
+- `openapi/agent-openapi.json` — core-api `agent` 그룹 스펙 스냅샷(게이트웨이 `/api-docs/agent` = core `/v3/api-docs/agent`).
+- `src/generated/agent-api.ts` — 위 스냅샷에서 `openapi-typescript` 로 생성한 타입(수정 금지, 생성물).
+
+```bash
+# 백엔드(에이전트 DTO/엔드포인트) 변경 후 계약 갱신:
+#   1) 백엔드 기동 — e2e/run-local-e2e.sh 참고 (KEEP_UP=1 로 띄워두면 됨)
+npm run openapi:snapshot   # 실행 중 백엔드 → openapi/agent-openapi.json 갱신
+npm run openapi:gen        # 스냅샷 → src/generated/agent-api.ts 재생성
+#   3) 두 파일 함께 커밋
+
+npm run openapi:check      # CI 와 동일: 스냅샷에서 재생성 후 커밋본과 다르면 실패(드리프트 감지)
+```
+
+> CI(`agent-connector`)는 `openapi:check` 로 **스냅샷↔생성타입** 드리프트를 막는다. **스냅샷↔실제 백엔드**
+> 드리프트(DTO 변경 후 스냅샷 미갱신)는 백엔드를 띄워 `openapi:snapshot` 을 다시 돌려 맞춘다(수동).

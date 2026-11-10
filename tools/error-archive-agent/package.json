@@ -1,20 +1,42 @@
 {
   "name": "@error-archive/agent",
   "version": "0.1.0",
-  "private": true,
   "description": "error-archive AI Agent Capture 커넥터 — Claude Code 등 로컬 AI 도구가 개발 중 오류·해결 과정을 비공개 초안으로 수집하는 MCP 서버.",
+  "license": "UNLICENSED",
+  "author": "error-archive",
+  "homepage": "https://github.com/studieo-javry/error-archive/tree/alpha/tools/error-archive-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/studieo-javry/error-archive.git",
+    "directory": "tools/error-archive-agent"
+  },
+  "bugs": {
+    "url": "https://github.com/studieo-javry/error-archive/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "error-archive",
+    "ai-agent"
+  ],
   "type": "module",
   "bin": {
     "error-archive-agent": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "test:e2e": "tsx --test test-e2e/*.test.ts",

@@ -197,6 +197,22 @@ data class ReviewQueueResponse(
     val items: List<CaptureResponse>,
 )
 
+@Schema(description = "검토 반영 요청. 승인된 항목만 반영한다. reviewedRevision 으로 봉인 후 편집 충돌을 막는다.")
+data class ImportCaptureRequest(
+    @Schema(description = "검토한 초안 revision. capture 의 현재 revision 과 다르면 409 REVISION_CONFLICT.")
+    val reviewedRevision: Int,
+    @Schema(description = "반영할 Attempt(clientAttemptId) — 지정한 순서가 Step 순서가 된다.")
+    val selectedAttemptIds: List<String> = emptyList(),
+    @Schema(description = "반영할 Solution 후보(clientSolutionId).")
+    val selectedSolutionIds: List<String> = emptyList(),
+    @Schema(description = "반영할 근거(clientArtifactId). P0 에선 저장만(Case 연결은 후속).")
+    val selectedArtifactIds: List<String> = emptyList(),
+    @Schema(description = "사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지).")
+    val markResolved: Boolean = false,
+    @Schema(description = "검토 확인 설명(선택).")
+    val note: String? = null,
+)
+
 @Schema(description = "반영 결과. caseId 는 생성된(또는 이미 생성돼 있던) ErrorCase. alreadyImported 는 멱등 재요청.")
 data class ImportCaptureResponse(
     val captureUuid: UUID,

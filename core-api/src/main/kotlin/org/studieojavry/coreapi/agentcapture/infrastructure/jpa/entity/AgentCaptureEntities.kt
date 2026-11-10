@@ -269,3 +269,37 @@ class IdempotencyReceiptEntity(
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
 )
+
+/** 검토 반영 기록(capture_import, V22). Capture 당 1건. attempt_step_map 은 직렬화 JSON(jsonb). */
+@Entity
+@Table(name = "capture_import")
+class CaptureImportEntity(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "capture_import_id")
+    var id: Long? = null,
+
+    @Column(name = "capture_id", nullable = false)
+    var captureId: Long,
+
+    @Column(name = "reviewed_revision", nullable = false)
+    var reviewedRevision: Int,
+
+    @Column(name = "reviewer_user_id", nullable = false)
+    var reviewerUserId: Long,
+
+    @Column(name = "reviewed_at", nullable = false)
+    var reviewedAt: Instant,
+
+    @Column(name = "target_case_id", nullable = false)
+    var targetCaseId: Long,
+
+    @Column(name = "request_hash", nullable = false, length = 64)
+    var requestHash: String,
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "attempt_step_map", columnDefinition = "jsonb", nullable = false)
+    var attemptStepMap: String,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant,
+)

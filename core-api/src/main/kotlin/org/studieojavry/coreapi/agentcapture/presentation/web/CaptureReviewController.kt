@@ -6,20 +6,25 @@ import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.studieojavry.coreapi.agentcapture.application.usecase.DiscardCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.DiscardCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaptureUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.IdempotencyService
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AttemptResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureDetailResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
@@ -43,6 +48,7 @@ class CaptureReviewController(
     private val getCapture: GetCaptureUseCase,
     private val importCapture: ImportCaptureUseCase,
     private val discardCapture: DiscardCaptureUseCase,
+    private val idempotency: IdempotencyService,
 ) {
 
     @Operation(
@@ -96,16 +102,37 @@ class CaptureReviewController(
     fun import(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @PathVariable captureUuid: UUID,
+        @RequestHeader(IDEMPOTENCY_KEY) idempotencyKey: String,
+        @Valid @RequestBody request: ImportCaptureRequest,
     ): ResponseEntity<ImportCaptureResponse> {
-        val result = importCapture.invoke(ImportCaptureCommand(captureUuid = captureUuid, reviewerUserId = userId))
-        val status = if (result.alreadyImported) 200 else 201
-        return ResponseEntity.status(status).body(
-            ImportCaptureResponse(
-                captureUuid = captureUuid,
-                caseId = result.caseId,
-                alreadyImported = result.alreadyImported,
+        val outcome = idempotency.execute(
+            scopeKey = "user:$userId",
+            operation = "capture.import",
+            key = idempotencyKey,
+            requestPayload = request,
+            responseType = ImportCaptureResponse::class.java,
+            successStatus = 201,
+        ) {
+            val r = importCapture.invoke(
+                ImportCaptureCommand(
+                    captureUuid = captureUuid,
+                    reviewerUserId = userId,
+                    reviewedRevision = request.reviewedRevision,
+                    selectedAttemptIds = request.selectedAttemptIds,
+                    selectedSolutionIds = request.selectedSolutionIds,
+                    selectedArtifactIds = request.selectedArtifactIds,
+                    markResolved = request.markResolved,
+                    note = request.note,
+                )
             )
-        )
+            ImportCaptureResponse(captureUuid = captureUuid, caseId = r.caseId, alreadyImported = r.alreadyImported)
+        }
+        val status = if (outcome.replayed || outcome.body.alreadyImported) 200 else 201
+        return ResponseEntity.status(status).body(outcome.body)
+    }
+
+    private companion object {
+        const val IDEMPOTENCY_KEY = "Idempotency-Key"
     }
 
     @Operation(

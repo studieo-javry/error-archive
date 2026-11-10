@@ -12,6 +12,7 @@ import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSe
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionLinkEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSolutionCandidateEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.IdempotencyReceiptEntity
 import java.util.UUID
 
@@ -77,4 +78,8 @@ interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEnti
         operation: String,
         idempotencyKey: String,
     ): IdempotencyReceiptEntity?
+}
+
+interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> {
+    fun findByCaptureId(captureId: Long): CaptureImportEntity?
 }

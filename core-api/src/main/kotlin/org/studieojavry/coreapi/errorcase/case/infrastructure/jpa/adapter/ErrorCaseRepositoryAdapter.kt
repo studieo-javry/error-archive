@@ -60,6 +60,11 @@ class ErrorCaseRepositoryAdapter(
         return hydrateSummaries(entities)
     }
 
+    override fun findBoundByOwner(ownerUserId: Long, projectBindingId: Long?, limit: Int): List<ErrorCaseSummary> {
+        val entities = errorCaseRepo.findBoundByOwner(ownerUserId, projectBindingId, PageRequest.of(0, limit))
+        return hydrateSummaries(entities)
+    }
+
     override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
         if (caseIds.isEmpty()) return emptyList()
         val entities = errorCaseRepo.findAllByIdIn(caseIds)

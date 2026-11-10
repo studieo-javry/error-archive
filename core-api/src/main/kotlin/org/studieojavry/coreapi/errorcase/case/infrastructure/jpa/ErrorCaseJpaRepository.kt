@@ -14,6 +14,17 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
     @Query("SELECT e.ownerUserId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findOwnerUserIdById(@Param("id") id: Long): Long?
 
+    /** 에이전트 case:read — 본인 소유 + 바인딩 귀속만. bindingId 가 null 이면 모든 귀속 케이스. */
+    @Query(
+        "SELECT e FROM ErrorCaseEntity e WHERE e.ownerUserId = :owner AND e.projectBindingId IS NOT NULL " +
+            "AND (:bindingId IS NULL OR e.projectBindingId = :bindingId) ORDER BY e.createdAt DESC, e.id DESC",
+    )
+    fun findBoundByOwner(
+        @Param("owner") owner: Long,
+        @Param("bindingId") bindingId: Long?,
+        pageable: Pageable,
+    ): List<ErrorCaseEntity>
+
     @Query("SELECT e.meta.workspaceId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findWorkspaceIdById(@Param("id") id: Long): Long?
 

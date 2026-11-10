@@ -11,12 +11,16 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventReposi
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceipt
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceiptPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureEventJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureImportJpaRepository
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.ProjectBindingJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureEventEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.ProjectBindingEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
@@ -396,5 +400,42 @@ class CaptureEventRepositoryAdapter(
         payloadHash = payloadHash,
         captureId = captureId,
         status = status,
+    )
+}
+
+@Repository
+class ProjectBindingRepositoryAdapter(
+    private val jpa: ProjectBindingJpaRepository,
+) : ProjectBindingRepositoryPort {
+
+    override fun save(binding: ProjectBinding): ProjectBinding {
+        val entity = ProjectBindingEntity(
+            id = binding.id,
+            ownerUserId = binding.ownerUserId,
+            projectKey = binding.projectKey,
+            normalizedRepoId = binding.normalizedRepoId,
+            storagePolicy = binding.storagePolicy,
+            createdAt = binding.createdAt,
+            updatedAt = binding.updatedAt,
+        )
+        return jpa.save(entity).toDomain()
+    }
+
+    override fun findById(id: Long): ProjectBinding? = jpa.findById(id).orElse(null)?.toDomain()
+
+    override fun findByOwnerAndKey(ownerUserId: Long, projectKey: String): ProjectBinding? =
+        jpa.findByOwnerUserIdAndProjectKey(ownerUserId, projectKey)?.toDomain()
+
+    override fun listByOwner(ownerUserId: Long): List<ProjectBinding> =
+        jpa.findByOwnerUserIdOrderByProjectKeyAsc(ownerUserId).map { it.toDomain() }
+
+    private fun ProjectBindingEntity.toDomain(): ProjectBinding = ProjectBinding(
+        id = id,
+        ownerUserId = ownerUserId,
+        projectKey = projectKey,
+        normalizedRepoId = normalizedRepoId,
+        storagePolicy = storagePolicy,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
     )
 }

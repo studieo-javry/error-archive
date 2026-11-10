@@ -3,9 +3,14 @@ package org.studieojavry.coreapi.agentcapture.application.usecase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.errorcase.attachment.application.command.CreateAttachmentCommand
+import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
+import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
+import org.studieojavry.coreapi.errorcase.attachment.application.usecase.CreateAttachmentUseCase
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
@@ -52,9 +57,13 @@ class ImportCaptureUseCase(
     private val attempts: CaptureAttemptRepositoryPort,
     private val solutions: CaptureSolutionRepositoryPort,
     private val captureImports: CaptureImportRepositoryPort,
+    private val captureArtifacts: CaptureArtifactRepositoryPort,
     private val errorCases: ErrorCaseRepositoryPort,
     private val steps: StepRepositoryPort,
     private val caseSolutions: SolutionRepositoryPort,
+    private val createAttachment: CreateAttachmentUseCase,
+    private val caseAttachments: ErrorCaseAttachmentRepositoryPort,
+    private val attachmentStorage: AttachmentStoragePort,
     private val activity: ActivityEventPublisherPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
     private val objectMapper: ObjectMapper,
@@ -148,6 +157,33 @@ class ImportCaptureUseCase(
                     )
                 )
             }
+        }
+
+        // 3-b) 선택 근거(선택 Attempt 의 evidenceRefs ∪ selectedArtifactIds)를 Case 첨부로 승격·연결.
+        //      캡처 스토리지의 바이트를 읽어 error_case_attachment 로 복사(참조 X) → 케이스에 링크, capture_artifact→LINKED.
+        //      (원본 캡처 아티팩트는 capture_artifact 에 보존. 원래 AttemptResult 는 보존된 capture_attempt 에 남음.)
+        val wantedArtifactIds = (selectedAttempts.flatMap { it.detail.evidenceRefs } + cmd.selectedArtifactIds).toSet()
+        if (wantedArtifactIds.isNotEmpty()) {
+            val linkedMarkers = mutableListOf<String>()
+            captureArtifacts.listByCapture(captureId)
+                .filter { it.clientArtifactId in wantedArtifactIds && it.isCompleted }
+                .forEach { art ->
+                    val created = createAttachment.invoke(
+                        CreateAttachmentCommand(
+                            uploaderUserId = reviewer,
+                            title = null,
+                            caption = null,
+                            fileName = art.fileName ?: art.clientArtifactId,
+                            contentType = art.contentType,
+                            size = art.sizeBytes,
+                            bytes = attachmentStorage.getBytes(art.objectKey),
+                        )
+                    )
+                    linkedMarkers += created.markerId
+                    art.markLinked()
+                    captureArtifacts.save(art)
+                }
+            if (linkedMarkers.isNotEmpty()) caseAttachments.linkToCase(linkedMarkers, caseId)
         }
 
         // 4) 사용자가 명시적으로 해결 표시한 경우에만 RESOLVED(OPEN→IN_PROGRESS→RESOLVED). 기본은 OPEN 유지.

@@ -9,6 +9,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
+import { resolveClientInfo } from './install.js';
 import { createServer } from './server.js';
 
 async function runDoctor(): Promise<number> {
@@ -25,7 +26,9 @@ async function runDoctor(): Promise<number> {
   process.stderr.write(`base URL : ${config.baseUrl}\n`);
   process.stderr.write(`token    : ${maskToken(config.token)}\n`);
 
-  const client = createApiClient(config);
+  const install = resolveClientInfo();
+  process.stderr.write(`install  : ${install.installLabel ?? '(label 생략)'} · ${install.kind} ${install.version ?? ''}\n`);
+  const client = createApiClient(config, undefined, install);
   try {
     const me = await client.whoami();
     process.stderr.write('✓ 연결 OK\n');
@@ -45,7 +48,7 @@ async function runDoctor(): Promise<number> {
 async function runServer(): Promise<void> {
   // 설정이 없으면 즉시 실패(MCP 핸드셰이크 전에 명확히 알림).
   const config = loadConfig();
-  const client = createApiClient(config);
+  const client = createApiClient(config, undefined, resolveClientInfo());
   const server = createServer(client);
   const transport = new StdioServerTransport();
   await server.connect(transport);

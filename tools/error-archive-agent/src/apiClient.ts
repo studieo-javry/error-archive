@@ -31,6 +31,28 @@ import type {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * 커넥터가 서버에 신고하는 설치 메타(표시용). 연결 목록을 사람이 알아보게 하려는 값으로,
+ * 모든 요청에 X-Agent-* 헤더로 실린다. 서버는 인가에 쓰지 않는다(위조 가능).
+ */
+export interface AgentClientInfo {
+  kind: string;
+  version?: string;
+  installId: string;
+  installLabel?: string;
+}
+
+/** AgentClientInfo → X-Agent-* 헤더(빈 값은 생략). */
+function clientHeaders(client: AgentClientInfo | undefined): Record<string, string> {
+  if (!client) return {}
+  const h: Record<string, string> = {}
+  if (client.kind) h['X-Agent-Client-Kind'] = client.kind
+  if (client.version) h['X-Agent-Client-Version'] = client.version
+  if (client.installId) h['X-Agent-Install-Id'] = client.installId
+  if (client.installLabel) h['X-Agent-Install-Label'] = client.installLabel
+  return h
+}
+
 /** 서버가 돌려준 오류. status + (있으면) problem detail code 를 보존한다. */
 export class ApiError extends Error {
   constructor(
@@ -83,13 +105,15 @@ function guessContentType(fileName: string): string {
   return MIME_BY_EXT[ext] ?? 'application/octet-stream';
 }
 
-export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike): ApiClient {
+export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, client?: AgentClientInfo): ApiClient {
   const doFetch: FetchLike = fetchImpl ?? ((input, init) => fetch(input, init));
+  const installHeaders = clientHeaders(client);
 
   async function request<T>(opts: RequestOptions): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${config.token}`,
       Accept: 'application/json',
+      ...installHeaders,
     };
     let body: RequestInit['body'];
     if (opts.rawBody !== undefined) {
@@ -170,6 +194,7 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike): Api
       const headers: Record<string, string> = {
         Authorization: `Bearer ${config.token}`,
         Accept: 'application/json',
+        ...installHeaders,
       };
       let res: Response;
       try {

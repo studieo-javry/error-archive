@@ -35,6 +35,31 @@ test('whoami: Bearer 토큰과 경로를 실어 보내고 응답을 파싱한다
   assert.deepEqual(me.scopes, ['capture:write']);
 });
 
+test('client 정보가 주어지면 모든 요청에 X-Agent-* 설치 헤더를 싣는다', async () => {
+  const { fetch, calls } = fakeFetch(200, { userId: 1, connectionId: 'c', scopes: [] });
+  await createApiClient(config, fetch, {
+    kind: 'claude-code', version: '1.2.3', installId: 'inst-xyz', installLabel: '내 맥북',
+  }).whoami();
+  const init = calls[0]?.init;
+  assert.equal(header(init, 'X-Agent-Client-Kind'), 'claude-code');
+  assert.equal(header(init, 'X-Agent-Client-Version'), '1.2.3');
+  assert.equal(header(init, 'X-Agent-Install-Id'), 'inst-xyz');
+  assert.equal(header(init, 'X-Agent-Install-Label'), '내 맥북');
+});
+
+test('client 정보가 없으면 X-Agent-* 헤더를 싣지 않는다(후방호환)', async () => {
+  const { fetch, calls } = fakeFetch(200, { userId: 1, connectionId: 'c', scopes: [] });
+  await createApiClient(config, fetch).whoami();
+  assert.equal(header(calls[0]?.init, 'X-Agent-Install-Id'), undefined);
+});
+
+test('installLabel 이 없으면 그 헤더만 생략한다(opt-out)', async () => {
+  const { fetch, calls } = fakeFetch(200, { userId: 1, connectionId: 'c', scopes: [] });
+  await createApiClient(config, fetch, { kind: 'claude-code', installId: 'i' }).whoami();
+  assert.equal(header(calls[0]?.init, 'X-Agent-Install-Id'), 'i');
+  assert.equal(header(calls[0]?.init, 'X-Agent-Install-Label'), undefined);
+});
+
 test('createCapture: POST + Idempotency-Key + JSON 본문', async () => {
   const { fetch, calls } = fakeFetch(201, { captureUuid: 'u1', status: 'OPEN', revision: 0, content: {} });
   await createApiClient(config, fetch).createCapture(

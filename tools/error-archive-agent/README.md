@@ -48,6 +48,19 @@ npm test             # 단위·MCP 배선 테스트
 { "baseUrl": "https://api.error-archive.com", "token": "eaa_…" }
 ```
 
+### 설치 환경 식별(연결 목록 표시용)
+
+웹의 **연결 목록**에서 "어느 기기/도구"인지 알아보도록, 커넥터가 설치 메타를 매 요청에 함께 보냅니다
+(`X-Agent-*` 헤더). 이 값은 **표시용**이며 서버 인가에는 쓰이지 않습니다.
+
+| 항목 | 환경변수 | 기본값 |
+| --- | --- | --- |
+| 설치 라벨(사람이 읽는 이름) | `ERROR_ARCHIVE_INSTALL_LABEL` | 호스트명(`hostname`). 빈 문자열이면 전송 안 함(opt-out) |
+| 설치 식별자(고정) | `ERROR_ARCHIVE_INSTALL_ID` | `~/.config/error-archive-agent/install.json` 에 1회 생성·보관(랜덤 UUID, 하드웨어 지문 아님) |
+
+커넥터 종류(`claude-code`)·버전은 자동으로 실립니다. 토큰 재발급 등으로 연결을 다시 만들어도, 같은
+설치는 목록에서 같은 라벨로 보입니다.
+
 ## 진단(doctor)
 
 연결이 올바른지 먼저 확인하세요. 토큰은 마스킹돼 출력됩니다.

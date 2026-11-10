@@ -20,8 +20,12 @@ import java.util.UUID
 class IntrospectAgentConnectionUseCase(
     private val connections: AgentConnectionRepositoryPort,
 ) {
+    /**
+     * @param client 커넥터가 헤더로 신고한 설치 메타(표시용, 선택). **인가에는 쓰지 않는다.**
+     *               최초 신고 시 1회 바인딩하고, 이후엔 clientVersion 변화만 반영한다.
+     */
     @Transactional
-    fun invoke(rawToken: String): Principal {
+    fun invoke(rawToken: String, client: ClientDescriptor? = null): Principal {
         val token = rawToken.trim()
         if (token.isEmpty()) throw InvalidAgentTokenException()
         val connection = connections.findByTokenHash(HashUtils.sha256(token))
@@ -29,13 +33,30 @@ class IntrospectAgentConnectionUseCase(
         val now = Instant.now()
         if (!connection.isUsable(now)) throw InvalidAgentTokenException()
 
-        connections.touchLastUsed(connection.connectionId, now)
+        // 설치 메타 신고가 있고 바인딩/버전 변화가 생기면 전체 저장, 아니면 lastUsedAt 만 타깃 갱신(핫패스).
+        val changed = client != null &&
+            connection.bindClient(client.kind, client.version, client.installId, client.installLabel, now)
+        if (changed) {
+            connection.touchLastUsed(now)
+            connections.save(connection)
+        } else {
+            connections.touchLastUsed(connection.connectionId, now)
+        }
+
         return Principal(
             userId = connection.ownerUserId,
             connectionId = connection.connectionId,
             scopes = connection.scopes,
         )
     }
+
+    /** 커넥터 자기신고 설치 메타(검증 불가 — 표시용). */
+    data class ClientDescriptor(
+        val kind: String?,
+        val version: String?,
+        val installId: String?,
+        val installLabel: String?,
+    )
 
     data class Principal(
         val userId: Long,

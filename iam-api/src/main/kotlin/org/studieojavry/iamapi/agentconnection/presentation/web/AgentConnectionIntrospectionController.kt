@@ -32,7 +32,7 @@ class AgentConnectionIntrospectionController(
     @PostMapping("/introspect")
     fun introspect(@Valid @RequestBody request: IntrospectAgentTokenRequest): IntrospectAgentTokenResponse =
         try {
-            IntrospectAgentTokenResponse.from(introspect.invoke(request.token))
+            IntrospectAgentTokenResponse.from(introspect.invoke(request.token, request.toClientDescriptor()))
         } catch (e: InvalidAgentTokenException) {
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, e.message, e)
         }

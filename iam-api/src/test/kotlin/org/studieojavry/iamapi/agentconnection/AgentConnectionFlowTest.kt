@@ -73,6 +73,48 @@ class AgentConnectionFlowTest(
     }
 
     @Test
+    fun `커넥터 설치 메타는 first-use 에 1회 바인딩되고 목록에 표시된다`() {
+        val result = create.invoke(userId, label = null, scopes = AgentScope.DEFAULTS)
+        val desc = IntrospectAgentConnectionUseCase.ClientDescriptor(
+            kind = "claude-code", version = "1.0.0", installId = "inst-1", installLabel = "내 맥북",
+        )
+
+        introspect.invoke(result.rawToken, desc)
+
+        val item = list.invoke(userId).single()
+        assertThat(item.clientKind).isEqualTo("claude-code")
+        assertThat(item.clientVersion).isEqualTo("1.0.0")
+        assertThat(item.installLabel).isEqualTo("내 맥북")
+        // label 이 없으므로 표시 이름은 설치 라벨로 떨어진다
+        assertThat(item.displayName).isEqualTo("내 맥북")
+    }
+
+    @Test
+    fun `이미 바인딩된 뒤에는 버전만 갱신되고 설치 식별자는 고정된다`() {
+        val result = create.invoke(userId, label = "데스크탑", scopes = AgentScope.DEFAULTS)
+        introspect.invoke(result.rawToken, IntrospectAgentConnectionUseCase.ClientDescriptor("claude-code", "1.0.0", "inst-A", "A"))
+        // 재사용: 버전 업, installId/label 은 다른 값이 와도 바뀌지 않음
+        introspect.invoke(result.rawToken, IntrospectAgentConnectionUseCase.ClientDescriptor("claude-code", "1.2.0", "inst-B", "B"))
+
+        val item = list.invoke(userId).single()
+        assertThat(item.clientVersion).isEqualTo("1.2.0") // 버전만 갱신
+        assertThat(item.installLabel).isEqualTo("A")      // 식별자·라벨 고정
+        assertThat(item.displayName).isEqualTo("데스크탑") // label 우선
+    }
+
+    @Test
+    fun `설치 메타 없는(구형) 커넥터는 그대로 동작하고 표시 이름은 폴백한다`() {
+        val result = create.invoke(userId, label = null, scopes = AgentScope.DEFAULTS)
+        introspect.invoke(result.rawToken) // descriptor 없음
+
+        val item = list.invoke(userId).single()
+        assertThat(item.clientKind).isNull()
+        assertThat(item.installLabel).isNull()
+        // label·설치라벨 모두 없음 → "{cid 앞 8자}" 로 폴백(공백 구분자 없음)
+        assertThat(item.displayName).isEqualTo(result.connection.connectionId.toString().take(8))
+    }
+
+    @Test
     fun `타인 또는 모르는 연결 폐기는 404 신호다`() {
         val result = create.invoke(userId, label = null, scopes = AgentScope.DEFAULTS)
 

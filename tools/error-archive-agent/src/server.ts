@@ -337,6 +337,31 @@ export function createServer(client: ApiClient): McpServer {
   );
 
   server.registerTool(
+    'find_cases',
+    {
+      title: '과거 사례 검색',
+      description:
+        '허용 범위(본인 소유 + 프로젝트 바인딩 귀속)의 기존 Case 를 검색한다. 공개 사례·타인 데이터는 조회되지 않는다. ' +
+        'projectBindingId 로 특정 바인딩만 좁힐 수 있다.',
+      inputSchema: {
+        projectBindingId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    (args) => guard(async () => ok(await client.searchCases(args.projectBindingId, args.limit))),
+  );
+
+  server.registerTool(
+    'get_case',
+    {
+      title: '과거 사례 상세',
+      description: '허용 범위의 Case 상세(Step·Solution 포함)를 조회한다. 범위 밖이면 조회되지 않는다.',
+      inputSchema: { caseId: z.number().int().positive() },
+    },
+    (args) => guard(async () => ok(await client.getCase(args.caseId))),
+  );
+
+  server.registerTool(
     'capture_complete',
     {
       title: '초안 봉인(검토 대기)',

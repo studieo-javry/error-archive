@@ -140,3 +140,24 @@ test('네트워크 예외는 status 0 NETWORK ApiError', async () => {
     (err: unknown) => err instanceof ApiError && err.status === 0 && err.code === 'NETWORK',
   );
 });
+
+test('searchCases: GET + projectBindingId·limit 쿼리', async () => {
+  const { fetch, calls } = fakeFetch(200, { items: [{ id: 3, title: 't', status: 'OPEN', createdAt: '2026-01-01T00:00:00' }] });
+  const res = await createApiClient(config, fetch).searchCases(5, 20);
+  assert.equal(calls[0]?.url, 'https://api.test/api/v1/agent/cases?projectBindingId=5&limit=20');
+  assert.equal(calls[0]?.init?.method, 'GET');
+  assert.equal(res.items[0]?.id, 3);
+});
+
+test('searchCases: 인자 없으면 쿼리 없이 호출', async () => {
+  const { fetch, calls } = fakeFetch(200, { items: [] });
+  await createApiClient(config, fetch).searchCases();
+  assert.equal(calls[0]?.url, 'https://api.test/api/v1/agent/cases');
+});
+
+test('getCase: GET /agent/cases/{id}', async () => {
+  const { fetch, calls } = fakeFetch(200, { id: 7, title: 't', status: 'OPEN', project: null, projectBindingId: 5, steps: [], solutions: [] });
+  const d = await createApiClient(config, fetch).getCase(7);
+  assert.equal(calls[0]?.url, 'https://api.test/api/v1/agent/cases/7');
+  assert.equal(d.projectBindingId, 5);
+});

@@ -8,7 +8,8 @@ name: agent-connector-publish
 #   3) package.json 의 version 을 올리고(semver), license/공개여부 확정
 #   4) Actions 탭 → agent-connector-publish → Run workflow
 #
-# 공개 scoped 패키지라 `--access public` 으로 게시된다(private 로 전환하려면 publishConfig.access 변경).
+# 비공개 scoped 패키지(`publishConfig.access=restricted`)로 게시된다 — npm 유료 조직(@error-archive) 필요.
+# 설치하는 쪽도 읽기 권한 토큰으로 인증해야 한다(README 참고).
 on:
   workflow_dispatch:
     inputs:
@@ -48,9 +49,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish (dry-run)
         if: ${{ inputs.dry_run }}
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access restricted
       - name: Publish (npm)
         if: ${{ !inputs.dry_run }}
-        run: npm publish --access public
+        run: npm publish --access restricted
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

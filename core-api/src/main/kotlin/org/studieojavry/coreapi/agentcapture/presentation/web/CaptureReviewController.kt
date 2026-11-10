@@ -123,6 +123,7 @@ class CaptureReviewController(
                     selectedArtifactIds = request.selectedArtifactIds,
                     markResolved = request.markResolved,
                     note = request.note,
+                    projectBindingId = request.projectBindingId,
                 )
             )
             ImportCaptureResponse(captureUuid = captureUuid, caseId = r.caseId, alreadyImported = r.alreadyImported)

@@ -7,6 +7,8 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRep
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
 import org.studieojavry.coreapi.errorcase.attachment.application.command.CreateAttachmentCommand
 import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
@@ -58,6 +60,7 @@ class ImportCaptureUseCase(
     private val solutions: CaptureSolutionRepositoryPort,
     private val captureImports: CaptureImportRepositoryPort,
     private val captureArtifacts: CaptureArtifactRepositoryPort,
+    private val projectBindings: ProjectBindingRepositoryPort,
     private val errorCases: ErrorCaseRepositoryPort,
     private val steps: StepRepositoryPort,
     private val caseSolutions: SolutionRepositoryPort,
@@ -91,6 +94,12 @@ class ImportCaptureUseCase(
         // 검토 시점 revision 일치 확인(봉인 후 편집이 끼면 409 REVISION_CONFLICT).
         capture.requireRevision(cmd.reviewedRevision)
 
+        // 귀속할 ProjectBinding 은 본인 소유여야 함(없거나 타인 소유면 404 — 존재 노출 회피).
+        cmd.projectBindingId?.let { bid ->
+            val binding = projectBindings.findById(bid)
+            if (binding == null || binding.ownerUserId != cmd.reviewerUserId) throw ProjectBindingNotFoundException(bid)
+        }
+
         val now = Instant.now(clock)
         val reviewer = cmd.reviewerUserId
         val captureId = capture.id!!
@@ -121,6 +130,7 @@ class ImportCaptureUseCase(
                 source = ContentSource.AGENT_IMPORT,
                 reviewedByUserId = reviewer,
                 sourceCaptureId = captureId,
+                projectBindingId = cmd.projectBindingId,
             )
         )
         val caseId = case.id!!
@@ -245,7 +255,8 @@ class ImportCaptureUseCase(
             append(cmd.reviewedRevision).append('|')
             append(cmd.selectedAttemptIds.sorted().joinToString(",")).append('|')
             append(cmd.selectedSolutionIds.sorted().joinToString(",")).append('|')
-            append(cmd.markResolved)
+            append(cmd.markResolved).append('|')
+            append(cmd.projectBindingId ?: "")
         }
         return MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -318,6 +329,8 @@ data class ImportCaptureCommand(
     /** 사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지). */
     val markResolved: Boolean = false,
     val note: String? = null,
+    /** 생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). 미지정 시 미귀속. */
+    val projectBindingId: Long? = null,
 )
 
 /**

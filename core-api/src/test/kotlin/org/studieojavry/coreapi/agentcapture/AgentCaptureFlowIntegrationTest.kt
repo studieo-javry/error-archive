@@ -185,6 +185,40 @@ class AgentCaptureFlowIntegrationTest {
     }
 
     @Test
+    fun `Attempt 참조가 하나도 없는 Solution 은 422 SOLUTION_WITHOUT_ATTEMPT`() {
+        val uuid = UUID.randomUUID()
+        createCapture(uuid, "k-sol-empty")
+        mvc.perform(
+            post("/api/v1/agent/captures/$uuid/solutions").with(agent())
+                .header("Idempotency-Key", "k-sol-empty-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "clientSolutionId" to "s-empty", "title" to "no ref",
+                    "content" to mapOf("clientAttemptIds" to emptyList<String>()),
+                ))),
+        ).andExpect(status().isUnprocessableEntity).andExpect(jsonPath("$.code").value("SOLUTION_WITHOUT_ATTEMPT"))
+    }
+
+    @Test
+    fun `PASSED 검증에 근거가 없으면 422 VERIFICATION_EVIDENCE_REQUIRED`() {
+        val uuid = UUID.randomUUID()
+        createCapture(uuid, "k-sol-noevid")
+        addAttempt(uuid, "a1", "SUCCEEDED", "k-a1-noevid")
+        mvc.perform(
+            post("/api/v1/agent/captures/$uuid/solutions").with(agent())
+                .header("Idempotency-Key", "k-sol-noevid-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "clientSolutionId" to "s-noevid", "title" to "passed but no evidence",
+                    "content" to mapOf(
+                        "clientAttemptIds" to listOf("a1"),
+                        "verification" to mapOf("result" to "PASSED", "executed" to true),
+                    ),
+                ))),
+        ).andExpect(status().isUnprocessableEntity).andExpect(jsonPath("$.code").value("VERIFICATION_EVIDENCE_REQUIRED"))
+    }
+
+    @Test
     fun `타인 소유 초안 조회는 404`() {
         val uuid = UUID.randomUUID()
         createCapture(uuid, "k3")

@@ -1,0 +1,43 @@
+name: agent-connector
+
+# error-archive-agent(로컬 MCP 커넥터, TS) 검증 — Gradle 밖 유일한 패키지라 별도 워크플로.
+# 타입체크·테스트·빌드 + OpenAPI 계약 타입 드리프트 검사(생성 타입이 커밋된 스펙과 일치하는지).
+on:
+  push:
+    branches: [ alpha ]
+    paths:
+      - 'tools/error-archive-agent/**'
+      - '.github/workflows/agent-connector.yml'
+  pull_request:
+    paths:
+      - 'tools/error-archive-agent/**'
+      - '.github/workflows/agent-connector.yml'
+
+concurrency:
+  group: agent-connector-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/error-archive-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/error-archive-agent/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: OpenAPI 계약 타입 드리프트 검사
+        # 커밋된 스냅샷(openapi/agent-openapi.json)에서 타입을 다시 생성 → 커밋본과 다르면 실패.
+        # (Kotlin DTO 변경 후 `npm run openapi:snapshot && npm run openapi:gen` 으로 갱신·커밋해야 함)
+        run: npm run openapi:check

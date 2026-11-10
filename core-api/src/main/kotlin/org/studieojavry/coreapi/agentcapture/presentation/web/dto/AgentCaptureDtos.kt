@@ -261,6 +261,8 @@ data class ImportCaptureRequest(
     val solutionEdits: Map<String, SolutionEditRequest> = emptyMap(),
     @Schema(description = "검토 확인 설명(선택).")
     val note: String? = null,
+    @Schema(description = "생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). case:read 스코프 기준. 미지정 시 미귀속.")
+    val projectBindingId: Long? = null,
 )
 
 @Schema(description = "검토 중 Step 수정. null 필드는 캡처 원본 유지, body 는 빈 문자열이면 본문 없음.")

@@ -308,6 +308,7 @@ class ErrorCaseRepositoryAdapter(
         source = source,
         reviewedByUserId = reviewedByUserId,
         sourceCaptureId = sourceCaptureId,
+        projectBindingId = projectBindingId,
     )
 
     private fun ErrorSnapshot.toEmbeddable(): ErrorSnapshotEmbeddable = ErrorSnapshotEmbeddable(
@@ -384,6 +385,7 @@ class ErrorCaseRepositoryAdapter(
             source = source,
             reviewedByUserId = reviewedByUserId,
             sourceCaptureId = sourceCaptureId,
+            projectBindingId = projectBindingId,
         )
     }
 }

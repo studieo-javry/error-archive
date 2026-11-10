@@ -89,4 +89,8 @@ class ErrorCaseEntity(
     /** 반영의 출처가 된 agent_capture 의 id(추적용). */
     @Column(name = "source_capture_id")
     var sourceCaptureId: Long? = null,
+
+    /** 귀속 ProjectBinding id(P1 case:read 스코프 기준). */
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
 )

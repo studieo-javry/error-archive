@@ -29,6 +29,8 @@ import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureReposi
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
@@ -120,6 +122,7 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var errorCases: ErrorCaseRepositoryPort
     @Autowired private lateinit var steps: StepRepositoryPort
     @Autowired private lateinit var caseSolutions: SolutionRepositoryPort
+    @Autowired private lateinit var projectBindings: ProjectBindingRepositoryPort
     @Autowired private lateinit var publisher: RecordingPublisher
     @Autowired private lateinit var captureArtifacts: CaptureArtifactRepositoryPort
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
@@ -310,6 +313,32 @@ class AgentCaptureImportIntegrationTest {
         mvc.perform(post("/api/v1/captures/$imported/discard").with(asUser(userId)))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CAPTURE_ALREADY_IMPORTED"))
+    }
+
+    @Test
+    fun `import 에 projectBindingId 지정 시 Case 에 귀속된다`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = userId, projectKey = "checkout", createdAt = now(), updatedAt = now()),
+        )
+        doImport(
+            uuid, userId, "imp-bind",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":["s1"],"projectBindingId":${binding.id}}""",
+        ).andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertEquals(binding.id, errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
+    fun `타인 소유 projectBindingId 는 404`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        val foreign = projectBindings.save(
+            ProjectBinding(ownerUserId = 9999L, projectKey = "foreign", createdAt = now(), updatedAt = now()),
+        )
+        doImport(
+            uuid, userId, "imp-bind-foreign",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"projectBindingId":${foreign.id}}""",
+        ).andExpect(status().isNotFound).andExpect(jsonPath("$.code").value("PROJECT_BINDING_NOT_FOUND"))
     }
 
     @Test

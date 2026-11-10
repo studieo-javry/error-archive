@@ -133,6 +133,30 @@ node dist/index.js flush    # 큐를 한 차례 전송(네트워크 복구 후 �
 자동 재시도는 7일까지 지수 backoff 로 반복하고, 이후에는 **확인 필요(NEEDS_ATTENTION)** 로 남겨
 `status` 에 드러냅니다(조용한 폐기 없음). 큐가 256 MiB 상한에 닿으면 수집을 멈추고 알립니다.
 
+## 자동수집 Hook 설정(선택)
+
+Claude Code 의 Hook 으로 도구 실행 흐름을 자동 수집할 수 있습니다. `hook` 명령은 stdin 으로 받은
+hook payload 를 정규화해 **로컬 큐에만 적재**하고 즉시 끝납니다(네트워크·설정 불필요, 항상 종료코드 0 —
+개발 명령을 절대 막지 않음). 전송은 앞의 sender/`flush` 가 담당합니다.
+
+Claude Code `settings.json` 에 다음을 추가하세요(수집 대상: PostToolUse·PostToolUseFailure·PreCompact·Stop).
+자기 자신(이 커넥터의 MCP 도구 호출·`error-archive-agent` CLI 를 부른 Bash)은 자동 제외됩니다.
+
+```json
+{
+  "hooks": {
+    "PostToolUse":        [{ "hooks": [{ "type": "command", "command": "npx -y @error-archive/agent@1.0.0 hook" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "npx -y @error-archive/agent@1.0.0 hook" }] }],
+    "PreCompact":         [{ "hooks": [{ "type": "command", "command": "npx -y @error-archive/agent@1.0.0 hook" }] }],
+    "Stop":               [{ "hooks": [{ "type": "command", "command": "npx -y @error-archive/agent@1.0.0 hook" }] }]
+  }
+}
+```
+
+> 매 도구 실행마다 호출되므로, 지연을 줄이려면 전역 설치본(`node /path/to/dist/index.js hook`)을 쓰는 편이
+> 빠릅니다. 특정 프로젝트에만 수집을 묶으려면 `ERROR_ARCHIVE_PROJECT_BINDING=<id>` 환경변수를 주세요.
+> payload 안의 토큰·비밀키·PEM 등은 전송 전에 마스킹되고, 64 KiB 를 넘으면 잘립니다(큰 근거는 첨부로).
+
 ## Claude Code 에 등록 (소스 빌드 경로)
 
 게시 전/개발용으로 로컬 `dist` 를 직접 가리키는 등록. **게시 후에는 위 [npx](#npx-게시-후--권장) 흐름을

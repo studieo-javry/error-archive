@@ -21,6 +21,21 @@ function fail(message: string): CallToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
 
+/**
+ * 선택적 이벤트 연결. ids 가 있으면 초안에 자동수집 이벤트를 연결하고 결과를 요약으로 돌려준다.
+ * 아직 서버에 적재되지 않은 이벤트는 skipped — AI 가 나중에 다시 연결할 수 있다(멱등).
+ */
+async function linkEventsIfAny(
+  client: ApiClient,
+  captureUuid: string,
+  ids: string[] | undefined,
+): Promise<{ linkedEvents?: string[]; skippedEvents?: string[] }> {
+  const clean = (ids ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
+  if (clean.length === 0) return {};
+  const res = await client.linkEvents(captureUuid, clean);
+  return { linkedEvents: res.linked, skippedEvents: res.skipped };
+}
+
 /** 도구 핸들러 공통 에러 변환 — ApiError 는 코드/상태를 실어 보고, 그 외는 메시지만. */
 async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult> {
   try {
@@ -75,6 +90,10 @@ export function createServer(client: ApiClient): McpServer {
         title: z.string().optional(),
         project: z.string().optional(),
         sessionUuid: z.string().uuid().optional().describe('이 초안을 이을 세션(선택)'),
+        linkEventIds: z
+          .array(z.string())
+          .optional()
+          .describe('이 초안에 연결할 자동수집 이벤트(clientEventId). 아직 서버에 적재 전이면 조용히 건너뜀(skipped) — 나중에 다시 호출해 연결 가능(멱등).'),
         ...CONTENT_SHAPE,
       },
     },
@@ -91,7 +110,8 @@ export function createServer(client: ApiClient): McpServer {
           },
           idempotencyKeyFor('capture.create', captureUuid),
         );
-        return ok({ captureUuid: created.captureUuid, status: created.status, revision: created.revision });
+        const link = await linkEventsIfAny(client, captureUuid, args.linkEventIds);
+        return ok({ captureUuid: created.captureUuid, status: created.status, revision: created.revision, ...link });
       }),
   );
 
@@ -112,6 +132,10 @@ export function createServer(client: ApiClient): McpServer {
         insight: z.string().optional().describe('이 시도에서 얻은 판단'),
         nextStep: z.string().optional(),
         evidenceRefs: z.array(z.string()).optional().describe('연결할 근거(clientArtifactId). 봉인 전 업로드돼야 함'),
+        linkEventIds: z
+          .array(z.string())
+          .optional()
+          .describe('이 시도와 함께 초안에 연결할 자동수집 이벤트(clientEventId). 미적재분은 건너뜀(skipped), 멱등.'),
       },
     },
     (args) =>
@@ -127,7 +151,8 @@ export function createServer(client: ApiClient): McpServer {
           },
           idempotencyKeyFor('attempt.add', `${args.captureUuid}:${clientAttemptId}`),
         );
-        return ok({ clientAttemptId: saved.clientAttemptId, orderIndex: saved.orderIndex, result: saved.result });
+        const link = await linkEventsIfAny(client, args.captureUuid, args.linkEventIds);
+        return ok({ clientAttemptId: saved.clientAttemptId, orderIndex: saved.orderIndex, result: saved.result, ...link });
       }),
   );
 

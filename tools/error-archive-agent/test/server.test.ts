@@ -100,6 +100,40 @@ test('capture_start 는 captureUuid 를 생성하고 서사를 구조화해 전�
   assert.deepEqual(content.reproduction, { steps: ['run'], executed: false });
 });
 
+test('capture_start linkEventIds: 자동수집 이벤트를 초안에 연결하고 결과를 요약한다', async () => {
+  let linkedUuid: string | undefined;
+  let linkedIds: string[] | undefined;
+  const { client } = fakeClient({
+    linkEvents: async (captureUuid: string, ids: string[]) => {
+      linkedUuid = captureUuid;
+      linkedIds = ids;
+      return { linked: ['e1'], skipped: ['e2'] }; // e2 는 아직 미적재라 skip
+    },
+  });
+  const mcp = await connect(client);
+  const res = (await mcp.callTool({
+    name: 'capture_start',
+    arguments: { title: 'x', linkEventIds: ['e1', 'e2', '  '] },
+  })) as any;
+  const body = JSON.parse(textOf(res));
+  assert.equal(linkedUuid, body.captureUuid);
+  assert.deepEqual(linkedIds, ['e1', 'e2']); // 공백 항목은 제거
+  assert.deepEqual(body.linkedEvents, ['e1']);
+  assert.deepEqual(body.skippedEvents, ['e2']);
+});
+
+test('capture_start linkEventIds 없으면 linkEvents 를 호출하지 않는다', async () => {
+  let called = false;
+  const { client } = fakeClient({
+    linkEvents: async () => { called = true; return { linked: [], skipped: [] }; },
+  });
+  const mcp = await connect(client);
+  const res = (await mcp.callTool({ name: 'capture_start', arguments: { title: 'x' } })) as any;
+  const body = JSON.parse(textOf(res));
+  assert.equal(called, false);
+  assert.equal(body.linkedEvents, undefined);
+});
+
 test('capture_start 는 captureUuid 에서 파생한 결정론적 멱등키를 보낸다', async () => {
   let sentUuid: string | undefined;
   let sentKey: string | undefined;

@@ -9,6 +9,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
+import { runHook } from './hooks/run.js';
 import { resolveClientInfo } from './install.js';
 import { resolveQueuePath } from './queue/path.js';
 import { QueueSender } from './queue/sender.js';
@@ -106,6 +107,9 @@ async function main(): Promise<void> {
   if (command === 'doctor') {
     process.exit(await runDoctor());
   }
+  if (command === 'hook') {
+    process.exit(await runHook());
+  }
   if (command === 'status') {
     process.exit(runStatus());
   }
@@ -121,7 +125,7 @@ async function main(): Promise<void> {
     }
   }
   if (command && command !== 'serve') {
-    process.stderr.write(`알 수 없는 명령: ${command}\n사용법: error-archive-agent [serve|doctor|status|flush]\n`);
+    process.stderr.write(`알 수 없는 명령: ${command}\n사용법: error-archive-agent [serve|doctor|status|flush|hook]\n`);
     process.exit(2);
   }
   try {

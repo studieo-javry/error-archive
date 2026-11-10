@@ -15,7 +15,9 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnsupportedArtifactException
 
 /**
@@ -49,6 +51,14 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnknownAttemptReferenceException::class)
     fun unknownAttempt(ex: UnknownAttemptReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ATTEMPT_REFERENCE", ex.message)
+
+    @ExceptionHandler(SolutionWithoutAttemptException::class)
+    fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_ATTEMPT", ex.message)
+
+    @ExceptionHandler(VerificationEvidenceRequiredException::class)
+    fun verificationEvidence(ex: VerificationEvidenceRequiredException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "VERIFICATION_EVIDENCE_REQUIRED", ex.message)
 
     @ExceptionHandler(EvidenceNotReadyException::class)
     fun evidenceNotReady(ex: EvidenceNotReadyException): ProblemDetail =

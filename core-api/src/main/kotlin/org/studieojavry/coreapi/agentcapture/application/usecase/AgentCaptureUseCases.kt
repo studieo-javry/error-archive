@@ -19,7 +19,10 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
@@ -219,9 +222,17 @@ class AddSolutionUseCase(
         val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireAgentWritable()
+        if (cmd.content.clientAttemptIds.isEmpty()) throw SolutionWithoutAttemptException(cmd.captureUuid)
         val known = attempts.clientAttemptIds(capture.id!!)
         cmd.content.clientAttemptIds.forEach { ref ->
             if (ref !in known) throw UnknownAttemptReferenceException(cmd.captureUuid, ref)
+        }
+        cmd.content.verification?.let { v ->
+            if (v.result == VerificationResult.PASSED &&
+                v.command.isNullOrBlank() && v.testId.isNullOrBlank() && v.evidence.isNullOrBlank()
+            ) {
+                throw VerificationEvidenceRequiredException(cmd.captureUuid)
+            }
         }
         return solutions.save(
             CaptureSolutionCandidate.create(

@@ -24,6 +24,17 @@ class IdempotencyConflictException(val key: String) :
 class UnknownAttemptReferenceException(val captureUuid: UUID, val clientAttemptId: String) :
     RuntimeException("solution references unknown attempt '$clientAttemptId' in $captureUuid")
 
+/** Solution 후보는 최소 1개의 존재하는 Attempt 를 참조해야 함 → 422 SOLUTION_WITHOUT_ATTEMPT. */
+class SolutionWithoutAttemptException(val captureUuid: UUID) :
+    RuntimeException("solution for $captureUuid must reference at least one attempt")
+
+/**
+ * verification.result=PASSED 인데 근거(command·testId·evidence)가 하나도 없음 → 422 VERIFICATION_EVIDENCE_REQUIRED.
+ * 근거 "존재" 만 확인한다(내용의 완전한 진실성은 서버가 보증하지 않음, 이슈 §3).
+ */
+class VerificationEvidenceRequiredException(val captureUuid: UUID) :
+    RuntimeException("PASSED verification for $captureUuid requires command, testId, or evidence")
+
 /** 허용되지 않은 첨부 형식(SVG/HTML/실행/압축 등) → 415. */
 class UnsupportedArtifactException(message: String) : RuntimeException(message)
 

@@ -28,19 +28,35 @@ Claude Code  ──(MCP, stdio)──▶  error-archive-agent  ──(HTTPS, Bea
 
 ### npx (게시 후 — 권장)
 
-패키지가 npm 에 게시되면 clone·빌드 없이 바로 쓸 수 있습니다.
+패키지가 npm 에 게시되면 clone·빌드 없이 바로 쓸 수 있습니다. GitHub 레포 위치나 TypeScript
+빌드를 몰라도 됩니다. **버전은 고정**(`@1.0.0`)해 재현성을 확보하세요.
 
-```bash
-npx @error-archive/agent doctor   # 연결 진단
-```
+**1) 연결 토큰 발급** — 웹에서 에이전트 연결을 만들어 `eaa_…` 토큰을 받습니다.
 
-Claude Code 등록도 `npx` 로:
+**2) Claude Code 에 등록** — 토큰을 명령에 넣지 않습니다(셸 히스토리·MCP 설정에 평문으로 남지 않게).
 
 ```bash
 claude mcp add --scope user --transport stdio error-archive \
-  -e ERROR_ARCHIVE_BASE_URL=https://api.error-archive.com \
-  -e ERROR_ARCHIVE_AGENT_TOKEN=eaa_… \
-  -- npx -y @error-archive/agent
+  -- npx -y @error-archive/agent@1.0.0
+```
+
+**3) 서버 설정값(토큰·base URL)은 권한 제한된 설정 파일로 별도 제공** — "별도 안전한 방식".
+
+```bash
+mkdir -p ~/.config/error-archive-agent
+cat > ~/.config/error-archive-agent/config.json <<'JSON'
+{ "baseUrl": "https://api.error-archive.com", "token": "eaa_…" }
+JSON
+chmod 600 ~/.config/error-archive-agent/config.json
+```
+
+> 설정 파일 대신 OS 키체인/비밀 관리자에서 `ERROR_ARCHIVE_AGENT_TOKEN` 을 주입해도 됩니다(env 우선).
+> CI/공유 셸에 토큰을 평문으로 남기지 마세요.
+
+**4) 연결 확인** — MCP·토큰 검증이 통과하면 AI 도구에서 기록 기능을 바로 씁니다.
+
+```bash
+npx -y @error-archive/agent@1.0.0 doctor   # ✓ 연결 OK / userId / connectionId / scopes
 ```
 
 ### 소스에서 빌드 (게시 전 / 개발)
@@ -91,9 +107,11 @@ node dist/index.js doctor
 # ✓ 연결 OK  / userId / connectionId / scopes
 ```
 
-## Claude Code 에 등록
+## Claude Code 에 등록 (소스 빌드 경로)
 
-`claude mcp add` 또는 MCP 설정에 아래처럼 등록합니다(토큰은 환경변수로 주입 — 설정 파일에 평문 저장 지양).
+게시 전/개발용으로 로컬 `dist` 를 직접 가리키는 등록. **게시 후에는 위 [npx](#npx-게시-후--권장) 흐름을
+권장**합니다. 토큰은 가능하면 `env` 인라인 대신 위 설정 파일(`chmod 600`)로 분리하세요 — `env` 에 넣으면
+Claude Code MCP 설정에 평문으로 저장됩니다.
 
 ```json
 {

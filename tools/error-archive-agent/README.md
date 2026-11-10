@@ -31,6 +31,17 @@ Claude Code  ──(MCP, stdio)──▶  error-archive-agent  ──(HTTPS, Bea
 패키지가 npm 에 게시되면 clone·빌드 없이 바로 쓸 수 있습니다. GitHub 레포 위치나 TypeScript
 빌드를 몰라도 됩니다. **버전은 고정**(`@1.0.0`)해 재현성을 확보하세요.
 
+> **비공개 패키지**입니다(`@error-archive` 조직, access=restricted). 설치하려면 조직 읽기 권한이 있는
+> npm 계정으로 **인증**해야 합니다(공개 패키지와 달리 익명 설치 불가).
+
+**0) npm 인증(최초 1회)** — `@error-archive` 스코프 조직 멤버 계정으로.
+
+```bash
+npm login --scope=@error-archive          # 대화형, 또는
+# ~/.npmrc 에 읽기 토큰 직접:
+#   //registry.npmjs.org/:_authToken=<개인 읽기 토큰>
+```
+
 **1) 연결 토큰 발급** — 웹에서 에이전트 연결을 만들어 `eaa_…` 토큰을 받습니다.
 
 **2) Claude Code 에 등록** — 토큰을 명령에 넣지 않습니다(셸 히스토리·MCP 설정에 평문으로 남지 않게).

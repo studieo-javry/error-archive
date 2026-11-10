@@ -71,6 +71,8 @@ class HeaderInjectionFilter(
             uri.startsWith("/api/v1/demo") ||
             // GitHub 연동(GithubInstallationController) — RouteConfig coreApiRoute 의 /api/v1/integrations/** 와 정합.
             uri.startsWith("/api/v1/integrations") ||
+            // 자동 수집 초안의 사용자 검토(CaptureReviewController) — coreApiRoute 의 /api/v1/captures 와 정합.
+            uri.startsWith("/api/v1/captures") ||
             // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
             // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
             uri.startsWith("/api/v1/users/me/recent-active-cases") ||

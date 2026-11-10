@@ -272,7 +272,11 @@ class RouteConfig(
                     // 게스트 데모 — 사용 가이드 대상 조회(GET /api/v1/demo/guide)
                     .or(path("/api/v1/demo/**"))
                     // GitHub 연동(설치 연결·목록). 웹훅은 위 githubWebhookRoute 가 먼저 잡는다.
-                    .or(path("/api/v1/integrations/**")),
+                    .or(path("/api/v1/integrations/**"))
+                    // 자동 수집 초안의 사용자 검토·반영(import)·폐기 — 세션 사용자 전용(에이전트 경로와 분리).
+                    // import/discard 는 POST 지만 retry(2) 는 기본 GET-only 라 재시도되지 않는다(이중 반영 방지).
+                    .or(path("/api/v1/captures/**"))
+                    .or(path("/api/v1/captures")),
                 http()
             )
             .before(uri(downstream.coreApi))

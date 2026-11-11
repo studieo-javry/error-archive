@@ -100,9 +100,10 @@ class ImportCaptureUseCase(
         val reviewer = cmd.reviewerUserId
         val captureId = capture.id!!
 
-        // 사용자가 선택한 Attempt 만, 선택 순서대로. 없는 참조는 422.
+        // 사용자가 선택한 Attempt 만, 선택 순서대로. 중복 선택은 distinct(첫 등장 순서 유지)로 Step 중복 생성 방지.
+        // 없는 참조는 422.
         val attemptByClientId = attempts.listByCapture(captureId).associateBy { it.clientAttemptId }
-        val selectedAttempts = cmd.selectedAttemptIds.map {
+        val selectedAttempts = cmd.selectedAttemptIds.distinct().map {
             attemptByClientId[it] ?: throw UnknownAttemptReferenceException(cmd.captureUuid, it)
         }
 
@@ -307,22 +308,24 @@ class ImportCaptureUseCase(
      * 편집값이 다르면 해시가 달라져 재반영이 멱등 재요청이 아닌 409 충돌로 처리된다.
      */
     private fun requestHash(cmd: ImportCaptureCommand): String {
-        val normalized = buildString {
-            append(cmd.reviewedRevision).append('|')
-            append(cmd.selectedAttemptIds.sorted().joinToString(",")).append('|')
-            append(cmd.selectedSolutionIds.sorted().joinToString(",")).append('|')
-            append(cmd.markResolved).append('|')
-            append(cmd.editedTitle ?: "").append('|')
-            append(cmd.editedDescription ?: "").append('|')
-            append(cmd.stepEdits.entries.sortedBy { it.key }
-                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.body ?: ""}:${it.value.status ?: ""}" }).append('|')
-            append(cmd.solutionEdits.entries.sortedBy { it.key }.joinToString(",") {
-                val vrepr = if (it.value.clearVerification) "CLEAR"
-                    else it.value.verification?.let { v -> objectMapper.writeValueAsString(v) } ?: ""
-                "${it.key}=${it.value.title ?: ""}:${it.value.description ?: ""}:$vrepr"
-            })
-        }
-        return MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+        // 반영 결과에 영향을 주는 모든 필드를 정규화해 JSON 직렬화 후 SHA-256.
+        //  - selectedAttemptIds 는 **순서 보존**(Step 순서라 결과에 영향). selectedSolutionIds/selectedArtifactIds 는
+        //    결과에 순서 무관이라 정렬해 안정화.
+        //  - editedTitle/Description, stepEdits.body 등은 null(원본 유지)과 ""(비움)이 결과가 달라 JSON 이 그대로 구분.
+        //  - stepEdits/solutionEdits 는 key 정렬(값은 data class 그대로 — status/verification 포함).
+        val normalized = linkedMapOf<String, Any?>(
+            "reviewedRevision" to cmd.reviewedRevision,
+            "selectedAttemptIds" to cmd.selectedAttemptIds.distinct(),
+            "selectedSolutionIds" to cmd.selectedSolutionIds.sorted(),
+            "selectedArtifactIds" to cmd.selectedArtifactIds.sorted(),
+            "markResolved" to cmd.markResolved,
+            "editedTitle" to cmd.editedTitle,
+            "editedDescription" to cmd.editedDescription,
+            "stepEdits" to cmd.stepEdits.toSortedMap(),
+            "solutionEdits" to cmd.solutionEdits.toSortedMap(),
+        )
+        val json = objectMapper.writeValueAsString(normalized)
+        return MessageDigest.getInstance("SHA-256").digest(json.toByteArray())
             .joinToString("") { "%02x".format(it) }
     }
 

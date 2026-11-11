@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.agentcapture
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -402,6 +403,44 @@ class AgentCaptureImportIntegrationTest {
             """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"selectedArtifactIds":["ghost"]}""")
             .andExpect(status().isUnprocessableEntity)
             .andExpect(jsonPath("$.code").value("UNKNOWN_ARTIFACT_REFERENCE"))
+    }
+
+    @Test
+    fun `중복 Attempt 선택은 Step 을 중복 생성하지 않는다`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        doImport(uuid, userId, "imp-dup",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1","a1"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertEquals(1, steps.findAllByErrorCaseId(caseId).size)
+    }
+
+    @Test
+    fun `Attempt 선택 순서가 다르면 재반영은 다른 요청으로 취급되어 409`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        doImport(uuid, userId, "imp-ord1",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isCreated)
+        // 같은 집합, 다른 순서 → Step 순서가 달라지므로 멱등 재생이 아니라 충돌(requestHash 가 순서 보존).
+        doImport(uuid, userId, "imp-ord2",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a2","a1"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("CAPTURE_ALREADY_IMPORTED"))
+    }
+
+    @Test
+    fun `다른 Capture 에 같은 Idempotency-Key·본문을 써도 서로의 결과를 재생하지 않는다`() {
+        val user = 8201L
+        val (a, _) = seedCapture(user, seal = true)
+        val (b, _) = seedCapture(user, seal = true)
+        val body = """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[]}"""
+        val key = "shared-key"
+        doImport(a, user, key, body).andExpect(status().isCreated)
+        val caseA = captures.findByUuid(a)!!.importedCaseId!!
+        doImport(b, user, key, body).andExpect(status().isCreated)
+        val caseB = captures.findByUuid(b)!!.importedCaseId!!
+        assertNotEquals(caseA, caseB) // B 가 A 결과를 재생하지 않고 자기 Case 로 반영
+        assertEquals(CaptureStatus.IMPORTED, captures.findByUuid(b)!!.status)
     }
 
     /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관/정정 검증용) */

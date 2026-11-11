@@ -118,7 +118,8 @@ class CaptureReviewController(
         @Valid @RequestBody request: ImportCaptureRequest,
     ): ResponseEntity<ImportCaptureResponse> {
         val outcome = idempotency.execute(
-            scopeKey = "user:$userId",
+            // captureUuid 를 스코프에 포함 — 다른 Capture 에 같은 Idempotency-Key·본문을 써도 서로의 결과를 재생하지 않게.
+            scopeKey = "user:$userId:capture:$captureUuid",
             operation = "capture.import",
             key = idempotencyKey,
             requestPayload = request,

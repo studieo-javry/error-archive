@@ -36,6 +36,13 @@ class UpdateStepUseCase(
             throw StepAccessDeniedException("only the author can edit step ${command.stepId}")
         }
 
+        val errorCase = errorCaseRepository.findById(step.errorCaseId)
+            ?: throw ErrorCaseNotFoundException(step.errorCaseId)
+
+        // 새 본문(command.body)의 @attach/@snippet 는 이 Case 에 링크된 마커만 참조 가능(아니면 422).
+        // null=본문 유지라 검증 생략(기존 본문은 작성 시점에 이미 검증됨).
+        validateStepBodyMarkers(command.body, errorCase)
+
         val normalizedAttemptType = command.attemptType?.let { AttemptType.normalize(it) }
 
         step.update(
@@ -50,8 +57,6 @@ class UpdateStepUseCase(
 
         normalizedAttemptType?.let { registerCustomIfNew(command.requesterUserId, it) }
 
-        val errorCase = errorCaseRepository.findById(step.errorCaseId)
-            ?: throw ErrorCaseNotFoundException(step.errorCaseId)
         val suggestResolve = saved.status == StepStatus.RESOLVED && errorCase.status == ErrorCaseStatus.IN_PROGRESS
 
         return Result(step = saved, caseStatus = errorCase.status, suggestResolve = suggestResolve)

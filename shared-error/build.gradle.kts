@@ -28,7 +28,9 @@ dependencies {
   compileOnly("org.springframework.boot:spring-boot-starter-web")
   compileOnly("org.springframework.boot:spring-boot-starter-security")
   compileOnly("org.springframework.boot:spring-boot-starter-validation")
-  compileOnly("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+  // oauth2-resource-server: main 은 더 이상 InvalidBearerTokenException 을 타입 참조하지 않는다
+  // (이름 기반 판별 — ProblemDetailAuthenticationEntryPoint). 소비 서비스 중 이 라이브러리를 런타임에
+  // 두지 않는 쪽(core-api 등)에서 NoClassDefFoundError → 500 이 나던 문제를 없앴다.
   compileOnly("jakarta.servlet:jakarta.servlet-api")
   compileOnly("tools.jackson.module:jackson-module-kotlin")
 
@@ -41,6 +43,8 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-starter-security")
   testImplementation("org.springframework.boot:spring-boot-starter-web")
   testImplementation("org.springframework.boot:spring-boot-starter-validation")
+  // 실제 bearer 토큰 예외(InvalidBearerTokenException) 분류를 검증하기 위해 test 에만 둔다.
+  testImplementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

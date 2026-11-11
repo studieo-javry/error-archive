@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.AuthenticationException
-import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException
 import org.springframework.security.web.AuthenticationEntryPoint
 import org.studieojavry.sharederror.problem.ProblemDetailBuilder
 import org.studieojavry.sharederror.trace.TraceIdAccessor
@@ -56,7 +55,7 @@ class ProblemDetailAuthenticationEntryPoint(
     }
 
     private fun classify(ex: AuthenticationException): String {
-        if (ex is InvalidBearerTokenException) {
+        if (isBearerTokenAuthError(ex)) {
             val combined = (ex.message ?: "") + " " + (ex.cause?.message ?: "")
             return when {
                 combined.contains("expired", ignoreCase = true)   -> SecurityErrorCodes.TOKEN_EXPIRED
@@ -66,6 +65,29 @@ class ProblemDetailAuthenticationEntryPoint(
             }
         }
         return SecurityErrorCodes.MISSING_TOKEN
+    }
+
+    /**
+     * oauth2-resource-server 의 `InvalidBearerTokenException` 여부를 **클래스패스에 의존하지 않고** 판별한다.
+     *
+     * shared-error 는 이 스타터를 compileOnly 로만 의존한다(소비 서비스가 런타임에 가져온다는 가정).
+     * 그러나 내부 JWT 만 쓰는 서비스(예: core-api)는 런타임에 그 라이브러리가 없어, `ex is
+     * InvalidBearerTokenException` 같은 직접 타입 참조는 미인증 요청 처리 중 NoClassDefFoundError 를
+     * 일으켜 401 대신 500 을 낸다. 실제 발생한 예외 인스턴스의 상위 클래스 **이름**만 훑으므로
+     * (이미 로드된 클래스들), 부재(不在) 클래스를 강제로 로드하지 않는다.
+     */
+    private fun isBearerTokenAuthError(ex: Throwable): Boolean {
+        var type: Class<*>? = ex.javaClass
+        while (type != null) {
+            if (type.name == BEARER_TOKEN_EXCEPTION) return true
+            type = type.superclass
+        }
+        return false
+    }
+
+    private companion object {
+        private const val BEARER_TOKEN_EXCEPTION =
+            "org.springframework.security.oauth2.server.resource.InvalidBearerTokenException"
     }
 
     private fun detailFor(code: String): String = when (code) {

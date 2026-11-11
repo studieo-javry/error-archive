@@ -127,6 +127,52 @@ test('정상 흐름: start→get→attempt→evidence→solution→complete', { 
   }
 });
 
+test('updateAttempt 복구: 틀린 evidenceRefs → 422 EVIDENCE_NOT_READY → 정정 → 봉인 성공', { skip: SKIP }, async () => {
+  const api = client();
+  const captureUuid = await freshCapture(api, 'updateAttempt 복구 E2E');
+  const log = await tempFile('ev.log', 'evidence for update-attempt\n');
+  try {
+    const artifactId = defaultArtifactId(log.path);
+    await api.uploadArtifact(captureUuid, artifactId, log.path);
+
+    // 틀린 근거 참조로 시도 기록(업로드한 파일과 다른 ID)
+    const attemptId = randomUUID();
+    await api.addAttempt(
+      captureUuid,
+      { clientAttemptId: attemptId, result: 'FAILED', detail: { title: '재현', evidenceRefs: ['WRONG-ref'] } },
+      idempotencyKeyFor('attempt.add', `${captureUuid}:${attemptId}`),
+    );
+
+    // 봉인 시도 → 422 EVIDENCE_NOT_READY (근거 미준비)
+    await assert.rejects(
+      () => api.completeCapture(captureUuid, {}, idempotencyKeyFor('capture.complete', captureUuid)),
+      (err: unknown) => err instanceof ApiError && err.status === 422 && err.code === 'EVIDENCE_NOT_READY',
+    );
+
+    // capture_update_attempt 가 호출하는 PATCH 로 evidenceRefs 정정(detail 전체 교체)
+    const fixed = await api.updateAttempt(captureUuid, attemptId, {
+      result: 'FAILED',
+      detail: { title: '재현', evidenceRefs: [artifactId] },
+    });
+    assert.deepEqual(fixed.detail.evidenceRefs, [artifactId]);
+
+    // 다시 봉인 → 성공(다른 멱등키로 재시도)
+    const sealed = await api.completeCapture(
+      captureUuid,
+      {},
+      idempotencyKeyFor('capture.complete', `${captureUuid}:after-fix`),
+    );
+    assert.equal(sealed.status, 'READY_FOR_REVIEW');
+
+    // 서버 반영 확인: 정정된 evidenceRefs 가 영속
+    const final = await api.getCapture(captureUuid);
+    const a = final.attempts.find((x) => x.clientAttemptId === attemptId);
+    assert.deepEqual(a?.detail.evidenceRefs, [artifactId]);
+  } finally {
+    await log.cleanup();
+  }
+});
+
 test('401: 무효 토큰은 인증 실패', { skip: SKIP }, async () => {
   await assert.rejects(
     () => client('eaa_invalid-token-for-e2e').whoami(),

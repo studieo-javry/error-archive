@@ -110,6 +110,23 @@ class RouteConfig(
             .filter(circuitBreaker("iamApiCB", "/__fallback/iam-api"))
             .build()
 
+    /**
+     * agent 연결 토큰 관리(발급/조회/폐기) — 웹 세션 전용. api/v1/me 하위는 기존 어떤 라우트에도
+     * 안 잡히므로 명시. iam-api 소속이며 기본 체인(JWT)으로 인증된다.
+     */
+    @Bean
+    fun agentConnectionsRoute(): RouterFunction<ServerResponse> =
+        route("agent-connections")
+            .route(
+                path("/api/v1/me/agent-connections/**")
+                    .or(path("/api/v1/me/agent-connections")),
+                http()
+            )
+            .before(uri(downstream.iamApi))
+            .filter(circuitBreaker("iamApiCB", "/__fallback/iam-api"))
+            .filter(retry(2))
+            .build()
+
     @Bean
     fun iamApiRoute(): RouterFunction<ServerResponse> =
         route("iam-api")
@@ -224,6 +241,23 @@ class RouteConfig(
             .POST("/api/v1/integrations/github/webhook", http())
             .before(uri(downstream.coreApi))
             .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "github-webhook", capacity = 60.0, refillPerSec = 5.0))
+            .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
+            .build()
+
+    /**
+     * agent 전용 기록 경로 — 로컬 커넥터(MCP)가 opaque 토큰으로 호출. core-api 가 서버.
+     * 인증은 AgentSecurityConfig 의 전용 체인이 담당(HS256 JWT 아님). 비멱등 create 가 많고
+     * 모든 쓰기가 Idempotency-Key 로 보호되므로 retry 는 붙이지 않는다(중복 전송 최소화).
+     * 경로는 api/v1/agent 하위 전체.
+     */
+    @Bean
+    fun agentApiRoute(): RouterFunction<ServerResponse> =
+        route("agent-api")
+            .route(
+                path("/api/v1/agent/**"),
+                http()
+            )
+            .before(uri(downstream.coreApi))
             .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
             .build()
 

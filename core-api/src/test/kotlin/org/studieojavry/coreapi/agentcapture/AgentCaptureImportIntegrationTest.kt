@@ -34,6 +34,8 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
+import org.studieojavry.coreapi.agentcapture.domain.model.Verification
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
@@ -283,5 +285,101 @@ class AgentCaptureImportIntegrationTest {
         val (uuid, _) = seedCapture(owner = 9999L, seal = true)
         doImport(uuid, userId, "imp-404")
             .andExpect(status().isNotFound)
+    }
+
+    /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관 검증용) */
+    private fun seedCaptureWithRichSolution(owner: Long): UUID {
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = owner, originatingConnectionId = UUID.randomUUID(),
+                title = "NPE on checkout", project = "checkout-svc",
+                content = CaptureContent(symptom = "NPE at total()"), now = now(),
+            )
+        )
+        val captureId = saved.id!!
+        attempts.save(CaptureAttempt.create(captureId, "a2", 0, AttemptResult.SUCCEEDED, "fix",
+            AttemptDetail(title = "Null-guard the price", action = "add ?: 0"), now()))
+        solutions.save(CaptureSolutionCandidate.create(captureId, "s1", "Guard null price",
+            SolutionContent(
+                description = "엘비스 연산자로 null 가드",
+                clientAttemptIds = listOf("a2"),
+                verification = Verification(
+                    result = VerificationResult.PASSED,
+                    command = "./gradlew test",
+                    executed = true,
+                    evidence = "42 tests passed",
+                ),
+            ), now()))
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+        return uuid
+    }
+
+    @Test
+    fun `반영 - Solution 후보의 상세 설명·검증 정보가 Case Solution 으로 이관된다`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+
+        doImport(uuid, userId, "imp-rich",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val solution = caseSolutions.findAllByErrorCaseId(caseId).single()
+        assertEquals("엘비스 연산자로 null 가드", solution.description)
+        assertNotNull(solution.verification)
+        val v = solution.verification!!
+        assertEquals("PASSED", v.result)
+        assertEquals("./gradlew test", v.command)
+        assertTrue(v.executed)
+        assertEquals("42 tests passed", v.evidence)
+    }
+
+    @Test
+    fun `검토 중 수정 - Case·Step·Solution override 가 반영된다`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+
+        doImport(uuid, userId, "imp-edit", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "editedTitle":"체크아웃 NPE 수정","editedDescription":"리뷰 중 다듬은 본문",
+             "stepEdits":{"a2":{"title":"가격 null 가드","body":"수정한 본문"}},
+             "solutionEdits":{"s1":{"title":"최종 해결","description":"리뷰 중 다듬은 설명"}}}
+        """.trimIndent())
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val case = errorCases.findById(caseId)!!
+        assertEquals("체크아웃 NPE 수정", case.title)
+        assertEquals("리뷰 중 다듬은 본문", case.description)
+
+        val step = steps.findAllByErrorCaseId(caseId).single()
+        assertEquals("가격 null 가드", step.title)
+        assertEquals("수정한 본문", step.body)
+
+        val solution = caseSolutions.findAllByErrorCaseId(caseId).single()
+        assertEquals("최종 해결", solution.title)
+        assertEquals("리뷰 중 다듬은 설명", solution.description)
+    }
+
+    @Test
+    fun `검토 중 수정 - 선택되지 않은 Attempt 편집 키는 422`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        // a2 만 선택했는데 stepEdits 가 미선택 a1 을 가리킴 → 422.
+        doImport(uuid, userId, "imp-edit-bad", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "stepEdits":{"a1":{"title":"없는 선택"}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_ATTEMPT_REFERENCE"))
+    }
+
+    @Test
+    fun `검토 중 수정 - 선택되지 않은 Solution 편집 키는 422`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-edit-bad2", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":[],
+             "solutionEdits":{"s1":{"title":"미선택 후보"}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_SOLUTION_REFERENCE"))
     }
 }

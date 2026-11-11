@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelectedAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
@@ -226,7 +227,11 @@ class ImportCaptureUseCase(
         //    후보의 상세 설명(description)·검증 근거(verification)도 함께 이관한다.
         solutionCandidates.filter { it.clientSolutionId in selectedSolutionIdSet }.forEach { candidate ->
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
-            if (stepIds.isNotEmpty()) {
+            // 부분 참조는 허용하되, 참조 Step 이 하나도 없으면 명시 선택을 조용히 누락하지 않고 거부(422).
+            if (stepIds.isEmpty()) {
+                throw SolutionWithoutSelectedAttemptException(cmd.captureUuid, candidate.clientSolutionId)
+            }
+            run {
                 val edit = cmd.solutionEdits[candidate.clientSolutionId]
                 // 최종 검증 정보: 전체 제외(clearVerification) > 사용자 정정(verification) > 캡처 원본.
                 val resolvedVerification = when {

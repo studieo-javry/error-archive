@@ -19,6 +19,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyExcept
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelectedAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
@@ -93,6 +94,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnknownArtifactReferenceException::class)
     fun unknownArtifact(ex: UnknownArtifactReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ARTIFACT_REFERENCE", ex.message)
+
+    @ExceptionHandler(SolutionWithoutSelectedAttemptException::class)
+    fun solutionWithoutSelectedAttempt(ex: SolutionWithoutSelectedAttemptException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_SELECTED_ATTEMPT", ex.message)
 
     @ExceptionHandler(SolutionWithoutAttemptException::class)
     fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =

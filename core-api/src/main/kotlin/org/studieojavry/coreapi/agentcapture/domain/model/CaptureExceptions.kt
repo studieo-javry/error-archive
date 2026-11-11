@@ -37,6 +37,13 @@ class UnknownSolutionReferenceException(val captureUuid: UUID, val clientSolutio
 class UnknownArtifactReferenceException(val captureUuid: UUID, val clientArtifactId: String) :
     RuntimeException("references unknown/incomplete artifact '$clientArtifactId' in $captureUuid")
 
+/**
+ * 선택한 Solution 이 참조하는 Attempt 를 하나도 선택하지 않아 반영할 Step 이 없음 → 422.
+ * (부분 참조는 허용하되, 참조 Step 이 0개가 되는 선택은 조용히 누락하지 않고 거부한다.)
+ */
+class SolutionWithoutSelectedAttemptException(val captureUuid: UUID, val clientSolutionId: String) :
+    RuntimeException("selected solution '$clientSolutionId' has no selected attempt in $captureUuid")
+
 /** Solution 후보는 최소 1개의 존재하는 Attempt 를 참조해야 함 → 422 SOLUTION_WITHOUT_ATTEMPT. */
 class SolutionWithoutAttemptException(val captureUuid: UUID) :
     RuntimeException("solution for $captureUuid must reference at least one attempt")

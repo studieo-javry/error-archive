@@ -86,13 +86,15 @@ class AgentCaptureImportIntegrationTest {
         override fun publish(event: ActivityEventPublisherPort.ActivityEvent) { events += event }
     }
 
-    /** 근거 승격 경로용 In-memory 스토리지(Mockito 매처 회피). bytes 저장/반환, presign 은 더미 URI. */
+    /** 근거 승격 경로용 In-memory 스토리지(Mockito 매처 회피). put/delete 를 추적해 롤백 정리 검증. */
     class FakeStorage : AttachmentStoragePort {
-        override fun put(objectKey: String, bytes: ByteArray, contentType: String) {}
+        val putKeys: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        val deletedKeys: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        override fun put(objectKey: String, bytes: ByteArray, contentType: String) { putKeys += objectKey }
         override fun presignGet(objectKey: String, disposition: AttachmentStoragePort.Disposition, ttl: java.time.Duration) =
             java.net.URI.create("http://test/$objectKey")
         override fun getBytes(objectKey: String): ByteArray = byteArrayOf(1, 2, 3)
-        override fun delete(objectKey: String) {}
+        override fun delete(objectKey: String) { deletedKeys += objectKey }
     }
 
     @TestConfiguration
@@ -114,6 +116,8 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var publisher: RecordingPublisher
     @Autowired private lateinit var captureArtifacts: CaptureArtifactRepositoryPort
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
+    @Autowired private lateinit var storage: AttachmentStoragePort
+    @Autowired private lateinit var importCapture: org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -441,6 +445,82 @@ class AgentCaptureImportIntegrationTest {
         val caseB = captures.findByUuid(b)!!.importedCaseId!!
         assertNotEquals(caseA, caseB) // B 가 A 결과를 재생하지 않고 자기 Case 로 반영
         assertEquals(CaptureStatus.IMPORTED, captures.findByUuid(b)!!.status)
+    }
+
+    @Test
+    fun `정책 - 선택한 Solution 의 참조 Attempt 를 하나도 선택 안 하면 422`() {
+        val uuid = seedCaptureWithRichSolution(userId) // s1 은 a2 참조
+        // a2 를 선택하지 않고 s1 만 선택 → s1 의 참조 Step 이 0개 → 조용한 skip 대신 422.
+        doImport(uuid, userId, "imp-solnostep",
+            """{"reviewedRevision":1,"selectedAttemptIds":[],"selectedSolutionIds":["s1"]}""")
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("SOLUTION_WITHOUT_SELECTED_ATTEMPT"))
+    }
+
+    @Test
+    fun `실패 복구 - 반영 롤백 시 승격한 스토리지 파일이 삭제된다`() {
+        val fake = storage as FakeStorage
+        // a1(근거 art1) + s1(a2 참조). art1·a1 선택 + s1 선택하되 a2 미선택 → 승격 후 솔루션 루프에서 422 → 롤백.
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = userId, originatingConnectionId = UUID.randomUUID(),
+                title = "NPE", project = "svc", content = CaptureContent(symptom = "NPE"), now = now(),
+            )
+        )
+        val captureId = saved.id!!
+        attempts.save(CaptureAttempt.create(captureId, "a1", 0, AttemptResult.FAILED, "repro",
+            AttemptDetail(title = "repro", action = "run", evidenceRefs = listOf("art1")), now()))
+        attempts.save(CaptureAttempt.create(captureId, "a2", 1, AttemptResult.SUCCEEDED, "fix",
+            AttemptDetail(title = "fix", action = "x"), now()))
+        captureArtifacts.save(CaptureArtifact.completed(
+            captureId = captureId, clientArtifactId = "art1", objectKey = "obj/art1", sha256 = "s",
+            contentType = "image/png", sizeBytes = 3, fileName = "art1.png", uploaderUserId = userId, now = now(),
+        ))
+        solutions.save(CaptureSolutionCandidate.create(captureId, "s1", "fix",
+            SolutionContent(clientAttemptIds = listOf("a2")), now()))
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+
+        val putsBefore = fake.putKeys.toSet()
+        doImport(uuid, userId, "imp-rollback", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":["s1"],"selectedArtifactIds":["art1"]}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity) // s1 참조 a2 미선택 → 422(롤백)
+
+        val newPuts = fake.putKeys - putsBefore
+        assertTrue(newPuts.isNotEmpty(), "승격 과정에서 스토리지 put 이 있어야 함")
+        assertTrue(fake.deletedKeys.containsAll(newPuts), "롤백 시 승격한 파일이 삭제돼야 함: $newPuts")
+        // 롤백됐으니 Case 도 안 생김.
+        assertEquals(CaptureStatus.READY_FOR_REVIEW, captures.findByUuid(uuid)!!.status)
+    }
+
+    @Test
+    fun `동시 Import - 정확히 한 Case 만 생성되고 Step 중복 없음`() {
+        val user = 8301L
+        val (uuid, _) = seedCapture(user, seal = true)
+        val cmd = org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureCommand(
+            captureUuid = uuid, reviewerUserId = user, reviewedRevision = 1,
+            selectedAttemptIds = listOf("a1", "a2"), selectedSolutionIds = emptyList(),
+        )
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val start = java.util.concurrent.CountDownLatch(1)
+        val futures = (1..2).map {
+            pool.submit(java.util.concurrent.Callable {
+                start.await()
+                runCatching { importCapture.invoke(cmd) }
+            })
+        }
+        start.countDown()
+        val results = futures.map { it.get(20, java.util.concurrent.TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        val successes = results.mapNotNull { it.getOrNull() }
+        assertTrue(successes.isNotEmpty(), "적어도 하나는 성공")
+        assertEquals(1, successes.map { it.caseId }.distinct().size, "성공은 모두 같은 Case")
+        val reloaded = captures.findByUuid(uuid)!!
+        assertEquals(CaptureStatus.IMPORTED, reloaded.status)
+        // 경합으로 Step 이 중복(4개) 생기지 않고 정확히 2개(a1,a2).
+        assertEquals(2, steps.findAllByErrorCaseId(reloaded.importedCaseId!!).size)
     }
 
     /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관/정정 검증용) */

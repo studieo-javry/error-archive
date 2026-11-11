@@ -124,7 +124,7 @@ class PatchCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: PatchCaptureCommand): AgentCapture {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.ownerUserId)
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireRevision(cmd.expectedRevision)
         capture.edit(cmd.title, cmd.project, cmd.content, Instant.now(clock))
@@ -150,7 +150,7 @@ class AddAttemptUseCase(
 ) {
     @Transactional
     fun invoke(cmd: AddAttemptCommand): CaptureAttempt {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.ownerUserId)
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireAgentWritable()
         val order = attempts.countByCapture(capture.id!!)
@@ -186,7 +186,7 @@ class UpdateAttemptUseCase(
 ) {
     @Transactional
     fun invoke(cmd: UpdateAttemptCommand): CaptureAttempt {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.ownerUserId)
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireAgentWritable()
         val attempt = attempts.findByCaptureAndClientId(capture.id!!, cmd.clientAttemptId)
@@ -215,7 +215,7 @@ class AddSolutionUseCase(
 ) {
     @Transactional
     fun invoke(cmd: AddSolutionCommand): CaptureSolutionCandidate {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.ownerUserId)
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireAgentWritable()
         val known = attempts.clientAttemptIds(capture.id!!)
@@ -257,7 +257,7 @@ class CompleteCaptureUseCase(
 ) {
     @Transactional
     fun invoke(captureUuid: UUID, ownerUserId: Long, expectedRevision: Int?): AgentCapture {
-        val capture = captures.findByUuidAndOwner(captureUuid, ownerUserId)
+        val capture = captures.findByUuidAndOwnerForUpdate(captureUuid, ownerUserId)
             ?: throw CaptureNotFoundException(captureUuid)
         capture.requireRevision(expectedRevision)
 

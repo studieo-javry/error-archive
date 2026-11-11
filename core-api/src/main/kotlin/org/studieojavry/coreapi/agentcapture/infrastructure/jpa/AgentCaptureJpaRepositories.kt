@@ -1,6 +1,8 @@
 package org.studieojavry.coreapi.agentcapture.infrastructure.jpa
 
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.AgentCaptureEntity
@@ -15,6 +17,19 @@ import java.util.UUID
 interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
     fun findByCaptureUuid(captureUuid: UUID): AgentCaptureEntity?
     fun findByCaptureUuidAndOwnerUserId(captureUuid: UUID, ownerUserId: Long): AgentCaptureEntity?
+
+    /**
+     * 변이(쓰기·봉인) 연산 전용 — capture 행을 PESSIMISTIC_WRITE(SELECT … FOR UPDATE)로 잠가
+     * complete 와 add-attempt/solution/edit 를 capture 단위로 직렬화한다. add-attempt 는 capture
+     * 행을 수정하지 않아 @Version 으로는 complete 와 경합하지 않으므로(봉인되는 capture 에 자식이
+     * 끼어들 수 있음), 행 락으로 "봉인 커밋 후엔 어떤 쓰기도 OPEN 을 보지 못함"을 보장한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from AgentCaptureEntity c where c.captureUuid = :uuid and c.ownerUserId = :owner")
+    fun findForUpdateByCaptureUuidAndOwnerUserId(
+        @Param("uuid") uuid: UUID,
+        @Param("owner") owner: Long,
+    ): AgentCaptureEntity?
 }
 
 interface CaptureAttemptJpaRepository : JpaRepository<CaptureAttemptEntity, Long> {

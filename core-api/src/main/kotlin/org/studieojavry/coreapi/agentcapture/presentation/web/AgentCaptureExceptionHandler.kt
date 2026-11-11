@@ -12,6 +12,8 @@ import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactHashMismatchEx
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactTooLargeException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAlreadyImportedException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotRestorableException
+import org.studieojavry.coreapi.agentcapture.domain.model.ImportedStepBodyMarkerException
+import org.studieojavry.coreapi.agentcapture.domain.model.InvalidVerificationException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
@@ -98,6 +100,14 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(SolutionWithoutSelectedAttemptException::class)
     fun solutionWithoutSelectedAttempt(ex: SolutionWithoutSelectedAttemptException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_SELECTED_ATTEMPT", ex.message)
+
+    @ExceptionHandler(ImportedStepBodyMarkerException::class)
+    fun importedStepBodyMarker(ex: ImportedStepBodyMarkerException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_STEP_BODY_MARKER", ex.message)
+
+    @ExceptionHandler(InvalidVerificationException::class)
+    fun invalidVerification(ex: InvalidVerificationException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_VERIFICATION", ex.message)
 
     @ExceptionHandler(SolutionWithoutAttemptException::class)
     fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =

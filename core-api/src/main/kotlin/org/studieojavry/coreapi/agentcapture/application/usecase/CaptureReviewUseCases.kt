@@ -20,8 +20,14 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.domain.model.ImportedStepBodyMarkerException
+import org.studieojavry.coreapi.agentcapture.domain.model.InvalidVerificationException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelectedAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationScope
+import org.studieojavry.coreapi.errorcase.shared.application.usecase.MarkerTokens
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
@@ -196,6 +202,9 @@ class ImportCaptureUseCase(
         //    어떤 Attempt 에도 안 매인 근거(selectedArtifactIds 단독)는 토큰이 없어 '관련 첨부' 갤러리에 남는다.
         val stepIdByClientAttempt = LinkedHashMap<String, Long>()
         val assignedArtifacts = HashSet<String>()
+        // 반영될 Step 본문의 @attach 는 이번에 승격·연결된 첨부만, @snippet 은 불가(import 는 스니펫 미생성).
+        // 일반 Step API 의 Case-소속 검증과 일관 — 사용자 수정 본문도 우회 못 하게.
+        val promotedMarkers = markerIdByClientArtifact.values.toSet()
         selectedAttempts.forEachIndexed { index, attempt ->
             val edit = cmd.stepEdits[attempt.clientAttemptId]
             val baseBody = if (edit?.body != null) edit.body.ifBlank { null } else buildStepBody(attempt.detail)
@@ -203,6 +212,8 @@ class ImportCaptureUseCase(
                 .filter { it in markerIdByClientArtifact && assignedArtifacts.add(it) }
                 .map { "@attach(${markerIdByClientArtifact[it]})" }
                 .filter { token -> baseBody?.contains(token) != true }
+            val body = appendEvidenceTokens(baseBody, evidenceTokens)
+            validateImportedStepBodyMarkers(body, promotedMarkers, cmd.captureUuid)
             val step = steps.save(
                 Step.create(
                     errorCaseId = caseId,
@@ -216,7 +227,7 @@ class ImportCaptureUseCase(
                     // 최종 Step 상태: 사용자가 정정했으면 그 값, 아니면 캡처 Attempt 결과서 파생.
                     status = edit?.status ?: mapStatus(attempt.result),
                     attemptType = attempt.attemptType?.takeIf { it.isNotBlank() }?.let { truncate(it, ATTEMPT_TYPE_MAX) },
-                    body = appendEvidenceTokens(baseBody, evidenceTokens),
+                    body = body,
                     insight = attempt.detail.insight?.takeIf { it.isNotBlank() }?.let { truncate(it, INSIGHT_MAX) },
                 )
             )
@@ -239,8 +250,8 @@ class ImportCaptureUseCase(
                     edit?.verification != null -> edit.verification
                     else -> candidate.content.verification?.let { toSolutionVerification(it) }
                 }
-                // 정책: 실제 실행하지 않은(executed=false) 검증은 PASSED 로 확정 금지.
-                resolvedVerification?.let { requireNotUnexecutedPass(it, capture.captureUuid) }
+                // 정책: result/scope 코드 검증 + 실행 안 한 PASSED 금지 + PASSED 근거 필수(캡처측 규칙과 일관).
+                resolvedVerification?.let { validateVerification(it, capture.captureUuid) }
                 caseSolutions.save(
                     Solution.create(
                         errorCaseId = caseId,
@@ -388,13 +399,35 @@ class ImportCaptureUseCase(
     private fun truncate(s: String, max: Int): String = if (s.length <= max) s else s.take(max)
 
     /**
-     * 정책: 실제 실행하지 않은(executed=false) 검증을 PASSED 로 확정하지 않는다.
-     * 반영(확정) 시점에 걸러, AI 가 실행 없이 PASSED 로 표기한 신뢰할 수 없는 검증이 정식 Case 로 넘어가는 것을 막는다.
-     * (사용자는 executed=true 로 정정하거나, result 를 바꾸거나, clearVerification 으로 검증을 제외할 수 있다.)
+     * 반영될 Step 본문의 마커 검증(일반 Step API 와 일관): @attach 는 이번에 승격된 첨부만, @snippet 은 불가.
      */
-    private fun requireNotUnexecutedPass(v: SolutionVerification, captureUuid: UUID) {
-        if (v.result == "PASSED" && !v.executed) {
-            throw UnexecutedVerificationPassedException(captureUuid)
+    private fun validateImportedStepBodyMarkers(body: String?, promoted: Set<String>, captureUuid: UUID) {
+        if (body.isNullOrBlank()) return
+        MarkerTokens.attachIds(body).firstOrNull { it !in promoted }
+            ?.let { throw ImportedStepBodyMarkerException(captureUuid, it) }
+        MarkerTokens.snippetIds(body).firstOrNull()
+            ?.let { throw ImportedStepBodyMarkerException(captureUuid, "@snippet($it)") }
+    }
+
+    /**
+     * 반영(확정)될 Verification 검증. 사용자 정정값·캡처 원본 모두에 적용한다.
+     *  - result/scope 는 허용 코드(enum)만.
+     *  - 실행하지 않은(executed=false) PASSED 금지 — 신뢰할 수 없는 "통과" 확정 방지.
+     *  - PASSED 는 근거(command·testId·evidence) 최소 1개 필요 — 캡처 Solution 후보 규칙과 일관.
+     *  사용자는 정정하거나 clearVerification 으로 검증을 제외할 수 있다.
+     */
+    private fun validateVerification(v: SolutionVerification, captureUuid: UUID) {
+        if (v.result != null && VerificationResult.entries.none { it.name == v.result }) {
+            throw InvalidVerificationException(captureUuid, "result='${v.result}'")
+        }
+        if (v.scope != null && VerificationScope.entries.none { it.name == v.scope }) {
+            throw InvalidVerificationException(captureUuid, "scope='${v.scope}'")
+        }
+        if (v.result == VerificationResult.PASSED.name) {
+            if (!v.executed) throw UnexecutedVerificationPassedException(captureUuid)
+            if (v.command.isNullOrBlank() && v.testId.isNullOrBlank() && v.evidence.isNullOrBlank()) {
+                throw VerificationEvidenceRequiredException(captureUuid)
+            }
         }
     }
 

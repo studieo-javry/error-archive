@@ -92,7 +92,10 @@ class AgentCapture private constructor(
      */
     fun restore(now: Instant) {
         if (status != CaptureStatus.DISCARDED) throw CaptureNotRestorableException(captureUuid, status)
-        this.status = CaptureStatus.READY_FOR_REVIEW
+        // 폐기 전 단계로 복원한다. 봉인(complete) 이력이 있으면(completedAt != null) READY_FOR_REVIEW,
+        // 아직 봉인 전이었으면 OPEN. OPEN 초안을 바로 READY 로 올리면 complete() 의 근거 완료 검증을
+        // 우회하게 되므로 반드시 원래 단계로 되돌린다. (complete 만 completedAt 을 설정하고 이후 해제되지 않음.)
+        this.status = if (completedAt != null) CaptureStatus.READY_FOR_REVIEW else CaptureStatus.OPEN
         this.updatedAt = now
     }
 

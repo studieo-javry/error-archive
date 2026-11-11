@@ -523,6 +523,52 @@ class AgentCaptureImportIntegrationTest {
         assertEquals(2, steps.findAllByErrorCaseId(reloaded.importedCaseId!!).size)
     }
 
+    @Test
+    fun `폐기 복원 - OPEN 초안은 READY 가 아니라 OPEN 으로 복원(봉인 검증 우회 방지)`() {
+        val user = 8401L
+        val (uuid, _) = seedCapture(user, seal = false) // 봉인 전 OPEN(completedAt=null)
+        mvc.perform(post("/api/v1/captures/$uuid/discard").with(asUser(user))).andExpect(status().isOk)
+
+        mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(user)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("OPEN")) // READY 아님
+        assertEquals(CaptureStatus.OPEN, captures.findByUuid(uuid)!!.status)
+    }
+
+    @Test
+    fun `검토 중 수정 - Step 본문의 미연결 @attach 는 422`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        // 승격한 근거가 없는데(selectedArtifactIds 없음) 본문에 외부 @attach → INVALID_STEP_BODY_MARKER.
+        doImport(uuid, userId, "imp-foreignmarker", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],
+             "stepEdits":{"a1":{"body":"로그 @attach(foreign123) 참고"}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("INVALID_STEP_BODY_MARKER"))
+    }
+
+    @Test
+    fun `정책 - PASSED 검증은 근거(command·testId·evidence) 최소 1개 필요`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-noevidence", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"verification":{"result":"PASSED","executed":true}}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("VERIFICATION_EVIDENCE_REQUIRED"))
+    }
+
+    @Test
+    fun `정책 - 허용되지 않은 verification result 코드는 422`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-badresult", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"verification":{"result":"MAYBE","executed":true,"evidence":"x"}}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("INVALID_VERIFICATION"))
+    }
+
     /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관/정정 검증용) */
     private fun seedCaptureWithRichSolution(
         owner: Long,

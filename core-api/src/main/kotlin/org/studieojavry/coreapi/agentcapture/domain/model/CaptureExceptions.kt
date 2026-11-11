@@ -44,6 +44,17 @@ class UnknownArtifactReferenceException(val captureUuid: UUID, val clientArtifac
 class SolutionWithoutSelectedAttemptException(val captureUuid: UUID, val clientSolutionId: String) :
     RuntimeException("selected solution '$clientSolutionId' has no selected attempt in $captureUuid")
 
+/**
+ * 반영될 Step 본문의 마커가 이번 반영에서 승격·연결된 첨부가 아니거나 스니펫을 참조 → 422 INVALID_STEP_BODY_MARKER.
+ * (일반 Step API 의 @attach/@snippet Case-소속 검증과 일관. import 는 스니펫을 만들지 않으므로 @snippet 은 항상 무효.)
+ */
+class ImportedStepBodyMarkerException(val captureUuid: UUID, val marker: String) :
+    RuntimeException("step body marker '$marker' is not an imported attachment in $captureUuid")
+
+/** 사용자 정정 Verification 의 result/scope 가 허용 코드가 아님 → 422 INVALID_VERIFICATION. */
+class InvalidVerificationException(val captureUuid: UUID, val reason: String) :
+    RuntimeException("invalid verification ($reason) in $captureUuid")
+
 /** Solution 후보는 최소 1개의 존재하는 Attempt 를 참조해야 함 → 422 SOLUTION_WITHOUT_ATTEMPT. */
 class SolutionWithoutAttemptException(val captureUuid: UUID) :
     RuntimeException("solution for $captureUuid must reference at least one attempt")

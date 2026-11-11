@@ -13,6 +13,10 @@ class Solution private constructor(
     val authorUserId: Long,
     var title: String,
     val stepIds: MutableList<Long>,
+    /** 상세 설명(마크다운). agentcapture 반영 시 후보 Solution 의 description. 수동 생성 시엔 null. */
+    var description: String?,
+    /** 검증 근거. agentcapture 반영 시 후보 Solution 의 verification. 수동 생성 시엔 null. */
+    var verification: SolutionVerification?,
     val createdAt: LocalDateTime,
     var updatedAt: LocalDateTime
 ) {
@@ -34,7 +38,14 @@ class Solution private constructor(
     companion object {
         const val TITLE_MAX = 200
 
-        fun create(errorCaseId: Long, authorUserId: Long, title: String, stepIds: List<Long>): Solution {
+        fun create(
+            errorCaseId: Long,
+            authorUserId: Long,
+            title: String,
+            stepIds: List<Long>,
+            description: String? = null,
+            verification: SolutionVerification? = null,
+        ): Solution {
             val now = LocalDateTime.now()
             return Solution(
                 id = null,
@@ -42,6 +53,8 @@ class Solution private constructor(
                 authorUserId = authorUserId,
                 title = title,
                 stepIds = stepIds.toMutableList(),
+                description = description,
+                verification = verification,
                 createdAt = now,
                 updatedAt = now
             )
@@ -53,8 +66,13 @@ class Solution private constructor(
             authorUserId: Long,
             title: String,
             stepIds: List<Long>,
+            description: String?,
+            verification: SolutionVerification?,
             createdAt: LocalDateTime,
             updatedAt: LocalDateTime
-        ): Solution = Solution(id, errorCaseId, authorUserId, title, stepIds.toMutableList(), createdAt, updatedAt)
+        ): Solution = Solution(
+            id, errorCaseId, authorUserId, title, stepIds.toMutableList(),
+            description, verification, createdAt, updatedAt,
+        )
     }
 }

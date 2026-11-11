@@ -4,31 +4,51 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
+import org.studieojavry.coreapi.errorcase.solution.domain.model.SolutionVerification
 import org.studieojavry.coreapi.errorcase.solution.infrastructure.jpa.SolutionJpaRepository
 import org.studieojavry.coreapi.errorcase.solution.infrastructure.jpa.entity.SolutionEntity
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 @Component
 class SolutionRepositoryAdapter(
-    private val jpa: SolutionJpaRepository
+    private val jpa: SolutionJpaRepository,
+    private val objectMapper: ObjectMapper,
 ) : SolutionRepositoryPort {
 
-    override fun save(solution: Solution): Solution = jpa.save(SolutionEntity.fromDomain(solution)).toDomain()
+    override fun save(solution: Solution): Solution {
+        val entity = SolutionEntity.fromDomain(solution)
+        entity.verification = solution.verification?.let { objectMapper.writeValueAsString(it) }
+        return jpa.save(entity).toModel()
+    }
 
-    override fun findById(id: Long): Solution? = jpa.findById(id).orElse(null)?.toDomain()
+    override fun findById(id: Long): Solution? = jpa.findById(id).orElse(null)?.toModel()
 
     override fun findAllByErrorCaseId(errorCaseId: Long): List<Solution> =
-        jpa.findAllByErrorCaseIdOrderByCreatedAtAsc(errorCaseId).map { it.toDomain() }
+        jpa.findAllByErrorCaseIdOrderByCreatedAtAsc(errorCaseId).map { it.toModel() }
 
     override fun findReferencingStep(stepId: Long): List<Solution> =
-        jpa.findReferencingStep(stepId).map { it.toDomain() }
+        jpa.findReferencingStep(stepId).map { it.toModel() }
 
     override fun delete(id: Long) = jpa.deleteById(id)
     override fun deleteAllByErrorCaseId(errorCaseId: Long) { jpa.deleteAllByErrorCaseId(errorCaseId) }
 
     // ── Recent Activity ───────────────────────────────────────
     override fun findRecentByAuthor(authorUserId: Long, since: LocalDateTime, limit: Int): List<Solution> =
-        jpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toDomain() }
+        jpa.findRecentByAuthor(authorUserId, since, PageRequest.of(0, limit)).map { it.toModel() }
+
+    /** 엔티티 → 도메인. verification(jsonb String)을 SolutionVerification 으로 역직렬화한다. */
+    private fun SolutionEntity.toModel(): Solution = Solution.rehydrate(
+        id = id!!,
+        errorCaseId = errorCaseId,
+        authorUserId = authorUserId,
+        title = title,
+        stepIds = stepIds,
+        description = description,
+        verification = verification?.let { objectMapper.readValue(it, SolutionVerification::class.java) },
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
 
     override fun findMaxCreatedAtByCaseIds(caseIds: Collection<Long>): Map<Long, LocalDateTime> {
         if (caseIds.isEmpty()) return emptyMap()

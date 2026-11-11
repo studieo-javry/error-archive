@@ -59,6 +59,21 @@ class AgentConnectionEntity(
 
     @Column(name = "last_used_at")
     var lastUsedAt: Instant? = null,
+
+    @Column(name = "client_kind", length = 40)
+    var clientKind: String? = null,
+
+    @Column(name = "client_version", length = 40)
+    var clientVersion: String? = null,
+
+    @Column(name = "install_id", length = 64)
+    var installId: String? = null,
+
+    @Column(name = "install_label", length = 120)
+    var installLabel: String? = null,
+
+    @Column(name = "client_bound_at")
+    var clientBoundAt: Instant? = null,
 ) {
     fun toDomain(): AgentConnection = AgentConnection.rehydrate(
         id = id!!,
@@ -71,6 +86,11 @@ class AgentConnectionEntity(
         createdAt = createdAt,
         revokedAt = revokedAt,
         lastUsedAt = lastUsedAt,
+        clientKind = clientKind,
+        clientVersion = clientVersion,
+        installId = installId,
+        installLabel = installLabel,
+        clientBoundAt = clientBoundAt,
     )
 
     companion object {
@@ -85,6 +105,11 @@ class AgentConnectionEntity(
             createdAt = c.createdAt,
             revokedAt = c.revokedAt,
             lastUsedAt = c.lastUsedAt,
+            clientKind = c.clientKind,
+            clientVersion = c.clientVersion,
+            installId = c.installId,
+            installLabel = c.installLabel,
+            clientBoundAt = c.clientBoundAt,
         )
     }
 }

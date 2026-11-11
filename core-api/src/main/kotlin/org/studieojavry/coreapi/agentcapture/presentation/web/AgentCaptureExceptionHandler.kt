@@ -8,12 +8,16 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.studieojavry.coreapi.agentcapture.application.usecase.ConcurrentRequestException
+import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactHashMismatchException
+import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactTooLargeException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
+import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import java.sql.SQLException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnsupportedArtifactException
 
 /**
  * agent 초안 경로 전용 예외 매핑. @Order(-1) 으로 공통 핸들러(GlobalExceptionHandler @Order MAX)
@@ -73,6 +77,22 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnknownAttemptReferenceException::class)
     fun unknownAttempt(ex: UnknownAttemptReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ATTEMPT_REFERENCE", ex.message)
+
+    @ExceptionHandler(EvidenceNotReadyException::class)
+    fun evidenceNotReady(ex: EvidenceNotReadyException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "EVIDENCE_NOT_READY", ex.message)
+
+    @ExceptionHandler(ArtifactHashMismatchException::class)
+    fun hashMismatch(ex: ArtifactHashMismatchException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "ARTIFACT_HASH_MISMATCH", ex.message)
+
+    @ExceptionHandler(ArtifactTooLargeException::class)
+    fun tooLarge(ex: ArtifactTooLargeException): ProblemDetail =
+        problem(HttpStatus.PAYLOAD_TOO_LARGE, "ARTIFACT_TOO_LARGE", ex.message)
+
+    @ExceptionHandler(UnsupportedArtifactException::class)
+    fun unsupported(ex: UnsupportedArtifactException): ProblemDetail =
+        problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_ARTIFACT", ex.message)
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(ex: IllegalArgumentException): ProblemDetail =

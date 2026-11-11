@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.AgentCaptureEntity
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureArtifactEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureAttemptEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionLinkEntity
@@ -43,6 +44,18 @@ interface CaptureAttemptJpaRepository : JpaRepository<CaptureAttemptEntity, Long
 interface CaptureSolutionJpaRepository : JpaRepository<CaptureSolutionCandidateEntity, Long> {
     fun findByCaptureIdAndClientSolutionId(captureId: Long, clientSolutionId: String): CaptureSolutionCandidateEntity?
     fun findByCaptureIdOrderByIdAsc(captureId: Long): List<CaptureSolutionCandidateEntity>
+}
+
+interface CaptureArtifactJpaRepository : JpaRepository<CaptureArtifactEntity, Long> {
+    fun findByCaptureIdAndClientArtifactId(captureId: Long, clientArtifactId: String): CaptureArtifactEntity?
+    fun findByCaptureIdOrderByIdAsc(captureId: Long): List<CaptureArtifactEntity>
+    fun countByCaptureId(captureId: Long): Long
+
+    @Query("select coalesce(sum(a.sizeBytes), 0) from CaptureArtifactEntity a where a.captureId = :captureId")
+    fun totalSizeByCaptureId(@Param("captureId") captureId: Long): Long
+
+    @Query("select a.clientArtifactId from CaptureArtifactEntity a where a.captureId = :captureId and a.status in ('COMPLETED','LINKED')")
+    fun completedClientIds(@Param("captureId") captureId: Long): List<String>
 }
 
 interface CaptureSessionJpaRepository : JpaRepository<CaptureSessionEntity, Long> {

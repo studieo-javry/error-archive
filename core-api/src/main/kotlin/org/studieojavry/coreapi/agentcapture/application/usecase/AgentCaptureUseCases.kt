@@ -3,17 +3,20 @@ package org.studieojavry.coreapi.agentcapture.application.usecase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
+import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import java.time.Clock
@@ -91,6 +94,7 @@ class GetCaptureUseCase(
     private val captures: AgentCaptureRepositoryPort,
     private val attempts: CaptureAttemptRepositoryPort,
     private val solutions: CaptureSolutionRepositoryPort,
+    private val artifacts: CaptureArtifactRepositoryPort,
 ) {
     @Transactional(readOnly = true)
     fun invoke(captureUuid: UUID, ownerUserId: Long): CaptureView {
@@ -100,6 +104,7 @@ class GetCaptureUseCase(
             capture = capture,
             attempts = attempts.listByCapture(capture.id!!),
             solutions = solutions.listByCapture(capture.id!!),
+            artifacts = artifacts.listByCapture(capture.id!!),
         )
     }
 }
@@ -108,6 +113,7 @@ data class CaptureView(
     val capture: AgentCapture,
     val attempts: List<CaptureAttempt>,
     val solutions: List<CaptureSolutionCandidate>,
+    val artifacts: List<CaptureArtifact>,
 )
 
 /** OPEN 초안 기본 정보 교체(title/project/content 전체 교체). expectedRevision 검사. */
@@ -236,10 +242,17 @@ data class AddSolutionCommand(
     val content: SolutionContent,
 )
 
-/** OPEN → READY_FOR_REVIEW 봉인. 문제 해결 여부와 무관. expectedRevision 검사. */
+/**
+ * OPEN → READY_FOR_REVIEW 봉인. 문제 해결 여부와 무관. expectedRevision 검사.
+ *
+ * 봉인 전 참조한 근거(Attempt 의 evidenceRefs)가 모두 업로드 완료됐는지 확인한다. 아직 준비되지 않은
+ * 근거가 있으면 422 EVIDENCE_NOT_READY. (제외는 웹 검토 경로에서 — PR4.)
+ */
 @Service
 class CompleteCaptureUseCase(
     private val captures: AgentCaptureRepositoryPort,
+    private val attempts: CaptureAttemptRepositoryPort,
+    private val artifacts: CaptureArtifactRepositoryPort,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
@@ -247,6 +260,14 @@ class CompleteCaptureUseCase(
         val capture = captures.findByUuidAndOwnerForUpdate(captureUuid, ownerUserId)
             ?: throw CaptureNotFoundException(captureUuid)
         capture.requireRevision(expectedRevision)
+
+        val referenced = attempts.listByCapture(capture.id!!).flatMap { it.detail.evidenceRefs }.toSet()
+        if (referenced.isNotEmpty()) {
+            val ready = artifacts.completedClientIds(capture.id!!)
+            val missing = referenced.filter { it !in ready }
+            if (missing.isNotEmpty()) throw EvidenceNotReadyException(captureUuid, missing.sorted())
+        }
+
         capture.complete(Instant.now(clock))
         return captures.save(capture)
     }

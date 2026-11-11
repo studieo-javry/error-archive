@@ -159,9 +159,33 @@ data class SolutionResponse(
     }
 }
 
-@Schema(description = "초안 상세(요약 + Attempt·Solution 목록).")
+@Schema(description = "근거 첨부 메타.")
+data class ArtifactResponse(
+    val clientArtifactId: String,
+    val sha256: String,
+    val contentType: String,
+    val sizeBytes: Long,
+    val fileName: String?,
+    val status: String,
+    val createdAt: Instant,
+) {
+    companion object {
+        fun from(a: org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact) = ArtifactResponse(
+            clientArtifactId = a.clientArtifactId,
+            sha256 = a.sha256,
+            contentType = a.contentType,
+            sizeBytes = a.sizeBytes,
+            fileName = a.fileName,
+            status = a.status.name,
+            createdAt = a.createdAt,
+        )
+    }
+}
+
+@Schema(description = "초안 상세(요약 + Attempt·Solution·Artifact 목록).")
 data class CaptureDetailResponse(
     val capture: CaptureResponse,
     val attempts: List<AttemptResponse>,
     val solutions: List<SolutionResponse>,
+    val artifacts: List<ArtifactResponse>,
 )

@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.agentcapture.application.port
 
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -29,6 +30,16 @@ interface CaptureSolutionRepositoryPort {
     fun save(solution: CaptureSolutionCandidate): CaptureSolutionCandidate
     fun findByCaptureAndClientId(captureId: Long, clientSolutionId: String): CaptureSolutionCandidate?
     fun listByCapture(captureId: Long): List<CaptureSolutionCandidate>
+}
+
+interface CaptureArtifactRepositoryPort {
+    fun save(artifact: CaptureArtifact): CaptureArtifact
+    fun findByCaptureAndClientId(captureId: Long, clientArtifactId: String): CaptureArtifact?
+    fun listByCapture(captureId: Long): List<CaptureArtifact>
+    fun countByCapture(captureId: Long): Int
+    fun totalSizeByCapture(captureId: Long): Long
+    /** 근거 준비 상태 검사용 — COMPLETED/LINKED 인 clientArtifactId 집합. */
+    fun completedClientIds(captureId: Long): Set<String>
 }
 
 interface CaptureSessionRepositoryPort {

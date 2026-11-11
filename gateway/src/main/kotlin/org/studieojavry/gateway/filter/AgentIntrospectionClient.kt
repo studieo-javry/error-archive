@@ -24,7 +24,7 @@ class AgentIntrospectionClient(
      * @return 검증된 principal, 또는 토큰이 invalid/revoked/expired(iam 이 401)면 null.
      * @throws RuntimeException iam 도달 실패/5xx — 호출 필터가 503 으로 매핑한다(토큰을 통과시키지 않음).
      */
-    fun introspect(rawToken: String): AgentPrincipal? {
+    fun introspect(rawToken: String, client: ClientDescriptor? = null): AgentPrincipal? {
         val internalToken = internalTokenIssuer.issue(
             subject = SYSTEM_SUBJECT,
             audience = HeaderInjectionFilter.AUDIENCE_IAM_API,
@@ -34,7 +34,15 @@ class AgentIntrospectionClient(
             restClient.post()
                 .uri("/internal/agent-connections/introspect")
                 .header(InternalTokenAuthenticationFilter.HEADER_NAME, internalToken)
-                .body(IntrospectRequest(rawToken))
+                .body(
+                    IntrospectRequest(
+                        token = rawToken,
+                        clientKind = client?.kind,
+                        clientVersion = client?.version,
+                        installId = client?.installId,
+                        installLabel = client?.installLabel,
+                    ),
+                )
                 .retrieve()
                 .body(AgentPrincipal::class.java)
         } catch (_: HttpClientErrorException.Unauthorized) {
@@ -42,7 +50,21 @@ class AgentIntrospectionClient(
         }
     }
 
-    data class IntrospectRequest(val token: String)
+    /** 커넥터가 헤더로 신고한 설치 메타(표시용, 선택). 게이트웨이는 그대로 전달만 한다(검증 X). */
+    data class ClientDescriptor(
+        val kind: String?,
+        val version: String?,
+        val installId: String?,
+        val installLabel: String?,
+    )
+
+    data class IntrospectRequest(
+        val token: String,
+        val clientKind: String? = null,
+        val clientVersion: String? = null,
+        val installId: String? = null,
+        val installLabel: String? = null,
+    )
 
     /** iam introspection 응답과 1:1 (scopes 는 wire 문자열). */
     data class AgentPrincipal(

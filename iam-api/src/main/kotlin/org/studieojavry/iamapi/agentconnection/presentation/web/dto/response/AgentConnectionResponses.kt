@@ -29,10 +29,17 @@ data class CreateAgentConnectionResponse(
     }
 }
 
-@Schema(description = "연결 목록 항목. 토큰 원문은 포함하지 않는다.")
+@Schema(description = "연결 목록 항목. 토큰 원문은 포함하지 않는다. 설치 메타는 표시용(커넥터 자기신고).")
 data class AgentConnectionResponse(
     val connectionId: UUID,
     val label: String?,
+    @Schema(description = "목록에 보여줄 이름: label → 설치 라벨(hostname) → \"{kind} · {cid 앞 8자}\".")
+    val displayName: String,
+    @Schema(description = "커넥터 종류(예: claude-code). 신고 전이면 null.")
+    val clientKind: String?,
+    val clientVersion: String?,
+    @Schema(description = "사람이 읽는 설치 이름(기본 hostname).")
+    val installLabel: String?,
     val scopes: List<String>,
     val createdAt: Instant,
     val lastUsedAt: Instant?,
@@ -44,6 +51,10 @@ data class AgentConnectionResponse(
         fun from(it: ListAgentConnectionsUseCase.Item) = AgentConnectionResponse(
             connectionId = it.connectionId,
             label = it.label,
+            displayName = it.displayName,
+            clientKind = it.clientKind,
+            clientVersion = it.clientVersion,
+            installLabel = it.installLabel,
             scopes = it.scopes.sortedBy(AgentScope::wire).map { s -> s.wire },
             createdAt = it.createdAt,
             lastUsedAt = it.lastUsedAt,

@@ -42,7 +42,7 @@ class AgentTokenAuthenticationFilter(
         }
 
         val principal = try {
-            introspectionClient.introspect(rawToken)
+            introspectionClient.introspect(rawToken, clientDescriptor(request))
         } catch (ex: Exception) {
             logger.warn { "agent introspection unavailable: ${ex.message}" }
             response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Authorization service unavailable")
@@ -81,8 +81,26 @@ class AgentTokenAuthenticationFilter(
         return header.removePrefix(BEARER_PREFIX).trim().takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * 커넥터가 신고한 설치 메타(표시용). 전부 없으면 null 로 전달(구형 커넥터 후방호환).
+     * 이 값은 iam 에서 표시·그룹에만 쓰이고 인가 판단엔 쓰이지 않는다(위조 가능한 자기신고).
+     */
+    private fun clientDescriptor(request: HttpServletRequest): AgentIntrospectionClient.ClientDescriptor? {
+        fun h(name: String) = request.getHeader(name)?.trim()?.takeIf { it.isNotEmpty() }
+        val kind = h(HEADER_CLIENT_KIND)
+        val version = h(HEADER_CLIENT_VERSION)
+        val installId = h(HEADER_INSTALL_ID)
+        val installLabel = h(HEADER_INSTALL_LABEL)
+        if (kind == null && version == null && installId == null && installLabel == null) return null
+        return AgentIntrospectionClient.ClientDescriptor(kind, version, installId, installLabel)
+    }
+
     companion object {
         private const val BEARER_PREFIX = "Bearer "
         const val AGENT_TOKEN_PREFIX = "eaa_"
+        const val HEADER_CLIENT_KIND = "X-Agent-Client-Kind"
+        const val HEADER_CLIENT_VERSION = "X-Agent-Client-Version"
+        const val HEADER_INSTALL_ID = "X-Agent-Install-Id"
+        const val HEADER_INSTALL_LABEL = "X-Agent-Install-Label"
     }
 }

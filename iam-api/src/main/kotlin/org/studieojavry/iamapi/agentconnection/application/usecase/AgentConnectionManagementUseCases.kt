@@ -61,6 +61,10 @@ class ListAgentConnectionsUseCase(
             Item(
                 connectionId = it.connectionId,
                 label = it.label,
+                displayName = it.displayName(),
+                clientKind = it.clientKind,
+                clientVersion = it.clientVersion,
+                installLabel = it.installLabel,
                 scopes = it.scopes,
                 createdAt = it.createdAt,
                 lastUsedAt = it.lastUsedAt,
@@ -73,6 +77,11 @@ class ListAgentConnectionsUseCase(
     data class Item(
         val connectionId: UUID,
         val label: String?,
+        /** 목록 표시 이름(label → 설치 라벨 → kind·cid). 프런트가 그대로 보여줘도 된다. */
+        val displayName: String,
+        val clientKind: String?,
+        val clientVersion: String?,
+        val installLabel: String?,
         val scopes: Set<AgentScope>,
         val createdAt: Instant,
         val lastUsedAt: Instant?,

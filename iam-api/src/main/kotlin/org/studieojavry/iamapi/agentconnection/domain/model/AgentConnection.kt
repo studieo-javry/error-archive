@@ -24,6 +24,12 @@ class AgentConnection private constructor(
     val createdAt: Instant,
     var revokedAt: Instant?,
     var lastUsedAt: Instant?,
+    // ── 설치 환경 메타(표시용, 커넥터가 first-use 에 신고 — 인가엔 쓰지 않는다) ──
+    var clientKind: String?,
+    var clientVersion: String?,
+    var installId: String?,
+    var installLabel: String?,
+    var clientBoundAt: Instant?,
 ) {
     init {
         require(tokenHash.isNotBlank()) { "tokenHash must not be blank" }
@@ -48,6 +54,49 @@ class AgentConnection private constructor(
         this.lastUsedAt = at
     }
 
+    /** 설치 메타가 아직 없는가(first-use 바인딩 대상). */
+    val isClientBound: Boolean get() = clientBoundAt != null
+
+    /**
+     * 커넥터가 신고한 설치 메타를 기록한다(표시용). **멱등** — 최초 1회만 전체를 기록(clientBoundAt 스탬프),
+     * 이후 호출은 clientVersion 만 갱신(도구 업데이트 반영)하고 설치 식별자는 바꾸지 않는다.
+     * 어느 입력도 인가 판단에 쓰지 않는다(위조 가능한 자기신고 값).
+     */
+    fun bindClient(
+        kind: String?,
+        version: String?,
+        installId: String?,
+        installLabel: String?,
+        now: Instant = Instant.now(),
+    ): Boolean {
+        val k = kind?.takeIf { it.isNotBlank() }
+        val v = version?.takeIf { it.isNotBlank() }
+        val iid = installId?.takeIf { it.isNotBlank() }
+        val ilabel = installLabel?.takeIf { it.isNotBlank() }
+        if (k == null && v == null && iid == null && ilabel == null) return false // 신고 없음
+        if (clientBoundAt == null) {
+            this.clientKind = k
+            this.clientVersion = v
+            this.installId = iid
+            this.installLabel = ilabel
+            this.clientBoundAt = now
+            return true
+        }
+        // 이미 bound — 버전만 바뀌면 갱신(식별자·라벨은 고정)
+        if (v != null && v != this.clientVersion) {
+            this.clientVersion = v
+            return true
+        }
+        return false
+    }
+
+    /** 목록 표시 이름: 웹 지정 label → 설치 라벨(hostname) → "{kind} · {cid 앞 8자}". */
+    fun displayName(): String =
+        label?.takeIf { it.isNotBlank() }
+            ?: installLabel?.takeIf { it.isNotBlank() }
+            ?: listOfNotNull(clientKind?.takeIf { it.isNotBlank() }, connectionId.toString().take(8))
+                .joinToString(" · ")
+
     companion object {
         fun issue(
             ownerUserId: Long,
@@ -68,8 +117,14 @@ class AgentConnection private constructor(
             createdAt = now,
             revokedAt = null,
             lastUsedAt = null,
+            clientKind = null,
+            clientVersion = null,
+            installId = null,
+            installLabel = null,
+            clientBoundAt = null,
         )
 
+        @Suppress("LongParameterList")
         fun rehydrate(
             id: Long,
             ownerUserId: Long,
@@ -81,9 +136,15 @@ class AgentConnection private constructor(
             createdAt: Instant,
             revokedAt: Instant?,
             lastUsedAt: Instant?,
+            clientKind: String? = null,
+            clientVersion: String? = null,
+            installId: String? = null,
+            installLabel: String? = null,
+            clientBoundAt: Instant? = null,
         ): AgentConnection = AgentConnection(
             id, ownerUserId, connectionId, tokenHash, scopes, label,
             expiresAt, createdAt, revokedAt, lastUsedAt,
+            clientKind, clientVersion, installId, installLabel, clientBoundAt,
         )
     }
 }

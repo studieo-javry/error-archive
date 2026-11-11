@@ -142,10 +142,48 @@ class ImportCaptureUseCase(
         )
         val caseId = case.id!!
 
+        // 2-pre) 선택 근거(선택 Attempt 의 evidenceRefs ∪ selectedArtifactIds)를 Case 첨부로 승격·연결.
+        //        Step 본문에 토큰을 삽입하려고 clientArtifactId → 새 첨부 markerId 매핑을 먼저 확보한다.
+        //        캡처 스토리지의 바이트를 error_case_attachment 로 복사(참조 X), capture_artifact→LINKED(원본 보존).
+        val wantedArtifactIds = (selectedAttempts.flatMap { it.detail.evidenceRefs } + cmd.selectedArtifactIds).toSet()
+        val markerIdByClientArtifact = LinkedHashMap<String, String>()
+        if (wantedArtifactIds.isNotEmpty()) {
+            captureArtifacts.listByCapture(captureId)
+                .filter { it.clientArtifactId in wantedArtifactIds && it.isCompleted }
+                .forEach { art ->
+                    val created = createAttachment.invoke(
+                        CreateAttachmentCommand(
+                            uploaderUserId = reviewer,
+                            title = null,
+                            caption = null,
+                            fileName = art.fileName ?: art.clientArtifactId,
+                            contentType = art.contentType,
+                            size = art.sizeBytes,
+                            bytes = attachmentStorage.getBytes(art.objectKey),
+                        )
+                    )
+                    markerIdByClientArtifact[art.clientArtifactId] = created.markerId
+                    art.markLinked()
+                    captureArtifacts.save(art)
+                }
+            if (markerIdByClientArtifact.isNotEmpty()) {
+                caseAttachments.linkToCase(markerIdByClientArtifact.values.toList(), caseId)
+            }
+        }
+
         // 2) 선택 Attempt → Step(선택 순서 보존). clientAttemptId → 저장된 stepId 매핑(Solution 참조 해소용).
+        //    각 Attempt 의 근거(evidenceRefs) 중 승격된 것의 @attach 토큰을 그 Step 본문에 삽입한다 — 근거가
+        //    "원래 나온 시도(Step)" 아래 인라인으로 붙는다. 한 근거는 그것을 처음 참조한 Step 에만 귀속(중복 방지).
+        //    어떤 Attempt 에도 안 매인 근거(selectedArtifactIds 단독)는 토큰이 없어 '관련 첨부' 갤러리에 남는다.
         val stepIdByClientAttempt = LinkedHashMap<String, Long>()
+        val assignedArtifacts = HashSet<String>()
         selectedAttempts.forEachIndexed { index, attempt ->
             val edit = cmd.stepEdits[attempt.clientAttemptId]
+            val baseBody = if (edit?.body != null) edit.body.ifBlank { null } else buildStepBody(attempt.detail)
+            val evidenceTokens = attempt.detail.evidenceRefs
+                .filter { it in markerIdByClientArtifact && assignedArtifacts.add(it) }
+                .map { "@attach(${markerIdByClientArtifact[it]})" }
+                .filter { token -> baseBody?.contains(token) != true }
             val step = steps.save(
                 Step.create(
                     errorCaseId = caseId,
@@ -158,7 +196,7 @@ class ImportCaptureUseCase(
                     ),
                     status = mapStatus(attempt.result),
                     attemptType = attempt.attemptType?.takeIf { it.isNotBlank() }?.let { truncate(it, ATTEMPT_TYPE_MAX) },
-                    body = if (edit?.body != null) edit.body.ifBlank { null } else buildStepBody(attempt.detail),
+                    body = appendEvidenceTokens(baseBody, evidenceTokens),
                     insight = attempt.detail.insight?.takeIf { it.isNotBlank() }?.let { truncate(it, INSIGHT_MAX) },
                 )
             )
@@ -184,33 +222,6 @@ class ImportCaptureUseCase(
                     )
                 )
             }
-        }
-
-        // 3-b) 선택 근거(선택 Attempt 의 evidenceRefs ∪ selectedArtifactIds)를 Case 첨부로 승격·연결.
-        //      캡처 스토리지의 바이트를 읽어 error_case_attachment 로 복사(참조 X) → 케이스에 링크, capture_artifact→LINKED.
-        //      (원본 캡처 아티팩트는 capture_artifact 에 보존. 원래 AttemptResult 는 보존된 capture_attempt 에 남음.)
-        val wantedArtifactIds = (selectedAttempts.flatMap { it.detail.evidenceRefs } + cmd.selectedArtifactIds).toSet()
-        if (wantedArtifactIds.isNotEmpty()) {
-            val linkedMarkers = mutableListOf<String>()
-            captureArtifacts.listByCapture(captureId)
-                .filter { it.clientArtifactId in wantedArtifactIds && it.isCompleted }
-                .forEach { art ->
-                    val created = createAttachment.invoke(
-                        CreateAttachmentCommand(
-                            uploaderUserId = reviewer,
-                            title = null,
-                            caption = null,
-                            fileName = art.fileName ?: art.clientArtifactId,
-                            contentType = art.contentType,
-                            size = art.sizeBytes,
-                            bytes = attachmentStorage.getBytes(art.objectKey),
-                        )
-                    )
-                    linkedMarkers += created.markerId
-                    art.markLinked()
-                    captureArtifacts.save(art)
-                }
-            if (linkedMarkers.isNotEmpty()) caseAttachments.linkToCase(linkedMarkers, caseId)
         }
 
         // 4) 사용자가 명시적으로 해결 표시한 경우에만 RESOLVED(OPEN→IN_PROGRESS→RESOLVED). 기본은 OPEN 유지.
@@ -329,6 +340,13 @@ class ImportCaptureUseCase(
                 ?.let { us -> add("## 아직 확인되지 않음\n" + us.joinToString("\n") { "- $it" }) }
         }
         return sections.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
+    }
+
+    /** Step 본문 끝에 근거 @attach 토큰 블록을 덧붙인다. 본문이 비면 토큰만. 토큰이 없으면 원본 유지. */
+    private fun appendEvidenceTokens(baseBody: String?, tokens: List<String>): String? {
+        if (tokens.isEmpty()) return baseBody
+        val block = tokens.joinToString("\n")
+        return if (baseBody.isNullOrBlank()) block else "$baseBody\n\n$block"
     }
 
     private fun truncate(s: String, max: Int): String = if (s.length <= max) s else s.take(max)

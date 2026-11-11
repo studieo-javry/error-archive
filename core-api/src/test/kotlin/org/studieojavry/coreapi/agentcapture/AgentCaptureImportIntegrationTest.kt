@@ -24,11 +24,13 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -36,6 +38,8 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
 import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
+import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
+import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
@@ -80,10 +84,22 @@ class AgentCaptureImportIntegrationTest {
         override fun publish(event: ActivityEventPublisherPort.ActivityEvent) { events += event }
     }
 
+    /** 근거 승격 경로용 In-memory 스토리지(Mockito 매처 회피). bytes 저장/반환, presign 은 더미 URI. */
+    class FakeStorage : AttachmentStoragePort {
+        override fun put(objectKey: String, bytes: ByteArray, contentType: String) {}
+        override fun presignGet(objectKey: String, disposition: AttachmentStoragePort.Disposition, ttl: java.time.Duration) =
+            java.net.URI.create("http://test/$objectKey")
+        override fun getBytes(objectKey: String): ByteArray = byteArrayOf(1, 2, 3)
+        override fun delete(objectKey: String) {}
+    }
+
     @TestConfiguration
     class Config {
         @Bean @Primary
         fun recordingPublisher() = RecordingPublisher()
+
+        @Bean @Primary
+        fun fakeStorage(): AttachmentStoragePort = FakeStorage()
     }
 
     @Autowired private lateinit var context: WebApplicationContext
@@ -94,6 +110,8 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var steps: StepRepositoryPort
     @Autowired private lateinit var caseSolutions: SolutionRepositoryPort
     @Autowired private lateinit var publisher: RecordingPublisher
+    @Autowired private lateinit var captureArtifacts: CaptureArtifactRepositoryPort
+    @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -370,6 +388,40 @@ class AgentCaptureImportIntegrationTest {
         """.trimIndent())
             .andExpect(status().isUnprocessableEntity)
             .andExpect(jsonPath("$.code").value("UNKNOWN_ATTEMPT_REFERENCE"))
+    }
+
+    @Test
+    fun `반영 - Attempt 근거는 그 Step 본문에 @attach 로 삽입되고 Case 에 링크된다`() {
+        // a1 의 근거로 art1 을 단다.
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = userId, originatingConnectionId = UUID.randomUUID(),
+                title = "NPE", project = "svc", content = CaptureContent(symptom = "NPE"), now = now(),
+            )
+        )
+        val captureId = saved.id!!
+        attempts.save(CaptureAttempt.create(captureId, "a1", 0, AttemptResult.FAILED, "repro",
+            AttemptDetail(title = "재현", action = "run", evidenceRefs = listOf("art1")), now()))
+        captureArtifacts.save(CaptureArtifact.completed(
+            captureId = captureId, clientArtifactId = "art1", objectKey = "obj/art1", sha256 = "deadbeef",
+            contentType = "image/png", sizeBytes = 3, fileName = "shot.png", uploaderUserId = userId, now = now(),
+        ))
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+
+        doImport(uuid, userId, "imp-ev",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"selectedArtifactIds":["art1"]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        // 근거가 Case 에 첨부로 링크됨
+        val att = caseAttachments.findAllByErrorCaseId(caseId).single()
+        // 그 @attach 토큰이 a1 의 Step 본문에 삽입됨
+        val step = steps.findAllByErrorCaseId(caseId).single()
+        assertTrue(
+            step.body?.contains("@attach(${att.markerId})") == true,
+            "Step 본문에 근거 @attach 토큰이 삽입되어야 함: ${step.body}",
+        )
     }
 
     @Test

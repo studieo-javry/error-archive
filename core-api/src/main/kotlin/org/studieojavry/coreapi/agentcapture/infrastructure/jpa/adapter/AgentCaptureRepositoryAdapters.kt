@@ -61,6 +61,9 @@ class AgentCaptureRepositoryAdapter(
     override fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
+    override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
+        jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
+
     private fun AgentCaptureEntity.toDomain(): AgentCapture = AgentCapture.reconstitute(
         id = id!!,
         captureUuid = captureUuid,

@@ -11,6 +11,9 @@ interface AgentCaptureRepositoryPort {
     fun save(capture: AgentCapture): AgentCapture
     fun findByUuid(captureUuid: UUID): AgentCapture?
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
+
+    /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
+    fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
 }
 
 interface CaptureAttemptRepositoryPort {

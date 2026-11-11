@@ -230,16 +230,24 @@ class AgentCaptureConcurrencyIntegrationTest {
         val attempt = results[1]
         println("[COMPLETE vs ATTEMPT] complete=${complete.status} attempt=${attempt.status}/${attempt.code}")
 
-        // complete 는 capture 행만 봉인(attempt 는 자식만 저장 → @Version 경합 없음)하므로 항상 성공.
+        // complete 와 add-attempt 는 이제 capture 행 PESSIMISTIC_WRITE 락으로 직렬화된다.
+        // 따라서 완전히 "attempt→seal"(201) 이거나 "seal→attempt"(409 CAPTURE_SEALED) 중 하나로만
+        // 귀결되고, "OPEN 을 읽고 봉인 커밋 뒤에 insert"(봉인된 capture 에 자식이 끼어드는) 인터리빙은
+        // 더 이상 불가능하다. 500(손상)도 없다.
         assertEquals(200, complete.status, "complete 는 성공해야 한다")
-        assertEquals("READY_FOR_REVIEW", om.readTree(getCapture(uuid).body)["capture"]["status"].asText())
+        val detail = om.readTree(getCapture(uuid).body)
+        assertEquals("READY_FOR_REVIEW", detail["capture"]["status"].asText())
 
-        // attempt 는 봉인 커밋 전에 OPEN 을 읽으면 201, 후면 409 CAPTURE_SEALED. 500(손상) 은 안 된다.
-        // [FINDING] 비관적 락이 없어 complete 와 add-attempt 가 직렬화되지 않는다. 따라서 201 이
-        // 관찰될 수 있다 = "봉인되는 capture 에 Attempt 가 붙음"(봉인의 원자성이 자식 쓰기까지는 보장 안 됨).
-        // 보안/정합 위협은 아니나(검토 단계에서 사용자가 확인), 원한다면 비관락/상태 재확인으로 강화 가능.
-        assertTrue(attempt.status == 201 || attempt.status == 409,
-            "attempt 는 201(생성) 또는 409(봉인거부) — 관찰: ${attempt.status}/${attempt.code}")
-        if (attempt.status == 409) assertEquals("CAPTURE_SEALED", attempt.code)
+        val attemptsNode = detail["attempts"]
+        val hasA1 = (0 until attemptsNode.size()).any { attemptsNode[it]["clientAttemptId"].asText() == "a1" }
+        if (attempt.status == 201) {
+            // attempt 가 먼저 락을 잡아 OPEN 상태에서 추가된 뒤 봉인됨 → 봉인된 capture 에 정상 포함.
+            assertTrue(hasA1, "201 이면 attempt 가 봉인된 capture 에 포함돼야 한다")
+        } else {
+            // complete 가 먼저 봉인 → attempt 는 거부되고 아무것도 추가되지 않아야 한다.
+            assertEquals(409, attempt.status, "attempt 는 201 또는 409 — 관찰: ${attempt.status}/${attempt.code}")
+            assertEquals("CAPTURE_SEALED", attempt.code)
+            assertTrue(!hasA1, "409 면 봉인 후 attempt 가 추가되지 않아야 한다")
+        }
     }
 }

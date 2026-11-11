@@ -1,0 +1,33 @@
+# 게이트웨이 에이전트 보안 체인 통합 테스트용 프로파일.
+# iam-api / core-api 다운스트림 URL 과 internal-auth 개인키는 @DynamicPropertySource 에서 주입한다
+# (스텁 HttpServer 포트가 런타임에 정해지므로). 나머지 세 다운스트림은 @Pattern 통과용 더미.
+gateway:
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+    allow-credentials: true
+  ratelimit:
+    backend: memory          # Redis 없이 IpRateLimiter 사용(에이전트 route 는 rate-limit 없음)
+  downstream:
+    noti-api: http://localhost:59991
+    insight-api: http://localhost:59992
+    publish-api: http://localhost:59993
+    # iam-api, core-api → @DynamicPropertySource
+
+iam:
+  jwt:
+    secret: "local-dev-secret-local-dev-secret-local-dev-secret-local-dev-secret-local-dev"
+    issuer: "https://iam.local"
+    audience: "local-clients"
+
+internal-auth:
+  ttl-seconds: 60
+  issuer:
+    name: "gateway"
+    key-id: "gateway-test"
+    # private-key-pem → @DynamicPropertySource
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0

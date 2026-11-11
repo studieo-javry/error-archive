@@ -71,6 +71,9 @@ class AgentCaptureRepositoryAdapter(
         status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
     ): List<AgentCapture> =
         jpa.findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(ownerUserId, status).map { it.toDomain() }
+        
+    override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
+        jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
     private fun AgentCaptureEntity.toDomain(): AgentCapture = AgentCapture.reconstitute(
         id = id!!,

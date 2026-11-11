@@ -15,6 +15,8 @@ interface AgentCaptureRepositoryPort {
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
     /** 소유자의 특정 상태 초안 목록(검토 큐 = READY_FOR_REVIEW). 최근 갱신순. */
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
+    /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
+    fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
 }
 
 interface CaptureAttemptRepositoryPort {

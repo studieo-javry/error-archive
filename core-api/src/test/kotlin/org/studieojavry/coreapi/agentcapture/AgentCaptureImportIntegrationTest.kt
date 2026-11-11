@@ -18,6 +18,7 @@ import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfig
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -303,6 +304,54 @@ class AgentCaptureImportIntegrationTest {
         val (uuid, _) = seedCapture(owner = 9999L, seal = true)
         doImport(uuid, userId, "imp-404")
             .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `검토 완료 이력 - IMPORTED·DISCARDED 를 caseId 백링크와 함께 조회`() {
+        val histUser = 8101L // 테스트 간 DB 공유 → 이력 격리 위해 전용 유저.
+        val (impUuid, _) = seedCapture(histUser, seal = true)
+        doImport(impUuid, histUser, "hist-imp").andExpect(status().isCreated)
+        val caseId = captures.findByUuid(impUuid)!!.importedCaseId!!
+
+        val (discUuid, _) = seedCapture(histUser, seal = true)
+        mvc.perform(post("/api/v1/captures/$discUuid/discard").with(asUser(histUser))).andExpect(status().isOk)
+
+        // 전체 이력: 2건(IMPORTED + DISCARDED).
+        mvc.perform(get("/api/v1/captures/history").with(asUser(histUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+
+        // status=IMPORTED 필터: 1건 + caseId 백링크.
+        mvc.perform(get("/api/v1/captures/history").param("status", "IMPORTED").with(asUser(histUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].status").value("IMPORTED"))
+            .andExpect(jsonPath("$.items[0].caseId").value(caseId.toInt()))
+
+        // 종단 아닌 status → 400.
+        mvc.perform(get("/api/v1/captures/history").param("status", "READY_FOR_REVIEW").with(asUser(histUser)))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `폐기 복원 - DISCARDED 를 READY 로 되돌리고 검토 큐에 다시 포함`() {
+        val restoreUser = 8102L
+        val (uuid, _) = seedCapture(restoreUser, seal = true)
+        mvc.perform(post("/api/v1/captures/$uuid/discard").with(asUser(restoreUser))).andExpect(status().isOk)
+
+        mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(restoreUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("READY_FOR_REVIEW"))
+        assertEquals(CaptureStatus.READY_FOR_REVIEW, captures.findByUuid(uuid)!!.status)
+
+        // 복원됐으니 큐에 다시 보인다.
+        mvc.perform(get("/api/v1/captures").with(asUser(restoreUser)))
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$uuid')]").exists())
+
+        // 이미 READY 라 재복원은 409.
+        mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(restoreUser)))
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("CAPTURE_NOT_RESTORABLE"))
     }
 
     @Test

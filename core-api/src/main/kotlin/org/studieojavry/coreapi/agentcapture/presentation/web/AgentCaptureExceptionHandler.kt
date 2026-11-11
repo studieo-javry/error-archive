@@ -11,6 +11,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.ConcurrentReque
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactHashMismatchException
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactTooLargeException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAlreadyImportedException
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotRestorableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
@@ -129,6 +130,10 @@ class AgentCaptureExceptionHandler {
     fun alreadyImported(ex: CaptureAlreadyImportedException): ProblemDetail =
         problem(HttpStatus.CONFLICT, "CAPTURE_ALREADY_IMPORTED", ex.message)
             .apply { ex.caseId?.let { setProperty("caseId", it) } }
+
+    @ExceptionHandler(CaptureNotRestorableException::class)
+    fun notRestorable(ex: CaptureNotRestorableException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "CAPTURE_NOT_RESTORABLE", ex.message)
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(ex: IllegalArgumentException): ProblemDetail =

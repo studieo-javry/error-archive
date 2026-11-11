@@ -55,6 +55,10 @@ class UnexecutedVerificationPassedException(val captureUuid: UUID) :
 class VerificationEvidenceRequiredException(val captureUuid: UUID) :
     RuntimeException("PASSED verification for $captureUuid requires command, testId, or evidence")
 
+/** 폐기(DISCARDED)가 아닌 초안을 복원하려 함 → 409 CAPTURE_NOT_RESTORABLE. */
+class CaptureNotRestorableException(val captureUuid: UUID, val status: CaptureStatus) :
+    RuntimeException("capture $captureUuid is not restorable from $status")
+
 /** 허용되지 않은 첨부 형식(SVG/HTML/실행/압축 등) → 415. */
 class UnsupportedArtifactException(message: String) : RuntimeException(message)
 

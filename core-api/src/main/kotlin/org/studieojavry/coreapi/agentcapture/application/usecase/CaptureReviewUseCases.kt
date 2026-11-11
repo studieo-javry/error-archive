@@ -484,3 +484,44 @@ class ListCapturesForReviewUseCase(
     fun invoke(ownerUserId: Long): List<AgentCapture> =
         captures.listByOwnerAndStatus(ownerUserId, CaptureStatus.READY_FOR_REVIEW)
 }
+
+/**
+ * 검토 완료 이력 조회 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).
+ * status 지정 시 그 상태만, 없으면 둘 다. 종단 상태가 아닌 값 요청은 거부(400).
+ */
+@Service
+class ListCaptureHistoryUseCase(
+    private val captures: AgentCaptureRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun invoke(ownerUserId: Long, status: CaptureStatus?): List<AgentCapture> {
+        require(status == null || status.isTerminal) { "history status must be IMPORTED or DISCARDED" }
+        val statuses = status?.let { listOf(it) } ?: listOf(CaptureStatus.IMPORTED, CaptureStatus.DISCARDED)
+        return statuses
+            .flatMap { captures.listByOwnerAndStatus(ownerUserId, it) }
+            .sortedByDescending { it.updatedAt }
+    }
+}
+
+/**
+ * 폐기 복원 — DISCARDED 초안을 READY_FOR_REVIEW 로 되돌린다. 본인 소유만(아니면 404),
+ * DISCARDED 아닌 상태는 409(CaptureNotRestorableException).
+ */
+@Service
+class RestoreCaptureUseCase(
+    private val captures: AgentCaptureRepositoryPort,
+    private val clock: Clock = Clock.systemUTC(),
+) {
+    @Transactional
+    fun invoke(cmd: RestoreCaptureCommand): AgentCapture {
+        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+            ?: throw CaptureNotFoundException(cmd.captureUuid)
+        capture.restore(Instant.now(clock))
+        return captures.save(capture)
+    }
+}
+
+data class RestoreCaptureCommand(
+    val captureUuid: UUID,
+    val reviewerUserId: Long,
+)

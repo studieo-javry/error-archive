@@ -85,6 +85,17 @@ class AgentCapture private constructor(
         }
     }
 
+    /**
+     * 폐기(DISCARDED) 초안을 검토 큐로 복원 → READY_FOR_REVIEW. 실수 폐기 되돌리기.
+     * DISCARDED 에서만 가능(그 외 상태 → CaptureNotRestorableException). 폐기는 데이터 삭제가 아니라 상태 표식뿐이므로
+     * 내용(Attempt·Solution·근거)은 그대로 복원된다.
+     */
+    fun restore(now: Instant) {
+        if (status != CaptureStatus.DISCARDED) throw CaptureNotRestorableException(captureUuid, status)
+        this.status = CaptureStatus.READY_FOR_REVIEW
+        this.updatedAt = now
+    }
+
     companion object {
         fun start(
             captureUuid: UUID,

@@ -199,6 +199,35 @@ data class ReviewQueueResponse(
     val items: List<CaptureResponse>,
 )
 
+@Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).")
+data class CaptureHistoryResponse(
+    val items: List<CaptureHistoryItemResponse>,
+)
+
+@Schema(description = "이력 항목. IMPORTED 면 caseId 로 반영된 Case 를 가리킨다(DISCARDED 면 null).")
+data class CaptureHistoryItemResponse(
+    val captureUuid: UUID,
+    val status: String,
+    val title: String?,
+    val project: String?,
+    @Schema(description = "반영된 ErrorCase id. IMPORTED 만 값, DISCARDED 는 null.")
+    val caseId: Long?,
+    val createdAt: java.time.Instant,
+    val updatedAt: java.time.Instant,
+) {
+    companion object {
+        fun from(c: AgentCapture) = CaptureHistoryItemResponse(
+            captureUuid = c.captureUuid,
+            status = c.status.name,
+            title = c.title,
+            project = c.project,
+            caseId = c.importedCaseId,
+            createdAt = c.createdAt,
+            updatedAt = c.updatedAt,
+        )
+    }
+}
+
 @Schema(
     description = "검토 반영 요청. 승인된 항목만 반영한다. reviewedRevision 으로 봉인 후 편집 충돌을 막는다. " +
         "edited*/stepEdits/solutionEdits 로 검토 중 내용을 직접 수정해 반영할 수 있다.",

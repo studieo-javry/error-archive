@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.application.usecase.DiscardCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.DiscardCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaptureUseCase
@@ -24,11 +26,16 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureCo
 import org.studieojavry.coreapi.agentcapture.application.usecase.SolutionEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.StepEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureHistoryUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureCommand
+import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AttemptResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureDetailResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistoryItemResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistoryResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ReviewQueueResponse
@@ -47,9 +54,11 @@ import java.util.UUID
 @RequestMapping("/api/v1/captures")
 class CaptureReviewController(
     private val listForReview: ListCapturesForReviewUseCase,
+    private val listHistory: ListCaptureHistoryUseCase,
     private val getCapture: GetCaptureUseCase,
     private val importCapture: ImportCaptureUseCase,
     private val discardCapture: DiscardCaptureUseCase,
+    private val restoreCapture: RestoreCaptureUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
@@ -160,5 +169,43 @@ class CaptureReviewController(
     ): CaptureResponse =
         CaptureResponse.from(
             discardCapture.invoke(DiscardCaptureCommand(captureUuid = captureUuid, reviewerUserId = userId)),
+        )
+
+    @Operation(
+        summary = "검토 완료 이력 조회",
+        description = "종단 상태(IMPORTED·DISCARDED) 본인 초안 목록(최근 갱신순). status 로 한 상태만 필터(없으면 둘 다). " +
+            "IMPORTED 항목은 caseId 로 반영된 Case 를 가리킨다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "400", description = "status 가 IMPORTED/DISCARDED 가 아님", content = [Content()]),
+    )
+    @GetMapping("/history")
+    fun history(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "IMPORTED 또는 DISCARDED (생략 시 둘 다)")
+        @RequestParam(required = false) status: CaptureStatus?,
+    ): CaptureHistoryResponse =
+        CaptureHistoryResponse(
+            items = listHistory.invoke(userId, status).map(CaptureHistoryItemResponse::from),
+        )
+
+    @Operation(
+        summary = "폐기 복원(restore)",
+        description = "폐기(DISCARDED)한 초안을 검토 큐로 되돌린다(→READY_FOR_REVIEW). 내용은 그대로 복원. " +
+            "본인 소유만(아니면 404), DISCARDED 아닌 상태는 409.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "복원됨(READY_FOR_REVIEW)"),
+        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "DISCARDED 아님(복원 불가)", content = [Content()]),
+    )
+    @PostMapping("/{captureUuid}/restore")
+    fun restore(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @PathVariable captureUuid: UUID,
+    ): CaptureResponse =
+        CaptureResponse.from(
+            restoreCapture.invoke(RestoreCaptureCommand(captureUuid = captureUuid, reviewerUserId = userId)),
         )
 }

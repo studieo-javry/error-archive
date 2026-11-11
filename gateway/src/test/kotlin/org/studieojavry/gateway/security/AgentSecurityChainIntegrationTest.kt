@@ -125,21 +125,18 @@ class AgentSecurityChainIntegrationTest {
     }
 
     @Test
-    fun `IAM 장애(5xx)면 비인가로 차단되고 다운스트림을 호출하지 않는다`() {
+    fun `IAM 장애(5xx)면 503 + Retry-After 로 매핑되고 다운스트림을 호출하지 않는다`() {
         stub.introspectStatus.set(503)
         val res = get("/api/v1/agent/me", token = "eaa_live_token")
 
         // 보안 핵심 불변식: 인증 불가 → core-api 로 절대 전달되지 않는다.
         assertEquals(0, stub.downstreamCalls.get(), "인증을 못 하면 core-api 로 전달되면 안 된다")
-        assertTrue(res.statusCode() != 200, "IAM 장애 시 요청이 성공(200)하면 안 된다")
 
-        // [FINDING] 필터는 sendError(503)("Authorization service unavailable")을 호출하지만,
-        // 클라이언트는 실제로 401 을 받는다. sendError 가 서블릿 ERROR 디스패치(/error)를 유발하고,
-        // 기본 보안 체인이 /error 를 anyRequest().authenticated() 로 막아 503 을 401 로 덮어쓰기 때문.
-        // → IAM 장애(재시도 가능, 503)와 토큰 무효(401)를 클라이언트가 구분 못 함(상태코드만 오도, 보안은 안전).
-        // 현행 동작을 고정한다. 게이트웨이에서 /error 를 permitAll 하거나 sendError 대신 상태 직접 기록으로
-        // 고치면 503 으로 바뀌므로, 그때 이 단언을 503 으로 갱신한다.
-        assertEquals(401, res.statusCode(), "현행: 503 의도가 /error 재디스패치로 401 로 귀결(FINDING)")
+        // 토큰이 아니라 인증 서비스(iam)가 일시 장애 → 503(401 아님)으로 구분해, 커넥터가
+        // 백오프·재시도하게 한다. sendError 대신 ProblemDetail 직접 기록이라 /error 재디스패치로
+        // 상태가 뒤집히지 않는다(이전엔 503 의도가 401 로 귀결되던 FINDING 을 수정).
+        assertEquals(503, res.statusCode())
+        assertEquals("30", res.headers().firstValue("Retry-After").orElse(null), "재시도 시점 안내(Retry-After)")
     }
 
     @Test

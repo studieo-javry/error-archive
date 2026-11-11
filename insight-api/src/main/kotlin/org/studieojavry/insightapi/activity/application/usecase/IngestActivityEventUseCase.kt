@@ -55,7 +55,9 @@ class IngestActivityEventUseCase(
         // origin 게이트: AGENT_IMPORT(에이전트 초안 반영)는 raw 원장엔 적재하되 잔디/KPI(daily)엔 집계하지
         // 않는다. raw 에 origin 을 남겨, 정책 변경 시 daily 를 rebuild 해도 동일하게 제외된다.
         if (input.origin == ActivityOrigin.AGENT_IMPORT) {
-            log.debug { "agent-import activity excluded from daily: key=${input.idempotencyKey}" }
+            // INFO: 신규/특수 origin 이 raw 에만 적재되고 daily 에서 빠지는 건, stg/prod(org.studieojavry=INFO)
+            // 에서 이벤트 유입을 눈으로 확인할 수 있어야 하는 관측 지점이다. 정상 적재 자체는 여전히 silent.
+            log.info { "agent-import activity ingested, excluded from daily: key=${input.idempotencyKey} user=${input.userId}" }
             return
         }
         val tz = userTimezone.fetch(input.userId)

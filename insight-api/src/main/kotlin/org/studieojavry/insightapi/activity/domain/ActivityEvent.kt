@@ -19,6 +19,8 @@ class ActivityEvent private constructor(
     val idempotencyKey: String,
     val metaJson: String?,
     val createdAt: Instant,
+    /** 출처. daily 집계 제외 판단(origin 게이트)에 쓰이고 raw 에 보존된다. 기본 USER. */
+    val origin: ActivityOrigin,
 ) {
     companion object {
         const val IDEMPOTENCY_KEY_MAX = 128
@@ -29,18 +31,20 @@ class ActivityEvent private constructor(
             score: Int,
             idempotencyKey: String,
             metaJson: String? = null,
+            origin: ActivityOrigin = ActivityOrigin.USER,
         ): ActivityEvent {
             require(score >= 0) { "score must be >= 0 (got $score)" }
             require(idempotencyKey.isNotBlank()) { "idempotencyKey must not be blank" }
             require(idempotencyKey.length <= IDEMPOTENCY_KEY_MAX) {
                 "idempotencyKey length <= $IDEMPOTENCY_KEY_MAX (got ${idempotencyKey.length})"
             }
-            return ActivityEvent(null, userId, type, occurredAt, score, idempotencyKey, metaJson, Instant.now())
+            return ActivityEvent(null, userId, type, occurredAt, score, idempotencyKey, metaJson, Instant.now(), origin)
         }
 
         fun rehydrate(
             id: Long, userId: Long, type: ActivityType, occurredAt: Instant,
             score: Int, idempotencyKey: String, metaJson: String?, createdAt: Instant,
-        ) = ActivityEvent(id, userId, type, occurredAt, score, idempotencyKey, metaJson, createdAt)
+            origin: ActivityOrigin = ActivityOrigin.USER,
+        ) = ActivityEvent(id, userId, type, occurredAt, score, idempotencyKey, metaJson, createdAt, origin)
     }
 }

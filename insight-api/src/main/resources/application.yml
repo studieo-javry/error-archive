@@ -57,3 +57,4 @@ insight:
       COMMENT_REACTION: 1
       COMMENT_HELPFUL:  1
       FOLLOWED_USER:    1
+      CAPTURE_REVIEWED: 1

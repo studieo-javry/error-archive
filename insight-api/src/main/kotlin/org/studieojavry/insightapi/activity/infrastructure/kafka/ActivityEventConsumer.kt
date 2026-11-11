@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
 import org.studieojavry.insightapi.activity.application.usecase.IngestActivityEventUseCase
+import org.studieojavry.insightapi.activity.domain.ActivityOrigin
 import org.studieojavry.insightapi.activity.domain.ActivityType
 import org.studieojavry.insightapi.activity.infrastructure.dlq.ActivityEventDlqEntity
 import org.studieojavry.insightapi.activity.infrastructure.dlq.ActivityEventDlqRepository
@@ -79,6 +80,7 @@ class ActivityEventConsumer(
                 score = msg.score ?: 0,
                 idempotencyKey = msg.idempotencyKey,
                 metaJson = metaJson,
+                origin = ActivityOrigin.fromCodeOrUser(msg.origin),
             ))
         } catch (ex: Exception) {
             dlqRepo.save(ActivityEventDlqEntity(
@@ -110,6 +112,8 @@ class ActivityEventConsumer(
         val score: Int? = null,
         val idempotencyKey: String,
         val meta: Map<String, Any?>? = null,
+        /** 출처. null/미지의 값은 USER 로 간주. "AGENT_IMPORT" 면 daily 집계 제외. */
+        val origin: String? = null,
     )
 
     companion object {

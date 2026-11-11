@@ -53,6 +53,7 @@ class AgentCaptureRepositoryAdapter(
             createdAt = capture.createdAt,
             updatedAt = capture.updatedAt,
             completedAt = capture.completedAt,
+            importedCaseId = capture.importedCaseId,
         )
         // saveAndFlush: @Version(revision) 증가가 flush 시점에 일어나므로, 응답에 새 revision 을
         // 반영하려면 즉시 flush 해야 한다(그래야 멱등 영수증에도 올바른 revision 이 저장된다).
@@ -65,6 +66,12 @@ class AgentCaptureRepositoryAdapter(
     override fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
+    override fun listByOwnerAndStatus(
+        ownerUserId: Long,
+        status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
+    ): List<AgentCapture> =
+        jpa.findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(ownerUserId, status).map { it.toDomain() }
+        
     override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
@@ -81,6 +88,7 @@ class AgentCaptureRepositoryAdapter(
         createdAt = createdAt,
         updatedAt = updatedAt,
         completedAt = completedAt,
+        importedCaseId = importedCaseId,
     )
 }
 

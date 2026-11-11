@@ -13,6 +13,7 @@ import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import org.studieojavry.insightapi.activity.domain.ActivityEvent
+import org.studieojavry.insightapi.activity.domain.ActivityOrigin
 import org.studieojavry.insightapi.activity.domain.ActivityType
 import java.time.Instant
 
@@ -51,9 +52,15 @@ class ActivityEventEntity(
 
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
+
+    /** 출처. null(과거 행/일반 활동)은 USER 로 간주. AGENT_IMPORT 는 daily 집계 제외. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origin", length = 16)
+    var origin: ActivityOrigin? = null,
 ) {
     fun toDomain(): ActivityEvent = ActivityEvent.Companion.rehydrate(
         id!!, userId, type, occurredAt, score, idempotencyKey, metaJson, createdAt,
+        origin ?: ActivityOrigin.USER,
     )
 
     companion object {
@@ -62,6 +69,7 @@ class ActivityEventEntity(
             occurredAt = e.occurredAt, score = e.score,
             idempotencyKey = e.idempotencyKey, metaJson = e.metaJson,
             createdAt = e.createdAt,
+            origin = e.origin,
         )
     }
 }

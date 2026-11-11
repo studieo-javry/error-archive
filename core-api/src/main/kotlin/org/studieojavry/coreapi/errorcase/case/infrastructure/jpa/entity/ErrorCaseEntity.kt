@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Visibility
 import java.time.LocalDateTime
@@ -75,4 +76,17 @@ class ErrorCaseEntity(
      */
     @Column(name = "demo_seed_version", insertable = false, updatable = false)
     var demoSeedVersion: Int? = null,
+
+    /** 출처(직접 작성 vs 에이전트 초안 반영). NOT NULL, 기본 MANUAL(V21 default). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 16)
+    var source: ContentSource = ContentSource.MANUAL,
+
+    /** AGENT_IMPORT 케이스를 검토·확정한 사용자. */
+    @Column(name = "reviewed_by_user_id")
+    var reviewedByUserId: Long? = null,
+
+    /** 반영의 출처가 된 agent_capture 의 id(추적용). */
+    @Column(name = "source_capture_id")
+    var sourceCaptureId: Long? = null,
 )

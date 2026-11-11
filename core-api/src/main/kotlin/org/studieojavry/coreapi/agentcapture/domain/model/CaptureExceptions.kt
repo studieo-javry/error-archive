@@ -24,6 +24,13 @@ class IdempotencyConflictException(val key: String) :
 class UnknownAttemptReferenceException(val captureUuid: UUID, val clientAttemptId: String) :
     RuntimeException("solution references unknown attempt '$clientAttemptId' in $captureUuid")
 
+/**
+ * 검토 중 수정(solutionEdits)이 선택되지 않은(또는 존재하지 않는) clientSolutionId 를 가리킴
+ * → 422 UNKNOWN_SOLUTION_REFERENCE. 편집 대상은 반드시 selectedSolutionIds 안에 있어야 한다.
+ */
+class UnknownSolutionReferenceException(val captureUuid: UUID, val clientSolutionId: String) :
+    RuntimeException("edit references unselected solution '$clientSolutionId' in $captureUuid")
+
 /** Solution 후보는 최소 1개의 존재하는 Attempt 를 참조해야 함 → 422 SOLUTION_WITHOUT_ATTEMPT. */
 class SolutionWithoutAttemptException(val captureUuid: UUID) :
     RuntimeException("solution for $captureUuid must reference at least one attempt")

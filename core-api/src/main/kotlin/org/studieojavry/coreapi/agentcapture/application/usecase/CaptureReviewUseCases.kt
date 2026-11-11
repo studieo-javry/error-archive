@@ -21,6 +21,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundExcepti
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
@@ -103,17 +104,31 @@ class ImportCaptureUseCase(
             attemptByClientId[it] ?: throw UnknownAttemptReferenceException(cmd.captureUuid, it)
         }
 
+        // 검토 중 수정 대상은 반드시 "선택된" 항목이어야 한다(미선택/미존재 키 → 422).
+        val selectedAttemptIdSet = cmd.selectedAttemptIds.toSet()
+        cmd.stepEdits.keys.firstOrNull { it !in selectedAttemptIdSet }?.let {
+            throw UnknownAttemptReferenceException(cmd.captureUuid, it)
+        }
+        val selectedSolutionIdSet = cmd.selectedSolutionIds.toSet()
+        cmd.solutionEdits.keys.firstOrNull { it !in selectedSolutionIdSet }?.let {
+            throw UnknownSolutionReferenceException(cmd.captureUuid, it)
+        }
+
         // 1) 신규 케이스(PRIVATE, OPEN). 자동 RESOLVED 하지 않는다.
+        //    검토 중 수정: editedTitle/editedDescription 이 있으면 캡처 원본 대신 사용.
         val case = errorCases.save(
             ErrorCase.create(
                 ownerUserId = reviewer,
                 title = truncate(
-                    capture.title?.takeIf { it.isNotBlank() } ?: "Imported capture ${capture.captureUuid}",
+                    cmd.editedTitle?.takeIf { it.isNotBlank() }
+                        ?: capture.title?.takeIf { it.isNotBlank() }
+                        ?: "Imported capture ${capture.captureUuid}",
                     TITLE_MAX,
                 ),
                 project = capture.project,
                 snapshot = null,
-                description = buildDescription(capture.content),
+                description = if (cmd.editedDescription != null) cmd.editedDescription.ifBlank { null }
+                    else buildDescription(capture.content),
                 meta = Meta.create(workspaceId = null, severityCode = null),
                 visibility = Visibility.PRIVATE,
                 snippets = emptyList(),
@@ -130,15 +145,20 @@ class ImportCaptureUseCase(
         // 2) 선택 Attempt → Step(선택 순서 보존). clientAttemptId → 저장된 stepId 매핑(Solution 참조 해소용).
         val stepIdByClientAttempt = LinkedHashMap<String, Long>()
         selectedAttempts.forEachIndexed { index, attempt ->
+            val edit = cmd.stepEdits[attempt.clientAttemptId]
             val step = steps.save(
                 Step.create(
                     errorCaseId = caseId,
                     authorUserId = reviewer,
                     orderIndex = index,
-                    title = truncate(attempt.detail.title.ifBlank { "Attempt ${index + 1}" }, TITLE_MAX),
+                    title = truncate(
+                        edit?.title?.takeIf { it.isNotBlank() }
+                            ?: attempt.detail.title.ifBlank { "Attempt ${index + 1}" },
+                        TITLE_MAX,
+                    ),
                     status = mapStatus(attempt.result),
                     attemptType = attempt.attemptType?.takeIf { it.isNotBlank() }?.let { truncate(it, ATTEMPT_TYPE_MAX) },
-                    body = buildStepBody(attempt.detail),
+                    body = if (edit?.body != null) edit.body.ifBlank { null } else buildStepBody(attempt.detail),
                     insight = attempt.detail.insight?.takeIf { it.isNotBlank() }?.let { truncate(it, INSIGHT_MAX) },
                 )
             )
@@ -151,13 +171,15 @@ class ImportCaptureUseCase(
         solutions.listByCapture(captureId).filter { it.clientSolutionId in selectedSolutionIds }.forEach { candidate ->
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
             if (stepIds.isNotEmpty()) {
+                val edit = cmd.solutionEdits[candidate.clientSolutionId]
                 caseSolutions.save(
                     Solution.create(
                         errorCaseId = caseId,
                         authorUserId = reviewer,
-                        title = truncate(candidate.title, TITLE_MAX),
+                        title = truncate(edit?.title?.takeIf { it.isNotBlank() } ?: candidate.title, TITLE_MAX),
                         stepIds = stepIds,
-                        description = candidate.content.description?.takeIf { it.isNotBlank() },
+                        description = if (edit?.description != null) edit.description.ifBlank { null }
+                            else candidate.content.description?.takeIf { it.isNotBlank() },
                         verification = candidate.content.verification?.let { toSolutionVerification(it) },
                     )
                 )
@@ -244,13 +266,22 @@ class ImportCaptureUseCase(
         return ImportResult(caseId = caseId, alreadyImported = false)
     }
 
-    /** 정규화한 반영 요청 해시 — 같은 선택·revision·markResolved 면 동일(재반영 멱등/충돌 판정). */
+    /**
+     * 정규화한 반영 요청 해시 — 같은 선택·revision·markResolved·검토수정 이면 동일(재반영 멱등/충돌 판정).
+     * 편집값이 다르면 해시가 달라져 재반영이 멱등 재요청이 아닌 409 충돌로 처리된다.
+     */
     private fun requestHash(cmd: ImportCaptureCommand): String {
         val normalized = buildString {
             append(cmd.reviewedRevision).append('|')
             append(cmd.selectedAttemptIds.sorted().joinToString(",")).append('|')
             append(cmd.selectedSolutionIds.sorted().joinToString(",")).append('|')
-            append(cmd.markResolved)
+            append(cmd.markResolved).append('|')
+            append(cmd.editedTitle ?: "").append('|')
+            append(cmd.editedDescription ?: "").append('|')
+            append(cmd.stepEdits.entries.sortedBy { it.key }
+                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.body ?: ""}" }).append('|')
+            append(cmd.solutionEdits.entries.sortedBy { it.key }
+                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.description ?: ""}" })
         }
         return MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -330,12 +361,26 @@ data class ImportCaptureCommand(
     /** 반영할 Attempt(clientAttemptId), 사용자 지정 순서 = Step 순서. */
     val selectedAttemptIds: List<String> = emptyList(),
     val selectedSolutionIds: List<String> = emptyList(),
-    /** P0: 저장만(artifact→Case 연결은 후속). */
+    /** 반영할 근거(clientArtifactId). 선택 Attempt 의 evidenceRefs 와 합쳐 Case 첨부로 승격·연결된다. */
     val selectedArtifactIds: List<String> = emptyList(),
     /** 사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지). */
     val markResolved: Boolean = false,
+    /** 검토 중 수정: Case 제목 override(null 이면 캡처 제목). */
+    val editedTitle: String? = null,
+    /** 검토 중 수정: Case 본문 override(null 이면 캡처 서사, 빈 문자열이면 본문 없음). */
+    val editedDescription: String? = null,
+    /** 검토 중 수정: Step(=선택 Attempt)별 제목·본문 override. key=clientAttemptId(선택 Attempt 만 허용). */
+    val stepEdits: Map<String, StepEdit> = emptyMap(),
+    /** 검토 중 수정: Solution(=선택 후보)별 제목·설명 override. key=clientSolutionId(선택 후보만 허용). */
+    val solutionEdits: Map<String, SolutionEdit> = emptyMap(),
     val note: String? = null,
 )
+
+/** 검토 중 Step 수정. null 필드는 캡처 원본 유지. */
+data class StepEdit(val title: String? = null, val body: String? = null)
+
+/** 검토 중 Solution 수정. null 필드는 캡처 원본 유지. */
+data class SolutionEdit(val title: String? = null, val description: String? = null)
 
 /**
  * 초안 폐기(DISCARDED). OPEN·READY_FOR_REVIEW 에서 가능, 이미 DISCARDED 면 멱등, IMPORTED 는 409.

@@ -21,6 +21,8 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.DiscardCaptureU
 import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.IdempotencyService
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureCommand
+import org.studieojavry.coreapi.agentcapture.application.usecase.SolutionEdit
+import org.studieojavry.coreapi.agentcapture.application.usecase.StepEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
@@ -122,6 +124,10 @@ class CaptureReviewController(
                     selectedSolutionIds = request.selectedSolutionIds,
                     selectedArtifactIds = request.selectedArtifactIds,
                     markResolved = request.markResolved,
+                    editedTitle = request.editedTitle,
+                    editedDescription = request.editedDescription,
+                    stepEdits = request.stepEdits.mapValues { StepEdit(it.value.title, it.value.body) },
+                    solutionEdits = request.solutionEdits.mapValues { SolutionEdit(it.value.title, it.value.description) },
                     note = request.note,
                 )
             )

@@ -197,7 +197,10 @@ data class ReviewQueueResponse(
     val items: List<CaptureResponse>,
 )
 
-@Schema(description = "검토 반영 요청. 승인된 항목만 반영한다. reviewedRevision 으로 봉인 후 편집 충돌을 막는다.")
+@Schema(
+    description = "검토 반영 요청. 승인된 항목만 반영한다. reviewedRevision 으로 봉인 후 편집 충돌을 막는다. " +
+        "edited*/stepEdits/solutionEdits 로 검토 중 내용을 직접 수정해 반영할 수 있다.",
+)
 data class ImportCaptureRequest(
     @Schema(description = "검토한 초안 revision. capture 의 현재 revision 과 다르면 409 REVISION_CONFLICT.")
     val reviewedRevision: Int,
@@ -205,12 +208,36 @@ data class ImportCaptureRequest(
     val selectedAttemptIds: List<String> = emptyList(),
     @Schema(description = "반영할 Solution 후보(clientSolutionId).")
     val selectedSolutionIds: List<String> = emptyList(),
-    @Schema(description = "반영할 근거(clientArtifactId). P0 에선 저장만(Case 연결은 후속).")
+    @Schema(description = "반영할 근거(clientArtifactId). 선택 Attempt 의 evidenceRefs 와 합쳐 Case 첨부로 승격·연결된다.")
     val selectedArtifactIds: List<String> = emptyList(),
     @Schema(description = "사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지).")
     val markResolved: Boolean = false,
+    @Schema(description = "검토 중 수정: Case 제목 override. 미지정이면 캡처 제목.")
+    val editedTitle: String? = null,
+    @Schema(description = "검토 중 수정: Case 본문 override. 미지정이면 캡처 서사, 빈 문자열이면 본문 없음.")
+    val editedDescription: String? = null,
+    @Schema(description = "검토 중 수정: Step 별 제목·본문. key=clientAttemptId(반드시 selectedAttemptIds 안, 아니면 422).")
+    val stepEdits: Map<String, StepEditRequest> = emptyMap(),
+    @Schema(description = "검토 중 수정: Solution 별 제목·설명. key=clientSolutionId(반드시 selectedSolutionIds 안, 아니면 422).")
+    val solutionEdits: Map<String, SolutionEditRequest> = emptyMap(),
     @Schema(description = "검토 확인 설명(선택).")
     val note: String? = null,
+)
+
+@Schema(description = "검토 중 Step 수정. null 필드는 캡처 원본 유지, body 는 빈 문자열이면 본문 없음.")
+data class StepEditRequest(
+    @Schema(description = "Step 제목 override.")
+    val title: String? = null,
+    @Schema(description = "Step 본문(마크다운) override.")
+    val body: String? = null,
+)
+
+@Schema(description = "검토 중 Solution 수정. null 필드는 캡처 원본 유지, description 은 빈 문자열이면 설명 없음.")
+data class SolutionEditRequest(
+    @Schema(description = "Solution 제목 override.")
+    val title: String? = null,
+    @Schema(description = "Solution 설명 override.")
+    val description: String? = null,
 )
 
 @Schema(description = "반영 결과. caseId 는 생성된(또는 이미 생성돼 있던) ErrorCase. alreadyImported 는 멱등 재요청.")

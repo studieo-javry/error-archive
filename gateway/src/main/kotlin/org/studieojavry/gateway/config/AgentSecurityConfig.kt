@@ -12,6 +12,8 @@ import org.studieojavry.gateway.filter.AgentTokenAuthenticationFilter
 import org.studieojavry.internalauth.InternalTokenIssuer
 import org.studieojavry.sharederror.security.ProblemDetailAccessDeniedHandler
 import org.studieojavry.sharederror.security.ProblemDetailAuthenticationEntryPoint
+import org.studieojavry.sharederror.trace.TraceIdAccessor
+import tools.jackson.databind.ObjectMapper
 
 /**
  * agent 전용 인증 체인. agent 경로(api/v1/agent 하위)만 담당하며(securityMatcher), 사용자 HS256
@@ -31,9 +33,13 @@ class AgentSecurityConfig {
         internalTokenIssuer: InternalTokenIssuer,
         authEntryPoint: ProblemDetailAuthenticationEntryPoint,
         accessDeniedHandler: ProblemDetailAccessDeniedHandler,
+        objectMapper: ObjectMapper,
+        traceIdAccessor: TraceIdAccessor,
     ): SecurityFilterChain {
         // Filter 빈으로 등록하면 Boot 가 서블릿 체인 전역에 자동 등록하므로, 이 체인에만 수동 주입한다.
-        val agentFilter = AgentTokenAuthenticationFilter(introspectionClient, internalTokenIssuer)
+        val agentFilter = AgentTokenAuthenticationFilter(
+            introspectionClient, internalTokenIssuer, authEntryPoint, objectMapper, traceIdAccessor,
+        )
         http
             .securityMatcher("/api/v1/agent/**")
             .csrf { it.disable() }

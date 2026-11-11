@@ -21,6 +21,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundExcepti
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
@@ -115,6 +116,20 @@ class ImportCaptureUseCase(
             throw UnknownSolutionReferenceException(cmd.captureUuid, it)
         }
 
+        // 선택한 Solution/Artifact 도 Attempt 와 동일하게 "이 캡처에 실제 존재" 엄격 검증(미존재 → 422).
+        // (과거엔 silent filter 로 무시 → 오타·잘못된 id 가 조용히 누락됐다. 이제 명시적으로 거부.)
+        val solutionCandidates = solutions.listByCapture(captureId)
+        val candidateByClientId = solutionCandidates.associateBy { it.clientSolutionId }
+        cmd.selectedSolutionIds.forEach {
+            if (it !in candidateByClientId) throw UnknownSolutionReferenceException(cmd.captureUuid, it)
+        }
+        val captureArtifactList = captureArtifacts.listByCapture(captureId)
+        val artifactByClientId = captureArtifactList.associateBy { it.clientArtifactId }
+        cmd.selectedArtifactIds.forEach {
+            val art = artifactByClientId[it] ?: throw UnknownArtifactReferenceException(cmd.captureUuid, it)
+            if (!art.isCompleted) throw UnknownArtifactReferenceException(cmd.captureUuid, it)
+        }
+
         // 1) 신규 케이스(PRIVATE, OPEN). 자동 RESOLVED 하지 않는다.
         //    검토 중 수정: editedTitle/editedDescription 이 있으면 캡처 원본 대신 사용.
         val case = errorCases.save(
@@ -143,14 +158,15 @@ class ImportCaptureUseCase(
         )
         val caseId = case.id!!
 
-        // 2-pre) 선택 근거(선택 Attempt 의 evidenceRefs ∪ selectedArtifactIds)를 Case 첨부로 승격·연결.
-        //        Step 본문에 토큰을 삽입하려고 clientArtifactId → 새 첨부 markerId 매핑을 먼저 확보한다.
-        //        캡처 스토리지의 바이트를 error_case_attachment 로 복사(참조 X), capture_artifact→LINKED(원본 보존).
-        val wantedArtifactIds = (selectedAttempts.flatMap { it.detail.evidenceRefs } + cmd.selectedArtifactIds).toSet()
+        // 2-pre) 반영할 근거 = selectedArtifactIds (명시 선택 집합). Attempt 선택만으로 근거가 자동 포함되지 않으며,
+        //        사용자가 개별 근거를 제외할 수 있다(민감/노이즈 파일). FE 는 선택 Attempt 의 evidenceRefs 를 기본 포함해 보낸다.
+        //        선택 근거를 Case 첨부로 승격·연결하고, Step 본문 토큰 삽입용 clientArtifactId→새 markerId 매핑을 확보한다.
+        //        (존재·완료는 위에서 엄격 검증됨. 캡처 바이트를 error_case_attachment 로 복사, capture_artifact→LINKED.)
+        val selectedArtifactIdSet = cmd.selectedArtifactIds.toSet()
         val markerIdByClientArtifact = LinkedHashMap<String, String>()
-        if (wantedArtifactIds.isNotEmpty()) {
-            captureArtifacts.listByCapture(captureId)
-                .filter { it.clientArtifactId in wantedArtifactIds && it.isCompleted }
+        if (selectedArtifactIdSet.isNotEmpty()) {
+            captureArtifactList
+                .filter { it.clientArtifactId in selectedArtifactIdSet }
                 .forEach { art ->
                     val created = createAttachment.invoke(
                         CreateAttachmentCommand(
@@ -207,8 +223,7 @@ class ImportCaptureUseCase(
 
         // 3) 선택 SolutionCandidate → Solution. 참조 clientAttemptId 를 (선택된) stepId 로 해소.
         //    후보의 상세 설명(description)·검증 근거(verification)도 함께 이관한다.
-        val selectedSolutionIds = cmd.selectedSolutionIds.toSet()
-        solutions.listByCapture(captureId).filter { it.clientSolutionId in selectedSolutionIds }.forEach { candidate ->
+        solutionCandidates.filter { it.clientSolutionId in selectedSolutionIdSet }.forEach { candidate ->
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
             if (stepIds.isNotEmpty()) {
                 val edit = cmd.solutionEdits[candidate.clientSolutionId]

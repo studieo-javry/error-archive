@@ -19,6 +19,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictExc
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import java.sql.SQLException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
@@ -87,6 +88,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnknownSolutionReferenceException::class)
     fun unknownSolution(ex: UnknownSolutionReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_SOLUTION_REFERENCE", ex.message)
+
+    @ExceptionHandler(UnknownArtifactReferenceException::class)
+    fun unknownArtifact(ex: UnknownArtifactReferenceException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ARTIFACT_REFERENCE", ex.message)
 
     @ExceptionHandler(SolutionWithoutAttemptException::class)
     fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =

@@ -25,11 +25,17 @@ class UnknownAttemptReferenceException(val captureUuid: UUID, val clientAttemptI
     RuntimeException("solution references unknown attempt '$clientAttemptId' in $captureUuid")
 
 /**
- * 검토 중 수정(solutionEdits)이 선택되지 않은(또는 존재하지 않는) clientSolutionId 를 가리킴
- * → 422 UNKNOWN_SOLUTION_REFERENCE. 편집 대상은 반드시 selectedSolutionIds 안에 있어야 한다.
+ * 검토 중 수정(solutionEdits)이 선택되지 않은(또는 존재하지 않는) clientSolutionId 를 가리킴,
+ * 또는 selectedSolutionIds 가 이 캡처에 없는 후보를 참조 → 422 UNKNOWN_SOLUTION_REFERENCE.
  */
 class UnknownSolutionReferenceException(val captureUuid: UUID, val clientSolutionId: String) :
-    RuntimeException("edit references unselected solution '$clientSolutionId' in $captureUuid")
+    RuntimeException("references unknown/unselected solution '$clientSolutionId' in $captureUuid")
+
+/**
+ * selectedArtifactIds 가 이 캡처에 존재하지 않거나 업로드 미완료인 근거를 참조 → 422 UNKNOWN_ARTIFACT_REFERENCE.
+ */
+class UnknownArtifactReferenceException(val captureUuid: UUID, val clientArtifactId: String) :
+    RuntimeException("references unknown/incomplete artifact '$clientArtifactId' in $captureUuid")
 
 /** Solution 후보는 최소 1개의 존재하는 Attempt 를 참조해야 함 → 422 SOLUTION_WITHOUT_ATTEMPT. */
 class SolutionWithoutAttemptException(val captureUuid: UUID) :

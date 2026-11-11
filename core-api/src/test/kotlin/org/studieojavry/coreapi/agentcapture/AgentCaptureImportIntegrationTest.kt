@@ -305,6 +305,56 @@ class AgentCaptureImportIntegrationTest {
             .andExpect(status().isNotFound)
     }
 
+    @Test
+    fun `근거 개별 제외(B) - 선택 Attempt 라도 미선택 근거는 반영되지 않는다`() {
+        // a1 이 art1·art2 두 근거를 참조하지만, 사용자는 art1 만 선택(art2 제외).
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = userId, originatingConnectionId = UUID.randomUUID(),
+                title = "NPE", project = "svc", content = CaptureContent(symptom = "NPE"), now = now(),
+            )
+        )
+        val captureId = saved.id!!
+        attempts.save(CaptureAttempt.create(captureId, "a1", 0, AttemptResult.SUCCEEDED, "fix",
+            AttemptDetail(title = "fix", action = "run", evidenceRefs = listOf("art1", "art2")), now()))
+        listOf("art1", "art2").forEach {
+            captureArtifacts.save(CaptureArtifact.completed(
+                captureId = captureId, clientArtifactId = it, objectKey = "obj/$it", sha256 = "s",
+                contentType = "image/png", sizeBytes = 3, fileName = "$it.png", uploaderUserId = userId, now = now(),
+            ))
+        }
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+
+        doImport(uuid, userId, "imp-exclude",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"selectedArtifactIds":["art1"]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val atts = caseAttachments.findAllByErrorCaseId(caseId)
+        assertEquals(1, atts.size, "선택한 art1 만 반영")
+        val step = steps.findAllByErrorCaseId(caseId).single()
+        assertTrue(step.body?.contains("@attach(${atts.single().markerId})") == true)
+    }
+
+    @Test
+    fun `엄격 검증 - 존재하지 않는 Solution 선택은 422`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-badsol",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["nope"]}""")
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_SOLUTION_REFERENCE"))
+    }
+
+    @Test
+    fun `엄격 검증 - 존재하지 않는 Artifact 선택은 422`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        doImport(uuid, userId, "imp-badart",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"selectedArtifactIds":["ghost"]}""")
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_ARTIFACT_REFERENCE"))
+    }
+
     /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관/정정 검증용) */
     private fun seedCaptureWithRichSolution(
         owner: Long,

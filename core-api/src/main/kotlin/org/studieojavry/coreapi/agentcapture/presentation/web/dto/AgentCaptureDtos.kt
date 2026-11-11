@@ -210,7 +210,9 @@ data class ImportCaptureRequest(
     val selectedAttemptIds: List<String> = emptyList(),
     @Schema(description = "반영할 Solution 후보(clientSolutionId).")
     val selectedSolutionIds: List<String> = emptyList(),
-    @Schema(description = "반영할 근거(clientArtifactId). 선택 Attempt 의 evidenceRefs 와 합쳐 Case 첨부로 승격·연결된다.")
+    @Schema(description = "반영할 근거(clientArtifactId) — 명시 선택 집합. 이 목록에 든 근거만 Case 첨부로 승격·연결된다. " +
+        "Attempt 선택만으로 자동 포함되지 않으므로 개별 제외 가능(민감/노이즈 파일). FE 는 선택 Attempt 의 evidenceRefs 를 기본 포함. " +
+        "존재하지 않거나 업로드 미완료 근거 참조 시 422.")
     val selectedArtifactIds: List<String> = emptyList(),
     @Schema(description = "사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지).")
     val markResolved: Boolean = false,

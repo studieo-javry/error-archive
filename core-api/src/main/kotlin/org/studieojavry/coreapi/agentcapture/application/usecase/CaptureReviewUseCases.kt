@@ -21,6 +21,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundExcepti
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.Verification
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
@@ -32,6 +33,7 @@ import java.security.MessageDigest
 import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
+import org.studieojavry.coreapi.errorcase.solution.domain.model.SolutionVerification
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
@@ -144,6 +146,7 @@ class ImportCaptureUseCase(
         }
 
         // 3) 선택 SolutionCandidate → Solution. 참조 clientAttemptId 를 (선택된) stepId 로 해소.
+        //    후보의 상세 설명(description)·검증 근거(verification)도 함께 이관한다.
         val selectedSolutionIds = cmd.selectedSolutionIds.toSet()
         solutions.listByCapture(captureId).filter { it.clientSolutionId in selectedSolutionIds }.forEach { candidate ->
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
@@ -154,6 +157,8 @@ class ImportCaptureUseCase(
                         authorUserId = reviewer,
                         title = truncate(candidate.title, TITLE_MAX),
                         stepIds = stepIds,
+                        description = candidate.content.description?.takeIf { it.isNotBlank() },
+                        verification = candidate.content.verification?.let { toSolutionVerification(it) },
                     )
                 )
             }
@@ -296,6 +301,18 @@ class ImportCaptureUseCase(
     }
 
     private fun truncate(s: String, max: Int): String = if (s.length <= max) s else s.take(max)
+
+    /** 캡처 후보의 Verification → Case Solution 의 SolutionVerification(errorcase 값 타입)으로 변환. */
+    private fun toSolutionVerification(v: Verification): SolutionVerification = SolutionVerification(
+        result = v.result.name,
+        scope = v.scope?.name,
+        command = v.command,
+        testId = v.testId,
+        executed = v.executed,
+        ranAt = v.ranAt,
+        commitSha = v.commitSha,
+        evidence = v.evidence,
+    )
 
     data class ImportResult(val caseId: Long, val alreadyImported: Boolean)
 

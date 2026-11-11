@@ -272,7 +272,11 @@ class RouteConfig(
                     // 게스트 데모 — 사용 가이드 대상 조회(GET /api/v1/demo/guide)
                     .or(path("/api/v1/demo/**"))
                     // GitHub 연동(설치 연결·목록). 웹훅은 위 githubWebhookRoute 가 먼저 잡는다.
-                    .or(path("/api/v1/integrations/**")),
+                    .or(path("/api/v1/integrations/**"))
+                    // 자동 수집 초안의 사용자 검토·반영(import)·폐기 — 웹 세션 사용자 전용(core-api).
+                    //  큐(bare)와 하위 모두. HeaderInjectionFilter 의 aud=core-api 매핑과 반드시 정합.
+                    .or(path("/api/v1/captures"))
+                    .or(path("/api/v1/captures/**")),
                 http()
             )
             .before(uri(downstream.coreApi))

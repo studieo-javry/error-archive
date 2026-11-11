@@ -49,7 +49,7 @@ class HeaderInjectionFilter(
         }
     }
 
-    private fun resolveAudience(uri: String): String = when {
+    internal fun resolveAudience(uri: String): String = when {
         // noti-api 가 *서버* 인 경로 — 우선순위 가장 높음 (users/me 의 일부라 iam-api 보다 먼저 매칭).
         uri.startsWith("/api/v1/users/me/notification-settings") -> AUDIENCE_NOTI_API
         uri.startsWith("/api/v1/users/me/notifications") -> AUDIENCE_NOTI_API
@@ -71,6 +71,9 @@ class HeaderInjectionFilter(
             uri.startsWith("/api/v1/demo") ||
             // GitHub 연동(GithubInstallationController) — RouteConfig coreApiRoute 의 /api/v1/integrations/** 와 정합.
             uri.startsWith("/api/v1/integrations") ||
+            // 자동 수집 초안 검토·반영(CaptureReviewController, 웹 세션 사용자) — RouteConfig coreApiRoute 의
+            // /api/v1/captures 와 정합. 누락 시 aud=iam-api 로 발급돼 core-api 가 401.
+            uri.startsWith("/api/v1/captures") ||
             // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
             // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
             uri.startsWith("/api/v1/users/me/recent-active-cases") ||

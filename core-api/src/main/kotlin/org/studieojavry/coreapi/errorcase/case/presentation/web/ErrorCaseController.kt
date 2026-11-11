@@ -28,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException
 import org.studieojavry.coreapi.demo.application.DemoGuestWritePolicy
 import org.studieojavry.coreapi.errorcase.attachment.application.usecase.AttachmentPresigner
 import org.studieojavry.coreapi.errorcase.attachment.config.PresignTtlProperties
+import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.application.command.CreateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.case.application.command.UpdateErrorCaseCommand
 import org.studieojavry.coreapi.errorcase.case.application.usecase.AddCaseToWatchlistUseCase
@@ -92,6 +93,7 @@ class ErrorCaseController(
     private val presignTtl: PresignTtlProperties,
     private val findSimilarCasesUseCase: FindSimilarCasesUseCase,
     private val demoGuestWritePolicy: DemoGuestWritePolicy,
+    private val stepRepository: StepRepositoryPort,
 ) {
 
     /**
@@ -415,6 +417,7 @@ class ErrorCaseController(
             ErrorCaseDetailResponse.MeTooDto(mt.count, mt.taggedByMe, mt.userIds),
             attachmentUrlResolver(errorCase.visibility),
             watchedByMe = watchedByMe,
+            stepBodies = stepRepository.findAllByErrorCaseId(id).mapNotNull { it.body },
         )
     }
 
@@ -576,7 +579,11 @@ class ErrorCaseController(
             // 도메인 transitionTo 의 require 위반(허용되지 않은 상태 전이 등)
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message, e)
         }
-        return ErrorCaseDetailResponse.from(updated, attachmentUrls = attachmentUrlResolver(updated.visibility))
+        return ErrorCaseDetailResponse.from(
+            updated,
+            attachmentUrls = attachmentUrlResolver(updated.visibility),
+            stepBodies = stepRepository.findAllByErrorCaseId(updated.id!!).mapNotNull { it.body },
+        )
     }
 
     @Operation(

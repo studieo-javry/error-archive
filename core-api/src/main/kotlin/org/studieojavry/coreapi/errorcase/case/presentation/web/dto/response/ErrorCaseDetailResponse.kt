@@ -90,7 +90,18 @@ data class ErrorCaseDetailResponse(
             meToo: MeTooDto = MeTooDto(0, false, emptyList()),
             attachmentUrls: AttachmentUrlResolver,
             watchedByMe: Boolean = false,
-        ): ErrorCaseDetailResponse = ErrorCaseDetailResponse(
+            /**
+             * Step 본문 목록. 인라인 판정(inlineReferenced)은 Case 본문뿐 아니라 Step 본문에 배치된
+             * 마커도 "집이 있다"고 보므로, Step 에만 꽂힌 첨부/스니펫이 "관련 첨부/코드" 갤러리에
+             * 중복 노출되지 않도록 여기 포함한다. 미전달(빈 리스트)이면 Case 본문 기준만(하위호환).
+             */
+            stepBodies: List<String> = emptyList(),
+        ): ErrorCaseDetailResponse {
+            // 토큰이 Case 본문 또는 임의 Step 본문 어디든 있으면 인라인 배치된 것으로 본다.
+            val referencedInline = { token: String ->
+                c.description?.contains(token) == true || stepBodies.any { it.contains(token) }
+            }
+            return ErrorCaseDetailResponse(
             id = requireNotNull(c.id),
             ownerUserId = c.ownerUserId,
             title = c.title,
@@ -122,8 +133,8 @@ data class ErrorCaseDetailResponse(
                     lineRange = it.lineRange,
                     caption = it.caption,
                     code = it.code,
-                    // 본문에 @snippet(markerId) 가 있으면 인라인, 없으면 "관련 코드" 섹션.
-                    inlineReferenced = c.description?.contains(it.embedToken()) == true,
+                    // 본문 또는 Step 본문에 @snippet(markerId) 가 있으면 인라인, 없으면 "관련 코드" 섹션.
+                    inlineReferenced = referencedInline(it.embedToken()),
                 )
             },
             attachments = c.attachments.map {
@@ -138,13 +149,14 @@ data class ErrorCaseDetailResponse(
                     downloadUrl = downloadUrl,
                     title = it.title,
                     caption = it.caption,
-                    // 본문에 @attach(markerId) 가 있으면 인라인, 없으면 "관련 첨부" 갤러리.
-                    inlineReferenced = c.description?.contains(it.embedToken()) == true,
+                    // 본문 또는 Step 본문에 @attach(markerId) 가 있으면 인라인, 없으면 "관련 첨부" 갤러리.
+                    inlineReferenced = referencedInline(it.embedToken()),
                 )
             },
             meToo = meToo,
             watchedByMe = watchedByMe,
             demo = c.demo,
-        )
+            )
+        }
     }
 }

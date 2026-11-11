@@ -42,8 +42,8 @@ import kotlin.test.assertTrue
  *  3. complete 와 Attempt 쓰기 경합 → 최종 봉인, 손상 없음.
  *
  * 아키텍처 사실: agent-capture 에는 비관적 락(SELECT FOR UPDATE)이 없고, capture 행의 JPA
- * @Version 낙관락 + UNIQUE 제약만이 동시성 제어다. 따라서 일부 경합의 패자는 깔끔한 409 가
- * 아니라 낙관락/유니크 위반으로 귀결될 수 있다(아래 FINDING 주석 참고).
+ * @Version 낙관락 + UNIQUE 제약만이 동시성 제어다. 경합의 패자(낙관락 실패·유니크 위반)는
+ * AgentCaptureExceptionHandler 가 각각 409 REVISION_CONFLICT / 409 CONCURRENT_REQUEST 로 매핑한다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -173,10 +173,11 @@ class AgentCaptureConcurrencyIntegrationTest {
         // 멱등 보장: 모든 성공 응답은 동일 captureUuid(= 중복 생성 없음). 뒤늦게 온 요청은 영수증 재생.
         val uuids = successes.map { om.readTree(it.body)["captureUuid"].asText() }.toSet()
         assertEquals(setOf(uuid.toString()), uuids, "모든 성공은 같은 captureUuid 여야 한다(중복 생성 금지)")
-        // 실패가 있다면 경합(409 CONCURRENT_REQUEST, 또는 유니크 위반 500)뿐이어야 한다 — 클라이언트오류(400) 아님.
+        // 실패가 있다면 전부 409 CONCURRENT_REQUEST 여야 한다(capture_uuid 유니크 위반 → 멱등 경합으로 매핑).
+        // 멱등 키로 재전송하면 최초 결과가 재생된다. (수정 전엔 raw DataIntegrityViolation → 500 으로 샜다.)
         val failures = results.filter { it.status !in 200..299 }
-        assertTrue(failures.all { it.status == 409 || it.status == 500 },
-            "실패는 경합(409/500)만 — 관찰: ${dist(failures)}")
+        assertTrue(failures.all { it.status == 409 && it.code == "CONCURRENT_REQUEST" },
+            "동시 중복 패자는 409 CONCURRENT_REQUEST — 관찰: ${dist(failures)}")
 
         // 최종적으로 단 하나의 OPEN capture(rev 0)만 존재.
         val got = getCapture(uuid)
@@ -206,13 +207,12 @@ class AgentCaptureConcurrencyIntegrationTest {
         val got = getCapture(uuid)
         assertEquals(1, om.readTree(got.body)["capture"]["revision"].asInt(), "revision 은 1 이어야 한다(한 번만 적용)")
 
-        // 패자 상태 기록: 직렬화됐으면 409 REVISION_CONFLICT(깔끔), 진짜 동시면 낙관락 미매핑으로 귀결.
-        // [FINDING] agent-capture 어드바이스가 ObjectOptimisticLockingFailureException 을 매핑하지 않아,
-        // 진짜 동시 수정의 패자는 409 REVISION_CONFLICT 가 아니라 500(또는 github 어드바이스 활성 시
-        // 409 CONNECTION_VERSION_CONFLICT)로 샐 수 있다. 데이터 정합(1건만 적용)은 보장된다.
+        // 패자는 409 REVISION_CONFLICT 여야 한다 — 직렬화됐으면 stale expectedRevision 검사로,
+        // 진짜 동시면 JPA 낙관락(ObjectOptimisticLockingFailureException)을 어드바이스가 매핑해서.
+        // (수정 전엔 낙관락 미매핑으로 500 or github 의 CONNECTION_VERSION_CONFLICT 로 샜다.)
         val loser = results.single { it.status !in 200..299 }
-        assertTrue(loser.status == 409 || loser.status == 500,
-            "패자는 409 또는 500 — 관찰: status=${loser.status} code=${loser.code}")
+        assertEquals(409, loser.status, "동시 수정 패자는 409 — 관찰 status=${loser.status} code=${loser.code}")
+        assertEquals("REVISION_CONFLICT", loser.code, "동시 수정 패자 코드는 REVISION_CONFLICT")
     }
 
     // ---- 3. complete 와 Attempt 쓰기 경합 --------------------------------------

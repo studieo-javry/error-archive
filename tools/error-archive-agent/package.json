@@ -1,0 +1,33 @@
+{
+  "name": "@error-archive/agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "error-archive AI Agent Capture 커넥터 — Claude Code 등 로컬 AI 도구가 개발 중 오류·해결 과정을 비공개 초안으로 수집하는 MCP 서버.",
+  "type": "module",
+  "bin": {
+    "error-archive-agent": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "start": "node dist/index.js",
+    "doctor": "tsx src/index.ts doctor",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

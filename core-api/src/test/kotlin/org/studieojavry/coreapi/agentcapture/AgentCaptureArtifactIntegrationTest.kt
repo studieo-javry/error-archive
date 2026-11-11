@@ -149,7 +149,11 @@ class AgentCaptureArtifactIntegrationTest {
         mvc.perform(
             post("/api/v1/agent/captures/$uuid/complete").with(agent())
                 .header("Idempotency-Key", "c-ev-done").contentType(MediaType.APPLICATION_JSON).content("{}"),
-        ).andExpect(status().isUnprocessableEntity).andExpect(jsonPath("$.code").value("EVIDENCE_NOT_READY"))
+        ).andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("EVIDENCE_NOT_READY"))
+            // 구조화 필드로 누락 근거 ID 노출(커넥터 복구용).
+            .andExpect(jsonPath("$.missingEvidenceRefs.length()").value(1))
+            .andExpect(jsonPath("$.missingEvidenceRefs[0]").value("log1"))
 
         // 근거 업로드 후 봉인 성공
         upload(uuid, "log1", "{\"k\":1}".toByteArray(), "application/json").andExpect(status().isCreated)

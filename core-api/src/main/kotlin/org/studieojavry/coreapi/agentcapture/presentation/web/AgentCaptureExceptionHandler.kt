@@ -83,6 +83,8 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(EvidenceNotReadyException::class)
     fun evidenceNotReady(ex: EvidenceNotReadyException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "EVIDENCE_NOT_READY", ex.message)
+            // 누락 근거 ID 를 구조화 필드로도 노출 — 커넥터가 detail 문자열 파싱 없이 복구 대상(재업로드/attempt 수정)을 식별.
+            .apply { setProperty("missingEvidenceRefs", ex.missingRefs) }
 
     @ExceptionHandler(ArtifactHashMismatchException::class)
     fun hashMismatch(ex: ArtifactHashMismatchException): ProblemDetail =

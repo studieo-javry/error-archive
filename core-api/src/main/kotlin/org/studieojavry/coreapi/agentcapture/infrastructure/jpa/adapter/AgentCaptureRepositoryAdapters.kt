@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture.infrastructure.jpa.adapter
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
@@ -10,18 +11,21 @@ import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceipt
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceiptPort
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.AgentCaptureJpaRepository
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureArtifactJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureAttemptJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureSessionJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureSessionLinkJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureSolutionJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.IdempotencyReceiptJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.AgentCaptureEntity
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureArtifactEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureAttemptEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionLinkEntity
@@ -192,6 +196,55 @@ class CaptureSessionRepositoryAdapter(
         clientVersion = clientVersion,
         clientSessionId = clientSessionId,
         startedAt = startedAt,
+    )
+}
+
+@Repository
+class CaptureArtifactRepositoryAdapter(
+    private val jpa: CaptureArtifactJpaRepository,
+) : CaptureArtifactRepositoryPort {
+
+    override fun save(artifact: CaptureArtifact): CaptureArtifact {
+        val entity = CaptureArtifactEntity(
+            id = artifact.id,
+            captureId = artifact.captureId,
+            clientArtifactId = artifact.clientArtifactId,
+            objectKey = artifact.objectKey,
+            sha256 = artifact.sha256,
+            contentType = artifact.contentType,
+            sizeBytes = artifact.sizeBytes,
+            fileName = artifact.fileName,
+            uploaderUserId = artifact.uploaderUserId,
+            status = artifact.status,
+            createdAt = artifact.createdAt,
+        )
+        return jpa.save(entity).toDomain()
+    }
+
+    override fun findByCaptureAndClientId(captureId: Long, clientArtifactId: String): CaptureArtifact? =
+        jpa.findByCaptureIdAndClientArtifactId(captureId, clientArtifactId)?.toDomain()
+
+    override fun listByCapture(captureId: Long): List<CaptureArtifact> =
+        jpa.findByCaptureIdOrderByIdAsc(captureId).map { it.toDomain() }
+
+    override fun countByCapture(captureId: Long): Int = jpa.countByCaptureId(captureId).toInt()
+
+    override fun totalSizeByCapture(captureId: Long): Long = jpa.totalSizeByCaptureId(captureId)
+
+    override fun completedClientIds(captureId: Long): Set<String> = jpa.completedClientIds(captureId).toSet()
+
+    private fun CaptureArtifactEntity.toDomain(): CaptureArtifact = CaptureArtifact.reconstitute(
+        id = id!!,
+        captureId = captureId,
+        clientArtifactId = clientArtifactId,
+        objectKey = objectKey,
+        sha256 = sha256,
+        contentType = contentType,
+        sizeBytes = sizeBytes,
+        fileName = fileName,
+        uploaderUserId = uploaderUserId,
+        status = status,
+        createdAt = createdAt,
     )
 }
 

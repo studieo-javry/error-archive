@@ -305,8 +305,13 @@ class AgentCaptureImportIntegrationTest {
             .andExpect(status().isNotFound)
     }
 
-    /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관 검증용) */
-    private fun seedCaptureWithRichSolution(owner: Long): UUID {
+    /** s1 에 description + verification 을 실은 봉인 초안. (#3 이관/정정 검증용) */
+    private fun seedCaptureWithRichSolution(
+        owner: Long,
+        verification: Verification? = Verification(
+            result = VerificationResult.PASSED, command = "./gradlew test", executed = true, evidence = "42 tests passed",
+        ),
+    ): UUID {
         val uuid = UUID.randomUUID()
         val saved = captures.save(
             AgentCapture.start(
@@ -322,12 +327,7 @@ class AgentCaptureImportIntegrationTest {
             SolutionContent(
                 description = "엘비스 연산자로 null 가드",
                 clientAttemptIds = listOf("a2"),
-                verification = Verification(
-                    result = VerificationResult.PASSED,
-                    command = "./gradlew test",
-                    executed = true,
-                    evidence = "42 tests passed",
-                ),
+                verification = verification,
             ), now()))
         val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
         return uuid
@@ -376,6 +376,75 @@ class AgentCaptureImportIntegrationTest {
         val solution = caseSolutions.findAllByErrorCaseId(caseId).single()
         assertEquals("최종 해결", solution.title)
         assertEquals("리뷰 중 다듬은 설명", solution.description)
+    }
+
+    @Test
+    fun `검토 중 수정 - 최종 Step 상태를 정정할 수 있다`() {
+        val (uuid, _) = seedCapture(userId, seal = true) // a1=FAILED(기본 mapStatus=FAILED)
+        doImport(uuid, userId, "imp-stepstatus", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],
+             "stepEdits":{"a1":{"status":"RESOLVED"}}}
+        """.trimIndent())
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertEquals(StepStatus.RESOLVED, steps.findAllByErrorCaseId(caseId).single { it.orderIndex == 0 }.status)
+    }
+
+    @Test
+    fun `검토 중 수정 - Solution 검증 정보를 정정할 수 있다`() {
+        val uuid = seedCaptureWithRichSolution(userId) // 캡처: PASSED/executed=true
+        doImport(uuid, userId, "imp-verif", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"verification":{"result":"FAILED","executed":true,"evidence":"재현됨"}}}}
+        """.trimIndent())
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val v = caseSolutions.findAllByErrorCaseId(caseId).single().verification!!
+        assertEquals("FAILED", v.result)
+        assertEquals("재현됨", v.evidence)
+    }
+
+    @Test
+    fun `검토 중 수정 - 검증 정보 전체 제외(clearVerification)`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-clearverif", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"clearVerification":true}}}
+        """.trimIndent())
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertEquals(null, caseSolutions.findAllByErrorCaseId(caseId).single().verification)
+    }
+
+    @Test
+    fun `정책 - 정정한 검증이 실행안함+PASSED 면 422`() {
+        val uuid = seedCaptureWithRichSolution(userId)
+        doImport(uuid, userId, "imp-badverif", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"verification":{"result":"PASSED","executed":false}}}}
+        """.trimIndent())
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNEXECUTED_VERIFICATION_PASSED"))
+    }
+
+    @Test
+    fun `정책 - 캡처 원본 검증이 실행안함+PASSED 면 반영도 422(제외하거나 정정 필요)`() {
+        // 캡처가 AI 가 실행 없이 PASSED 로 표기한 검증을 담고 있어도, 반영(확정) 시점에 거른다.
+        val uuid = seedCaptureWithRichSolution(
+            userId,
+            verification = Verification(result = VerificationResult.PASSED, executed = false),
+        )
+        doImport(uuid, userId, "imp-badcapverif",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"]}""")
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNEXECUTED_VERIFICATION_PASSED"))
+
+        // clearVerification 으로 제외하면 반영 성공.
+        doImport(uuid, userId, "imp-badcapverif-cleared", """
+            {"reviewedRevision":1,"selectedAttemptIds":["a2"],"selectedSolutionIds":["s1"],
+             "solutionEdits":{"s1":{"clearVerification":true}}}
+        """.trimIndent())
+            .andExpect(status().isCreated)
     }
 
     @Test

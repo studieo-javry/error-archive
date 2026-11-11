@@ -98,7 +98,8 @@ class CaptureReviewController(
         ApiResponse(responseCode = "201", description = "반영됨(신규 케이스 생성)"),
         ApiResponse(responseCode = "200", description = "이미 반영됨(멱등)"),
         ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
-        ApiResponse(responseCode = "409", description = "봉인되지 않음 / 폐기됨", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "봉인되지 않음 / 폐기됨 / revision 충돌 / 다른 선택·편집으로 재반영", content = [Content()]),
+        ApiResponse(responseCode = "422", description = "미선택 편집 키 / 실행 안 한 검증을 PASSED 로 확정(UNEXECUTED_VERIFICATION_PASSED 등)", content = [Content()]),
     )
     @PostMapping("/{captureUuid}/import")
     fun import(
@@ -126,8 +127,10 @@ class CaptureReviewController(
                     markResolved = request.markResolved,
                     editedTitle = request.editedTitle,
                     editedDescription = request.editedDescription,
-                    stepEdits = request.stepEdits.mapValues { StepEdit(it.value.title, it.value.body) },
-                    solutionEdits = request.solutionEdits.mapValues { SolutionEdit(it.value.title, it.value.description) },
+                    stepEdits = request.stepEdits.mapValues { StepEdit(it.value.title, it.value.body, it.value.status) },
+                    solutionEdits = request.solutionEdits.mapValues {
+                        SolutionEdit(it.value.title, it.value.description, it.value.verification, it.value.clearVerification)
+                    },
                     note = request.note,
                 )
             )

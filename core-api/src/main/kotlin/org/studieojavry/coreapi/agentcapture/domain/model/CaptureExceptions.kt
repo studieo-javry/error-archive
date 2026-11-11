@@ -36,6 +36,13 @@ class SolutionWithoutAttemptException(val captureUuid: UUID) :
     RuntimeException("solution for $captureUuid must reference at least one attempt")
 
 /**
+ * 반영 시 실행하지 않은(executed=false) 검증을 PASSED 로 확정하려 함 → 422 UNEXECUTED_VERIFICATION_PASSED.
+ * executed=true 로 정정하거나 result 변경, 또는 검증 전체 제외(clearVerification) 해야 한다.
+ */
+class UnexecutedVerificationPassedException(val captureUuid: UUID) :
+    RuntimeException("cannot import PASSED verification that was not executed, in $captureUuid")
+
+/**
  * verification.result=PASSED 인데 근거(command·testId·evidence)가 하나도 없음 → 422 VERIFICATION_EVIDENCE_REQUIRED.
  * 근거 "존재" 만 확인한다(내용의 완전한 진실성은 서버가 보증하지 않음, 이슈 §3).
  */

@@ -2,6 +2,8 @@ package org.studieojavry.coreapi.agentcapture.presentation.web.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import org.studieojavry.coreapi.errorcase.solution.domain.model.SolutionVerification
+import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
@@ -230,6 +232,8 @@ data class StepEditRequest(
     val title: String? = null,
     @Schema(description = "Step 본문(마크다운) override.")
     val body: String? = null,
+    @Schema(description = "최종 Step 상태 정정. null 이면 캡처 Attempt 결과서 파생된 기본 상태.", allowableValues = ["RESOLVED", "IN_PROGRESS", "FAILED"])
+    val status: StepStatus? = null,
 )
 
 @Schema(description = "검토 중 Solution 수정. null 필드는 캡처 원본 유지, description 은 빈 문자열이면 설명 없음.")
@@ -238,6 +242,10 @@ data class SolutionEditRequest(
     val title: String? = null,
     @Schema(description = "Solution 설명 override.")
     val description: String? = null,
+    @Schema(description = "검증 정보 정정(통째 교체). executed=false 인데 result=PASSED 면 422. clearVerification=true 면 무시.")
+    val verification: SolutionVerification? = null,
+    @Schema(description = "AI 검증 정보를 신뢰할 수 없을 때 true — 검증 정보를 제외(null)하고 반영. verification 보다 우선.")
+    val clearVerification: Boolean = false,
 )
 
 @Schema(description = "반영 결과. caseId 는 생성된(또는 이미 생성돼 있던) ErrorCase. alreadyImported 는 멱등 재요청.")

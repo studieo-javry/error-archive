@@ -18,6 +18,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyExcept
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import java.sql.SQLException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
@@ -90,6 +91,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(SolutionWithoutAttemptException::class)
     fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_ATTEMPT", ex.message)
+
+    @ExceptionHandler(UnexecutedVerificationPassedException::class)
+    fun unexecutedVerificationPassed(ex: UnexecutedVerificationPassedException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNEXECUTED_VERIFICATION_PASSED", ex.message)
 
     @ExceptionHandler(VerificationEvidenceRequiredException::class)
     fun verificationEvidence(ex: VerificationEvidenceRequiredException): ProblemDetail =

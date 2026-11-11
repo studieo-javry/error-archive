@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
@@ -194,7 +195,8 @@ class ImportCaptureUseCase(
                             ?: attempt.detail.title.ifBlank { "Attempt ${index + 1}" },
                         TITLE_MAX,
                     ),
-                    status = mapStatus(attempt.result),
+                    // 최종 Step 상태: 사용자가 정정했으면 그 값, 아니면 캡처 Attempt 결과서 파생.
+                    status = edit?.status ?: mapStatus(attempt.result),
                     attemptType = attempt.attemptType?.takeIf { it.isNotBlank() }?.let { truncate(it, ATTEMPT_TYPE_MAX) },
                     body = appendEvidenceTokens(baseBody, evidenceTokens),
                     insight = attempt.detail.insight?.takeIf { it.isNotBlank() }?.let { truncate(it, INSIGHT_MAX) },
@@ -210,6 +212,14 @@ class ImportCaptureUseCase(
             val stepIds = candidate.content.clientAttemptIds.mapNotNull { stepIdByClientAttempt[it] }.distinct()
             if (stepIds.isNotEmpty()) {
                 val edit = cmd.solutionEdits[candidate.clientSolutionId]
+                // 최종 검증 정보: 전체 제외(clearVerification) > 사용자 정정(verification) > 캡처 원본.
+                val resolvedVerification = when {
+                    edit?.clearVerification == true -> null
+                    edit?.verification != null -> edit.verification
+                    else -> candidate.content.verification?.let { toSolutionVerification(it) }
+                }
+                // 정책: 실제 실행하지 않은(executed=false) 검증은 PASSED 로 확정 금지.
+                resolvedVerification?.let { requireNotUnexecutedPass(it, capture.captureUuid) }
                 caseSolutions.save(
                     Solution.create(
                         errorCaseId = caseId,
@@ -218,7 +228,7 @@ class ImportCaptureUseCase(
                         stepIds = stepIds,
                         description = if (edit?.description != null) edit.description.ifBlank { null }
                             else candidate.content.description?.takeIf { it.isNotBlank() },
-                        verification = candidate.content.verification?.let { toSolutionVerification(it) },
+                        verification = resolvedVerification,
                     )
                 )
             }
@@ -290,9 +300,12 @@ class ImportCaptureUseCase(
             append(cmd.editedTitle ?: "").append('|')
             append(cmd.editedDescription ?: "").append('|')
             append(cmd.stepEdits.entries.sortedBy { it.key }
-                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.body ?: ""}" }).append('|')
-            append(cmd.solutionEdits.entries.sortedBy { it.key }
-                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.description ?: ""}" })
+                .joinToString(",") { "${it.key}=${it.value.title ?: ""}:${it.value.body ?: ""}:${it.value.status ?: ""}" }).append('|')
+            append(cmd.solutionEdits.entries.sortedBy { it.key }.joinToString(",") {
+                val vrepr = if (it.value.clearVerification) "CLEAR"
+                    else it.value.verification?.let { v -> objectMapper.writeValueAsString(v) } ?: ""
+                "${it.key}=${it.value.title ?: ""}:${it.value.description ?: ""}:$vrepr"
+            })
         }
         return MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -351,6 +364,17 @@ class ImportCaptureUseCase(
 
     private fun truncate(s: String, max: Int): String = if (s.length <= max) s else s.take(max)
 
+    /**
+     * 정책: 실제 실행하지 않은(executed=false) 검증을 PASSED 로 확정하지 않는다.
+     * 반영(확정) 시점에 걸러, AI 가 실행 없이 PASSED 로 표기한 신뢰할 수 없는 검증이 정식 Case 로 넘어가는 것을 막는다.
+     * (사용자는 executed=true 로 정정하거나, result 를 바꾸거나, clearVerification 으로 검증을 제외할 수 있다.)
+     */
+    private fun requireNotUnexecutedPass(v: SolutionVerification, captureUuid: UUID) {
+        if (v.result == "PASSED" && !v.executed) {
+            throw UnexecutedVerificationPassedException(captureUuid)
+        }
+    }
+
     /** 캡처 후보의 Verification → Case Solution 의 SolutionVerification(errorcase 값 타입)으로 변환. */
     private fun toSolutionVerification(v: Verification): SolutionVerification = SolutionVerification(
         result = v.result.name,
@@ -394,11 +418,24 @@ data class ImportCaptureCommand(
     val note: String? = null,
 )
 
-/** 검토 중 Step 수정. null 필드는 캡처 원본 유지. */
-data class StepEdit(val title: String? = null, val body: String? = null)
+/** 검토 중 Step 수정. null 필드는 캡처 원본 유지. status 는 캡처 Attempt 결과서 파생된 기본 상태 정정용. */
+data class StepEdit(
+    val title: String? = null,
+    val body: String? = null,
+    val status: StepStatus? = null,
+)
 
-/** 검토 중 Solution 수정. null 필드는 캡처 원본 유지. */
-data class SolutionEdit(val title: String? = null, val description: String? = null)
+/**
+ * 검토 중 Solution 수정. null 필드는 캡처 원본 유지.
+ *  - verification: 캡처 검증 정보 정정용(통째 교체).
+ *  - clearVerification=true: AI 검증 정보를 신뢰할 수 없을 때 verification=null 로 반영(전체 제외). verification 보다 우선.
+ */
+data class SolutionEdit(
+    val title: String? = null,
+    val description: String? = null,
+    val verification: SolutionVerification? = null,
+    val clearVerification: Boolean = false,
+)
 
 /**
  * 초안 폐기(DISCARDED). OPEN·READY_FOR_REVIEW 에서 가능, 이미 DISCARDED 면 멱등, IMPORTED 는 409.

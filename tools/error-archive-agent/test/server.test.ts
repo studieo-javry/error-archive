@@ -6,7 +6,7 @@ import type { ApiClient } from '../src/apiClient.js';
 import { ApiError } from '../src/apiClient.js';
 import { idempotencyKeyFor } from '../src/idempotency.js';
 import { createServer } from '../src/server.js';
-import type { CaptureContent, CaptureResponse, CreateCaptureRequest } from '../src/types.js';
+import type { CaptureContent, CaptureResponse, CreateCaptureRequest, UpdateAttemptRequest } from '../src/types.js';
 
 const AUUID = '00000000-0000-4000-8000-000000000000';
 
@@ -67,8 +67,31 @@ test('모든 기대 도구가 등록돼 있다', async () => {
     'capture_get',
     'capture_start',
     'capture_update',
+    'capture_update_attempt',
     'diagnose',
   ]);
+});
+
+test('capture_update_attempt 는 수정한 evidenceRefs 로 PATCH 한다', async () => {
+  let captured: { uuid: string; clientAttemptId: string; req: UpdateAttemptRequest } | null = null;
+  const { client } = fakeClient({
+    updateAttempt: async (uuid, clientAttemptId, req) => {
+      captured = { uuid, clientAttemptId, req };
+      return {
+        clientAttemptId, orderIndex: 0, result: req.result,
+        attemptType: req.attemptType ?? null, detail: req.detail, createdAt: 't', updatedAt: 't',
+      };
+    },
+  });
+  const mcp = await connect(client);
+  await mcp.callTool({
+    name: 'capture_update_attempt',
+    arguments: { captureUuid: AUUID, clientAttemptId: 'a1', result: 'FAILED', title: 'repro', evidenceRefs: ['log-002'] },
+  });
+  assert.ok(captured);
+  assert.equal(captured!.clientAttemptId, 'a1');
+  assert.equal(captured!.req.result, 'FAILED');
+  assert.deepEqual(captured!.req.detail.evidenceRefs, ['log-002']);
 });
 
 test('diagnose 는 whoami 결과를 반환한다', async () => {

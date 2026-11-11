@@ -132,6 +132,37 @@ export function createServer(client: ApiClient): McpServer {
   );
 
   server.registerTool(
+    'capture_update_attempt',
+    {
+      title: '시도 수정',
+      description:
+        '기존 시도(Attempt)를 수정한다. 잘못된 evidenceRefs(근거 clientArtifactId) 정정 등에 사용 — 예: complete 가 EVIDENCE_NOT_READY(missingEvidenceRefs) 로 실패할 때. ' +
+        '전체 detail 을 교체하므로 유지할 값도 함께 보낸다(먼저 capture_get 으로 현재 값 확인 권장).',
+      inputSchema: {
+        captureUuid: z.string().uuid(),
+        clientAttemptId: z.string().describe('수정할 시도의 clientAttemptId'),
+        result: RESULT,
+        attemptType: z.string().optional(),
+        title: z.string(),
+        hypothesis: z.string().optional(),
+        action: z.string().optional(),
+        insight: z.string().optional(),
+        nextStep: z.string().optional(),
+        evidenceRefs: z.array(z.string()).optional().describe('연결할 근거(clientArtifactId). 봉인 전 업로드돼야 함'),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        const saved = await client.updateAttempt(args.captureUuid, args.clientAttemptId, {
+          result: args.result,
+          attemptType: args.attemptType,
+          detail: buildAttemptDetail(args),
+        });
+        return ok({ clientAttemptId: saved.clientAttemptId, orderIndex: saved.orderIndex, result: saved.result });
+      }),
+  );
+
+  server.registerTool(
     'capture_add_solution',
     {
       title: '해결 후보 추가',

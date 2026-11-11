@@ -98,6 +98,7 @@ node dist/index.js doctor
 | `diagnose` | 토큰이 어떤 사용자·연결·scope 로 해석되는지(진단) |
 | `capture_start` | 새 OPEN 초안 생성. `captureUuid` 반환(이후 도구에 전달) |
 | `capture_add_attempt` | 시도(조사·수정·검증) 1건 기록(결과→상태) |
+| `capture_update_attempt` | 기존 시도 수정(잘못된 `evidenceRefs` 정정 등). detail 전체 교체 |
 | `capture_add_solution` | 해결 후보 기록(참조 시도 1개 이상) |
 | `capture_attach_evidence` | 로컬 파일(스크린샷·로그·diff·JSON)을 근거로 업로드 |
 | `capture_update` | 초안 기본 정보·서사 교체(`expectedRevision` 낙관 검사) |

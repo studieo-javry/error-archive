@@ -1122,6 +1122,21 @@
           "clientSessionId": {
             "type": "string",
             "minLength": 1
+          },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "이 세션의 프로젝트 귀속(본인 소유 ProjectBinding). 생성될 Capture 가 상속한다. projectKey 보다 우선."
+          },
+          "projectKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "프로젝트 식별자 — 해당 바인딩이 없으면 본인 소유로 생성(findOrCreate). 커넥터가 로컬 프로젝트 키를 보낼 때."
           }
         },
         "required": [
@@ -1345,19 +1360,13 @@
       "JsonNode": {
         "type": "object",
         "properties": {
-          "number": {
-            "type": "boolean"
-          },
-          "float": {
+          "string": {
             "type": "boolean"
           },
           "empty": {
             "type": "boolean"
           },
           "array": {
-            "type": "boolean"
-          },
-          "container": {
             "type": "boolean"
           },
           "missingNode": {
@@ -1379,6 +1388,9 @@
               "POJO",
               "STRING"
             ]
+          },
+          "pojo": {
+            "type": "boolean"
           },
           "integralNumber": {
             "type": "boolean"
@@ -1411,19 +1423,22 @@
           "boolean": {
             "type": "boolean"
           },
+          "binary": {
+            "type": "boolean"
+          },
           "object": {
+            "type": "boolean"
+          },
+          "container": {
             "type": "boolean"
           },
           "null": {
             "type": "boolean"
           },
-          "string": {
+          "number": {
             "type": "boolean"
           },
-          "binary": {
-            "type": "boolean"
-          },
-          "pojo": {
+          "float": {
             "type": "boolean"
           },
           "embeddedValue": {
@@ -1587,7 +1602,15 @@
               "null"
             ],
             "format": "uuid",
-            "description": "이 초안을 이을 세션(선택). 등록된 세션이면 연결한다."
+            "description": "이 초안을 이을 세션(선택). 등록된 세션이면 연결하고 그 세션의 프로젝트를 상속한다."
+          },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속."
           }
         },
         "required": [

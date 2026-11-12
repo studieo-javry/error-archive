@@ -7,11 +7,15 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRep
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceipt
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceiptPort
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureEventJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureImportJpaRepository
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureEventEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
@@ -332,5 +336,65 @@ class CaptureImportRepositoryAdapter(
         requestHash = requestHash,
         attemptStepMap = emptyMap(),
         createdAt = createdAt,
+    )
+}
+
+@Repository
+class CaptureEventRepositoryAdapter(
+    private val jpa: CaptureEventJpaRepository,
+    private val objectMapper: ObjectMapper,
+) : CaptureEventRepositoryPort {
+
+    override fun findByConnectionAndClientId(connectionId: java.util.UUID, clientEventId: String): CaptureEvent? =
+        jpa.findByConnectionIdAndClientEventId(connectionId, clientEventId)?.toDomain()
+
+    override fun save(event: CaptureEvent): CaptureEvent {
+        val entity = CaptureEventEntity(
+            id = event.id,
+            connectionId = event.connectionId,
+            ownerUserId = event.ownerUserId,
+            projectBindingId = event.projectBindingId,
+            clientEventId = event.clientEventId,
+            clientKind = event.clientKind,
+            clientVersion = event.clientVersion,
+            sessionId = event.sessionId,
+            streamId = event.streamId,
+            toolCallId = event.toolCallId,
+            eventType = event.eventType,
+            localSequence = event.localSequence,
+            observedAt = event.observedAt,
+            receivedAt = event.receivedAt,
+            redactedPayload = event.redactedPayload,
+            truncated = event.truncated,
+            evidenceRefs = objectMapper.writeValueAsString(event.evidenceRefs),
+            payloadHash = event.payloadHash,
+            captureId = event.captureId,
+            status = event.status,
+        )
+        return jpa.save(entity).toDomain()
+    }
+
+    // evidenceRefs 는 영속 전용(read-back 소비처 없어 빈 리스트로 둔다).
+    private fun CaptureEventEntity.toDomain(): CaptureEvent = CaptureEvent(
+        id = id,
+        connectionId = connectionId,
+        ownerUserId = ownerUserId,
+        projectBindingId = projectBindingId,
+        clientEventId = clientEventId,
+        clientKind = clientKind,
+        clientVersion = clientVersion,
+        sessionId = sessionId,
+        streamId = streamId,
+        toolCallId = toolCallId,
+        eventType = eventType,
+        localSequence = localSequence,
+        observedAt = observedAt,
+        receivedAt = receivedAt,
+        redactedPayload = redactedPayload,
+        truncated = truncated,
+        evidenceRefs = emptyList(),
+        payloadHash = payloadHash,
+        captureId = captureId,
+        status = status,
     )
 }

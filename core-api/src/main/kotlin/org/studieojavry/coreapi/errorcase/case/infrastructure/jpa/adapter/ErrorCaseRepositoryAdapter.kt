@@ -66,6 +66,17 @@ class ErrorCaseRepositoryAdapter(
         return hydrateSummaries(entities)
     }
 
+    override fun searchOwnedCasesForAgent(
+        ownerUserId: Long,
+        query: String?,
+        projectBindingId: Long?,
+        limit: Int,
+    ): List<ErrorCaseSummary> {
+        val q = query?.takeIf { it.isNotBlank() }?.let { "%${it.lowercase()}%" }
+        val entities = errorCaseRepo.searchOwnedCasesForAgent(ownerUserId, projectBindingId, q, PageRequest.of(0, limit))
+        return hydrateSummaries(entities)
+    }
+
     override fun findRecentlyResolvedByActor(
         actorUserId: Long,
         since: LocalDateTime,
@@ -308,6 +319,7 @@ class ErrorCaseRepositoryAdapter(
         source = source,
         reviewedByUserId = reviewedByUserId,
         sourceCaptureId = sourceCaptureId,
+        projectBindingId = projectBindingId,
     )
 
     private fun ErrorSnapshot.toEmbeddable(): ErrorSnapshotEmbeddable = ErrorSnapshotEmbeddable(
@@ -384,6 +396,7 @@ class ErrorCaseRepositoryAdapter(
             source = source,
             reviewedByUserId = reviewedByUserId,
             sourceCaptureId = sourceCaptureId,
+            projectBindingId = projectBindingId,
         )
     }
 }

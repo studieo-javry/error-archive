@@ -358,5 +358,32 @@ export function createServer(client: ApiClient): McpServer {
       }),
   );
 
+  server.registerTool(
+    'find_cases',
+    {
+      title: '과거 사례 검색',
+      description:
+        '본인이 전에 해결한 Case 를 검색한다(과거 해결경험 재활용). query 로 제목·설명·예외로 유사 오류를 찾고, ' +
+        'projectBindingId 로 특정 프로젝트로 좁힐 수 있다(선택 — 미지정 시 프로젝트 무관 전체). 공개 사례·타인 데이터는 조회되지 않는다.',
+      inputSchema: {
+        query: z.string().optional(),
+        projectBindingId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    (args) => guard(async () => ok(await client.searchCases(args.query, args.projectBindingId, args.limit))),
+  );
+
+  server.registerTool(
+    'get_case',
+    {
+      title: '과거 사례 상세',
+      description:
+        '과거 Case 상세를 조회한다 — Step 본문·Solution 설명·검증 근거까지 포함해 해결 과정을 그대로 참고할 수 있다. 본인 소유만(아니면 404).',
+      inputSchema: { caseId: z.number().int().positive() },
+    },
+    (args) => guard(async () => ok(await client.getCase(args.caseId))),
+  );
+
   return server;
 }

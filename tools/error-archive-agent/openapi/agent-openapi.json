@@ -26,6 +26,10 @@
       "description": "자동 수집 초안(Capture/Attempt/Solution) — agent 토큰 전용."
     },
     {
+      "name": "agent-case",
+      "description": "에이전트 토큰으로 본인 과거 사례 검색·상세 조회(case:read)."
+    },
+    {
       "name": "agent",
       "description": "로컬 커넥터(MCP) 전용 경로. opaque 연결 토큰으로만 호출(사용자 JWT 아님)."
     }
@@ -966,6 +970,109 @@
           }
         }
       }
+    },
+    "/api/v1/agent/cases": {
+      "get": {
+        "tags": [
+          "agent-case"
+        ],
+        "summary": "사례 검색",
+        "description": "본인 소유 Case 를 query(제목·설명·예외클래스·예외메시지)로 검색. projectBindingId 지정 시 그 프로젝트로 좁힘(선택).",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectBindingId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCaseListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/cases/{caseId}": {
+      "get": {
+        "tags": [
+          "agent-case"
+        ],
+        "summary": "사례 상세",
+        "description": "Step 본문·Solution 설명·검증 포함. 본인 소유만(아니면 404).",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCaseDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/본인 소유 아님"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1238,7 +1345,10 @@
       "JsonNode": {
         "type": "object",
         "properties": {
-          "null": {
+          "number": {
+            "type": "boolean"
+          },
+          "float": {
             "type": "boolean"
           },
           "empty": {
@@ -1247,10 +1357,10 @@
           "array": {
             "type": "boolean"
           },
-          "number": {
+          "container": {
             "type": "boolean"
           },
-          "container": {
+          "missingNode": {
             "type": "boolean"
           },
           "valueNode": {
@@ -1269,9 +1379,6 @@
               "POJO",
               "STRING"
             ]
-          },
-          "pojo": {
-            "type": "boolean"
           },
           "integralNumber": {
             "type": "boolean"
@@ -1304,19 +1411,19 @@
           "boolean": {
             "type": "boolean"
           },
-          "binary": {
-            "type": "boolean"
-          },
           "object": {
             "type": "boolean"
           },
-          "float": {
-            "type": "boolean"
-          },
-          "missingNode": {
+          "null": {
             "type": "boolean"
           },
           "string": {
+            "type": "boolean"
+          },
+          "binary": {
+            "type": "boolean"
+          },
+          "pojo": {
             "type": "boolean"
           },
           "embeddedValue": {
@@ -2011,6 +2118,238 @@
           "connectionId",
           "scopes",
           "userId"
+        ]
+      },
+      "AgentCaseListResponse": {
+        "type": "object",
+        "description": "에이전트 case 검색 결과 목록.",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseSummaryResponse"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AgentCaseSummaryResponse": {
+        "type": "object",
+        "description": "에이전트 case 검색 결과 요약(본인 소유).",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "exceptionClass": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "예외 클래스(스냅샷) — 어떤 오류인지 빠른 식별용."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "status",
+          "title"
+        ]
+      },
+      "AgentCaseDetailResponse": {
+        "type": "object",
+        "description": "에이전트 case 상세 — 본인 소유만. Step 본문·Solution 설명·검증까지 포함.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "자유 텍스트 프로젝트(P0). ProjectBinding 과는 별개."
+          },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exceptionClass": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exceptionMessage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseStepResponse"
+            }
+          },
+          "solutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseSolutionResponse"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "solutions",
+          "status",
+          "steps",
+          "title"
+        ]
+      },
+      "AgentCaseSolutionResponse": {
+        "type": "object",
+        "description": "case 상세의 Solution(설명·검증 포함).",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "해결방법 상세 설명(마크다운)."
+          },
+          "verification": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AgentCaseVerificationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "AgentCaseStepResponse": {
+        "type": "object",
+        "description": "case 상세의 Step(본문 포함 — 해결 과정 재활용용).",
+        "properties": {
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attemptType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Step 본문(마크다운) — 무엇을 어떻게 시도/해결했는지."
+          },
+          "insight": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "orderIndex",
+          "status",
+          "title"
+        ]
+      },
+      "AgentCaseVerificationResponse": {
+        "type": "object",
+        "description": "Solution 의 검증 근거.",
+        "properties": {
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executed": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "testId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ranAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "executed"
         ]
       },
       "CaptureDetailResponse": {

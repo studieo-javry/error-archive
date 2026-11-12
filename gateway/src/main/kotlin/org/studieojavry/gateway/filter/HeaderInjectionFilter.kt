@@ -74,6 +74,8 @@ class HeaderInjectionFilter(
             // 자동 수집 초안 검토·반영(CaptureReviewController, 웹 세션 사용자) — RouteConfig coreApiRoute 의
             // /api/v1/captures 와 정합. 누락 시 aud=iam-api 로 발급돼 core-api 가 401.
             uri.startsWith("/api/v1/captures") ||
+            // 프로젝트 바인딩 관리(ProjectBindingController, core-api) — projectBindingsRoute 와 정합.
+            uri.startsWith("/api/v1/me/project-bindings") ||
             // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
             // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
             uri.startsWith("/api/v1/users/me/recent-active-cases") ||

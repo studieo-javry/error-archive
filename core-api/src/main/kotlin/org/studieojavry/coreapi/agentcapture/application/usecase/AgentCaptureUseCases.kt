@@ -7,7 +7,11 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRep
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
+import org.studieojavry.coreapi.agentcapture.domain.model.StoragePolicy
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
@@ -30,15 +34,29 @@ import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 
-/** 세션 등록(동일 sessionUuid 재사용). */
+/**
+ * 세션 등록(동일 sessionUuid 재사용). 프로젝트 문맥(projectBindingId 또는 projectKey)을 받아 세션에 심는다 →
+ * 이 세션에서 만든 Capture 가 상속한다(PR-Y). projectBindingId 는 본인 소유 검증, projectKey 는 findOrCreate.
+ * 재등록 시 문맥은 last-wins 로 갱신.
+ */
 @Service
 class RegisterCaptureSessionUseCase(
     private val sessions: CaptureSessionRepositoryPort,
+    private val bindings: ProjectBindingRepositoryPort,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
-    fun invoke(cmd: RegisterSessionCommand): CaptureSession =
-        sessions.findByUuid(cmd.sessionUuid) ?: sessions.save(
+    fun invoke(cmd: RegisterSessionCommand): CaptureSession {
+        val bindingId = resolveBinding(cmd)
+        val existing = sessions.findByUuid(cmd.sessionUuid)
+        if (existing != null) {
+            return if (bindingId != null && existing.projectBindingId != bindingId) {
+                sessions.save(existing.withProjectBinding(bindingId))
+            } else {
+                existing
+            }
+        }
+        return sessions.save(
             CaptureSession.register(
                 sessionUuid = cmd.sessionUuid,
                 connectionId = cmd.connectionId,
@@ -46,16 +64,43 @@ class RegisterCaptureSessionUseCase(
                 clientVersion = cmd.clientVersion,
                 clientSessionId = cmd.clientSessionId,
                 now = Instant.now(clock),
-            )
+                projectBindingId = bindingId,
+            ),
         )
+    }
+
+    /** projectBindingId(소유 검증) 우선, 없으면 projectKey(findOrCreate, 본인 소유). 둘 다 없으면 null. */
+    private fun resolveBinding(cmd: RegisterSessionCommand): Long? {
+        cmd.projectBindingId?.let { bid ->
+            val b = bindings.findById(bid)
+            if (b == null || b.ownerUserId != cmd.ownerUserId) throw ProjectBindingNotFoundException(bid)
+            return bid
+        }
+        cmd.projectKey?.takeIf { it.isNotBlank() }?.let { key ->
+            bindings.findByOwnerAndKey(cmd.ownerUserId, key)?.let { return it.id }
+            val now = Instant.now(clock)
+            return bindings.save(
+                ProjectBinding(
+                    ownerUserId = cmd.ownerUserId, projectKey = key, normalizedRepoId = null,
+                    storagePolicy = StoragePolicy.DEFAULT, createdAt = now, updatedAt = now,
+                ),
+            ).id
+        }
+        return null
+    }
 }
 
 data class RegisterSessionCommand(
     val sessionUuid: UUID,
+    val ownerUserId: Long,
     val connectionId: UUID,
     val clientKind: String,
     val clientVersion: String?,
     val clientSessionId: String,
+    /** 이 세션을 귀속시킬 ProjectBinding(본인 소유). projectKey 보다 우선. */
+    val projectBindingId: Long? = null,
+    /** 프로젝트 식별자 — 해당 바인딩이 없으면 본인 소유로 생성(findOrCreate). */
+    val projectKey: String? = null,
 )
 
 /** OPEN 초안 생성. capture_uuid UNIQUE 로 재전송에서도 중복 생성되지 않는다. */
@@ -67,6 +112,9 @@ class CreateCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: CreateCaptureCommand): AgentCapture {
+        // 프로젝트 문맥: 명시 projectBindingId 우선, 없으면 세션에서 상속(PR-Y).
+        val session = cmd.sessionUuid?.let { sessions.findByUuid(it) }
+        val effectiveBinding = cmd.projectBindingId ?: session?.projectBindingId
         val saved = captures.save(
             AgentCapture.start(
                 captureUuid = cmd.captureUuid,
@@ -76,11 +124,10 @@ class CreateCaptureUseCase(
                 project = cmd.project,
                 content = CaptureContentSanitizer.sanitize(cmd.content),
                 now = Instant.now(clock),
+                projectBindingId = effectiveBinding,
             )
         )
-        cmd.sessionUuid?.let { sessionUuid ->
-            sessions.findByUuid(sessionUuid)?.let { session -> sessions.link(session.id!!, saved.id!!) }
-        }
+        session?.let { sessions.link(it.id!!, saved.id!!) }
         return saved
     }
 }
@@ -93,6 +140,8 @@ data class CreateCaptureCommand(
     val project: String?,
     val content: CaptureContent,
     val sessionUuid: UUID?,
+    /** 명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속. */
+    val projectBindingId: Long? = null,
 )
 
 /** 초안 조회·재개. attempts·solutions 포함. 본인 소유만(아니면 404). */

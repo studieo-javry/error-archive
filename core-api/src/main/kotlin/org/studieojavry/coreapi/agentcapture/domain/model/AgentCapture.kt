@@ -25,6 +25,8 @@ class AgentCapture private constructor(
     var completedAt: Instant?,
     /** 반영(import) 성공 시 생성된 ErrorCase 의 id. IMPORTED 상태에서만 non-null. */
     var importedCaseId: Long?,
+    /** 이 Capture 가 속한 프로젝트(선택). 세션에서 상속하거나 명시 지정. import 기본값의 출처. nullable. */
+    val projectBindingId: Long? = null,
 ) {
     /** 에이전트 쓰기(수정/시도/해결/봉인)는 OPEN 에서만. 봉인/종료 후엔 409. */
     fun requireAgentWritable() {
@@ -108,6 +110,7 @@ class AgentCapture private constructor(
             project: String?,
             content: CaptureContent,
             now: Instant,
+            projectBindingId: Long? = null,
         ): AgentCapture = AgentCapture(
             id = null,
             captureUuid = captureUuid,
@@ -122,6 +125,7 @@ class AgentCapture private constructor(
             updatedAt = now,
             completedAt = null,
             importedCaseId = null,
+            projectBindingId = projectBindingId,
         )
 
         fun reconstitute(
@@ -138,9 +142,10 @@ class AgentCapture private constructor(
             updatedAt: Instant,
             completedAt: Instant?,
             importedCaseId: Long?,
+            projectBindingId: Long? = null,
         ): AgentCapture = AgentCapture(
             id, captureUuid, ownerUserId, originatingConnectionId, status, revision,
-            title, project, content, createdAt, updatedAt, completedAt, importedCaseId,
+            title, project, content, createdAt, updatedAt, completedAt, importedCaseId, projectBindingId,
         )
     }
 }

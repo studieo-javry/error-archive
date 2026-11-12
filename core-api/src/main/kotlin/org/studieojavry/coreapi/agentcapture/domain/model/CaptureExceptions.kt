@@ -109,6 +109,10 @@ class ProjectBindingNotFoundException(val projectBindingId: Long) :
 class AgentCaseNotFoundException(val caseId: Long) :
     RuntimeException("agent-readable case $caseId not found")
 
+/** /me 관리 경로(ProjectBinding 귀속)에서 대상 Case 가 없거나 본인 소유가 아님 → 404(존재 노출 회피). */
+class CaseNotOwnedException(val caseId: Long) :
+    RuntimeException("case $caseId not found")
+
 /**
  * 이미 반영된(IMPORTED) 초안에 대한 충돌 → 409 CAPTURE_ALREADY_IMPORTED.
  *  - 폐기 시도(caseId 불필요), 또는

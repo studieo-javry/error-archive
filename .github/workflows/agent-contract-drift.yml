@@ -1,0 +1,47 @@
+name: agent-contract-drift
+
+# Kotlin agent 계약 ↔ 커넥터 OpenAPI 스냅샷 드리프트 가드(이슈 #144, 항목 ②).
+#
+# agent-connector.yml 은 '스냅샷 ↔ 생성 TS 타입' 정합만 본다. 그래서 Kotlin DTO/엔드포인트/OpenAPI
+# 설정이 바뀌어도 스냅샷을 재생성 안 하면 CI 가 못 잡았다. 이 워크플로는 **살아있는 서버가 내보내는
+# /v3/api-docs/agent 를 커밋된 스냅샷과 구조 비교**(AgentOpenApiContractTest)해 그 갭을 막는다.
+#
+# 트리거: agent 컨트롤러/DTO/OpenAPI 설정 또는 커밋된 스냅샷 변경. (Testcontainers Postgres 사용 →
+# ubuntu 러너의 Docker 로 충분.)
+on:
+  push:
+    branches: [ alpha ]
+    paths:
+      - 'core-api/src/main/kotlin/org/studieojavry/coreapi/agentcapture/**'
+      - 'core-api/src/main/kotlin/org/studieojavry/coreapi/shared/config/OpenApiConfig.kt'
+      - 'core-api/src/test/kotlin/org/studieojavry/coreapi/agentcapture/AgentOpenApiContractTest.kt'
+      - 'tools/error-archive-agent/openapi/agent-openapi.json'
+      - '.github/workflows/agent-contract-drift.yml'
+  pull_request:
+    paths:
+      - 'core-api/src/main/kotlin/org/studieojavry/coreapi/agentcapture/**'
+      - 'core-api/src/main/kotlin/org/studieojavry/coreapi/shared/config/OpenApiConfig.kt'
+      - 'core-api/src/test/kotlin/org/studieojavry/coreapi/agentcapture/AgentOpenApiContractTest.kt'
+      - 'tools/error-archive-agent/openapi/agent-openapi.json'
+      - '.github/workflows/agent-contract-drift.yml'
+
+concurrency:
+  group: agent-contract-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Kotlin agent 계약 ↔ 커넥터 스냅샷 드리프트 검사
+        # 실패 = Kotlin agent 계약이 바뀌었는데 스냅샷 미갱신. 백엔드 기동 후
+        # `cd tools/error-archive-agent && npm run openapi:snapshot && npm run openapi:gen` 로 갱신·커밋.
+        # cleanTest: 스냅샷 파일은 gradle 이 추적하는 입력이 아니라, 캐시로 테스트가 up-to-date 스킵되지
+        # 않도록 강제 재실행한다.
+        run: ./gradlew :core-api:cleanTest :core-api:test --tests "org.studieojavry.coreapi.agentcapture.AgentOpenApiContractTest" --no-daemon

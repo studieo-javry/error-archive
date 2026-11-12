@@ -30,6 +30,8 @@ import org.studieojavry.coreapi.errorcase.step.application.usecase.ListStepsUseC
 import org.studieojavry.coreapi.errorcase.step.application.usecase.StepAccessDeniedException
 import org.studieojavry.coreapi.errorcase.step.application.usecase.StepDeleteConflictException
 import org.studieojavry.coreapi.errorcase.step.application.usecase.StepNotFoundException
+import org.studieojavry.coreapi.errorcase.step.application.usecase.UnknownAttachmentReferenceException
+import org.studieojavry.coreapi.errorcase.step.application.usecase.UnknownSnippetReferenceException
 import org.studieojavry.coreapi.errorcase.step.application.usecase.UpdateStepUseCase
 import org.studieojavry.coreapi.errorcase.step.domain.model.Step
 import org.studieojavry.coreapi.errorcase.step.presentation.web.dto.request.CreateStepRequest
@@ -79,6 +81,7 @@ class StepController(
         ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
         ApiResponse(responseCode = "403", description = "케이스 쓰기 권한 없음", content = [Content()]),
         ApiResponse(responseCode = "404", description = "케이스 없음", content = [Content()]),
+        ApiResponse(responseCode = "422", description = "본문의 @attach/@snippet 가 이 케이스에 연결되지 않은 marker 참조", content = [Content()]),
     )
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -103,6 +106,10 @@ class StepController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
         } catch (e: ErrorCaseAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        } catch (e: UnknownAttachmentReferenceException) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
+        } catch (e: UnknownSnippetReferenceException) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
         }
         return CreateStepResponse(
             step = StepResponse.from(r.step),
@@ -140,6 +147,7 @@ class StepController(
         ApiResponse(responseCode = "401", description = "인증 실패", content = [Content()]),
         ApiResponse(responseCode = "403", description = "작성자 아님", content = [Content()]),
         ApiResponse(responseCode = "404", description = "step 없음", content = [Content()]),
+        ApiResponse(responseCode = "422", description = "본문의 @attach/@snippet 가 이 케이스에 연결되지 않은 marker 참조", content = [Content()]),
     )
     @PatchMapping("/{stepId}")
     fun update(
@@ -165,6 +173,10 @@ class StepController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, e.message, e)
         } catch (e: StepAccessDeniedException) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, e.message, e)
+        } catch (e: UnknownAttachmentReferenceException) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
+        } catch (e: UnknownSnippetReferenceException) {
+            throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.message, e)
         }
         return UpdateStepResponse(
             step = StepResponse.from(r.step),

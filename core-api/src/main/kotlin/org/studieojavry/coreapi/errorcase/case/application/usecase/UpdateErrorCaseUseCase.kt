@@ -19,6 +19,8 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventP
 import org.studieojavry.coreapi.errorcase.shared.application.port.NotificationPublisherPort
 import org.studieojavry.coreapi.errorcase.shared.application.port.WorkspaceMemberReaderPort
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.ErrorCaseAccess
+import org.studieojavry.coreapi.errorcase.shared.application.usecase.MarkerTokens
+import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.shared.util.FingerprintGenerator
 import java.time.Instant
 
@@ -45,6 +47,7 @@ class UpdateErrorCaseUseCase(
     private val notificationPublisher: NotificationPublisherPort,
     private val activityEventPublisher: ActivityEventPublisherPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
+    private val stepRepository: StepRepositoryPort,
 ) {
     @Transactional
     fun invoke(command: UpdateErrorCaseCommand): ErrorCase {
@@ -102,9 +105,14 @@ class UpdateErrorCaseUseCase(
             }
         }
 
+        // Step 본문이 아직 참조 중인 마커는 unlink 금지(→ orphan GC 로 Step 토큰이 깨지는 것 방지).
+        val stepBodies = stepRepository.findAllByErrorCaseId(command.errorCaseId).mapNotNull { it.body }
+        val attachRefsInSteps = stepBodies.flatMap { MarkerTokens.attachIds(it) }.toSet()
+        val snippetRefsInSteps = stepBodies.flatMap { MarkerTokens.snippetIds(it) }.toSet()
+
         // 스니펫·첨부·태그 선언형 재설정(diff). 같은 트랜잭션.
-        reconcileSnippets(command.snippetMarkerIds, command.errorCaseId, command.requesterUserId)
-        reconcileAttachments(command.attachmentMarkerIds, command.errorCaseId, command.requesterUserId)
+        reconcileSnippets(command.snippetMarkerIds, command.errorCaseId, command.requesterUserId, snippetRefsInSteps)
+        reconcileAttachments(command.attachmentMarkerIds, command.errorCaseId, command.requesterUserId, attachRefsInSteps)
         reconcileTags(command.tags, command.errorCaseId)
 
         // 캐시 무효화 — case owner 의 recent-active (status 전이 / meta 변경 반영)
@@ -155,13 +163,23 @@ class UpdateErrorCaseUseCase(
      *  - toAdd = desired − current : 존재·소유·미연결 검증 후 연결
      *  - toRemove = current − desired : 연결 해제(→ orphan → GC)
      */
-    private fun reconcileSnippets(desired: List<String>?, caseId: Long, ownerUserId: Long) {
+    private fun reconcileSnippets(
+        desired: List<String>?,
+        caseId: Long,
+        ownerUserId: Long,
+        referencedInSteps: Set<String> = emptySet(),
+    ) {
         if (desired == null) return // 필드 미포함 → 유지
 
         val want = desired.distinct().toSet()
         val current = snippetRepository.findAllByErrorCaseId(caseId).map { it.markerId }.toSet()
         val toAdd = want - current
         val toRemove = current - want
+
+        val blocked = toRemove intersect referencedInSteps
+        if (blocked.isNotEmpty()) {
+            throw ErrorCaseLinkException("cannot unlink snippet(s) still referenced in step bodies: $blocked")
+        }
 
         if (toAdd.isNotEmpty()) {
             val found = snippetRepository.findAllByMarkerIds(toAdd.toList())
@@ -183,13 +201,23 @@ class UpdateErrorCaseUseCase(
         }
     }
 
-    private fun reconcileAttachments(desired: List<String>?, caseId: Long, ownerUserId: Long) {
+    private fun reconcileAttachments(
+        desired: List<String>?,
+        caseId: Long,
+        ownerUserId: Long,
+        referencedInSteps: Set<String> = emptySet(),
+    ) {
         if (desired == null) return
 
         val want = desired.distinct().toSet()
         val current = attachmentRepository.findAllByErrorCaseId(caseId).map { it.markerId }.toSet()
         val toAdd = want - current
         val toRemove = current - want
+
+        val blocked = toRemove intersect referencedInSteps
+        if (blocked.isNotEmpty()) {
+            throw ErrorCaseLinkException("cannot unlink attachment(s) still referenced in step bodies: $blocked")
+        }
 
         if (toAdd.isNotEmpty()) {
             val found = attachmentRepository.findAllByMarkerIds(toAdd.toList())

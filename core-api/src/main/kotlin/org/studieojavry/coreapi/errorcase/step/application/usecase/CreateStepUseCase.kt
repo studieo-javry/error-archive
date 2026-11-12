@@ -44,6 +44,9 @@ class CreateStepUseCase(
             ?: throw ErrorCaseNotFoundException(command.errorCaseId)
         access.requireWrite(errorCase, command.authorUserId)
 
+        // Step 본문의 @attach/@snippet 는 이 Case 에 링크된 마커만 참조 가능(아니면 422).
+        validateStepBodyMarkers(command.body, errorCase)
+
         val normalizedAttemptType = command.attemptType?.let { AttemptType.normalize(it) }
 
         val existingCount = stepRepository.countByErrorCaseId(command.errorCaseId).toInt()

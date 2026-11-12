@@ -11,14 +11,23 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.ConcurrentReque
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactHashMismatchException
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactTooLargeException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAlreadyImportedException
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotRestorableException
+import org.studieojavry.coreapi.agentcapture.domain.model.ImportedStepBodyMarkerException
+import org.studieojavry.coreapi.agentcapture.domain.model.InvalidVerificationException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelectedAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import java.sql.SQLException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnsupportedArtifactException
 
 /**
@@ -80,6 +89,38 @@ class AgentCaptureExceptionHandler {
     fun unknownAttempt(ex: UnknownAttemptReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ATTEMPT_REFERENCE", ex.message)
 
+    @ExceptionHandler(UnknownSolutionReferenceException::class)
+    fun unknownSolution(ex: UnknownSolutionReferenceException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_SOLUTION_REFERENCE", ex.message)
+
+    @ExceptionHandler(UnknownArtifactReferenceException::class)
+    fun unknownArtifact(ex: UnknownArtifactReferenceException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ARTIFACT_REFERENCE", ex.message)
+
+    @ExceptionHandler(SolutionWithoutSelectedAttemptException::class)
+    fun solutionWithoutSelectedAttempt(ex: SolutionWithoutSelectedAttemptException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_SELECTED_ATTEMPT", ex.message)
+
+    @ExceptionHandler(ImportedStepBodyMarkerException::class)
+    fun importedStepBodyMarker(ex: ImportedStepBodyMarkerException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_STEP_BODY_MARKER", ex.message)
+
+    @ExceptionHandler(InvalidVerificationException::class)
+    fun invalidVerification(ex: InvalidVerificationException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_VERIFICATION", ex.message)
+
+    @ExceptionHandler(SolutionWithoutAttemptException::class)
+    fun solutionWithoutAttempt(ex: SolutionWithoutAttemptException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "SOLUTION_WITHOUT_ATTEMPT", ex.message)
+
+    @ExceptionHandler(UnexecutedVerificationPassedException::class)
+    fun unexecutedVerificationPassed(ex: UnexecutedVerificationPassedException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNEXECUTED_VERIFICATION_PASSED", ex.message)
+
+    @ExceptionHandler(VerificationEvidenceRequiredException::class)
+    fun verificationEvidence(ex: VerificationEvidenceRequiredException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "VERIFICATION_EVIDENCE_REQUIRED", ex.message)
+
     @ExceptionHandler(EvidenceNotReadyException::class)
     fun evidenceNotReady(ex: EvidenceNotReadyException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "EVIDENCE_NOT_READY", ex.message)
@@ -103,6 +144,11 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(CaptureAlreadyImportedException::class)
     fun alreadyImported(ex: CaptureAlreadyImportedException): ProblemDetail =
         problem(HttpStatus.CONFLICT, "CAPTURE_ALREADY_IMPORTED", ex.message)
+            .apply { ex.caseId?.let { setProperty("caseId", it) } }
+
+    @ExceptionHandler(CaptureNotRestorableException::class)
+    fun notRestorable(ex: CaptureNotRestorableException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "CAPTURE_NOT_RESTORABLE", ex.message)
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(ex: IllegalArgumentException): ProblemDetail =

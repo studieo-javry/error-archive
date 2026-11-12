@@ -24,6 +24,11 @@ class CaptureArtifact private constructor(
 ) {
     val isCompleted: Boolean get() = status == ArtifactStatus.COMPLETED || status == ArtifactStatus.LINKED
 
+    /** 검토 반영 시 Case 근거로 승격·연결됨을 표시(COMPLETED→LINKED). */
+    fun markLinked() {
+        status = ArtifactStatus.LINKED
+    }
+
     companion object {
         fun completed(
             captureId: Long,

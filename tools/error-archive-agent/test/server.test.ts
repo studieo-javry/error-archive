@@ -110,6 +110,7 @@ test('capture_update_solution 은 clientSolutionId 로 PATCH 하고 verification
       captureUuid: AUUID, clientSolutionId: 's1', title: '정정',
       clientAttemptIds: ['a1'],
       verificationResult: 'PASSED', verificationExecuted: true, verificationCommand: './gradlew test',
+      verificationTestId: 'CartServiceTest#total', verificationRanAt: '2026-11-12T00:00:00Z', verificationCommitSha: 'abc123',
     },
   });
   assert.ok(captured);
@@ -118,6 +119,10 @@ test('capture_update_solution 은 clientSolutionId 로 PATCH 하고 verification
   assert.deepEqual(captured!.req.content.clientAttemptIds, ['a1']);
   assert.equal(captured!.req.content.verification?.result, 'PASSED');
   assert.equal(captured!.req.content.verification?.executed, true);
+  // #172 보강: testId/ranAt/commitSha 도 도구→매퍼를 통해 전달되는지(전체 교체 시 유실 방지).
+  assert.equal(captured!.req.content.verification?.testId, 'CartServiceTest#total');
+  assert.equal(captured!.req.content.verification?.ranAt, '2026-11-12T00:00:00Z');
+  assert.equal(captured!.req.content.verification?.commitSha, 'abc123');
 });
 
 test('diagnose 는 whoami 결과를 반환한다', async () => {

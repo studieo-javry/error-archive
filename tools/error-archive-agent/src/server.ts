@@ -185,7 +185,10 @@ export function createServer(client: ApiClient): McpServer {
         verificationResult: VERIFICATION_RESULT.optional(),
         verificationScope: VERIFICATION_SCOPE.optional(),
         verificationCommand: z.string().optional(),
+        verificationTestId: z.string().optional(),
         verificationExecuted: z.boolean().optional(),
+        verificationRanAt: z.string().optional(),
+        verificationCommitSha: z.string().optional(),
         verificationEvidence: z.string().optional(),
       },
     },
@@ -197,7 +200,10 @@ export function createServer(client: ApiClient): McpServer {
               result: args.verificationResult,
               scope: args.verificationScope,
               command: args.verificationCommand,
+              testId: args.verificationTestId,
               executed: args.verificationExecuted,
+              ranAt: args.verificationRanAt,
+              commitSha: args.verificationCommitSha,
               evidence: args.verificationEvidence,
             }
           : undefined;
@@ -235,7 +241,10 @@ export function createServer(client: ApiClient): McpServer {
         verificationResult: VERIFICATION_RESULT.optional(),
         verificationScope: VERIFICATION_SCOPE.optional(),
         verificationCommand: z.string().optional(),
+        verificationTestId: z.string().optional(),
         verificationExecuted: z.boolean().optional(),
+        verificationRanAt: z.string().optional(),
+        verificationCommitSha: z.string().optional(),
         verificationEvidence: z.string().optional(),
       },
     },
@@ -246,7 +255,10 @@ export function createServer(client: ApiClient): McpServer {
               result: args.verificationResult,
               scope: args.verificationScope,
               command: args.verificationCommand,
+              testId: args.verificationTestId,
               executed: args.verificationExecuted,
+              ranAt: args.verificationRanAt,
+              commitSha: args.verificationCommitSha,
               evidence: args.verificationEvidence,
             }
           : undefined;

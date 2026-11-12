@@ -267,6 +267,9 @@ class AgentCaptureFlowIntegrationTest {
         // 영속 확인
         mvc.perform(get("/api/v1/agent/captures/$uuid").with(agent()))
             .andExpect(jsonPath("$.solutions[0].title").value("정정된 해결"))
+            .andExpect(jsonPath("$.solutions[0].content.verification.result").value("PASSED"))
+            .andExpect(jsonPath("$.solutions[0].content.verification.executed").value(true))
+            .andExpect(jsonPath("$.solutions[0].content.verification.command").value("./gradlew test"))
     }
 
     @Test

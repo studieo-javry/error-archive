@@ -22,6 +22,10 @@
       "description": "자동 수집 초안(Capture/Attempt/Solution) — agent 토큰 전용."
     },
     {
+      "name": "agent-case",
+      "description": "에이전트 토큰으로 허용 범위의 기존 사례 검색·조회(case:read)."
+    },
+    {
       "name": "agent",
       "description": "로컬 커넥터(MCP) 전용 경로. opaque 연결 토큰으로만 호출(사용자 JWT 아님)."
     }
@@ -843,6 +847,101 @@
           }
         }
       }
+    },
+    "/api/v1/agent/cases": {
+      "get": {
+        "tags": [
+          "agent-case"
+        ],
+        "summary": "사례 검색",
+        "description": "본인 소유 + 바인딩 귀속 케이스. projectBindingId 로 특정 바인딩만 필터.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "projectBindingId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCaseListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/cases/{caseId}": {
+      "get": {
+        "tags": [
+          "agent-case"
+        ],
+        "summary": "사례 상세",
+        "description": "Step·Solution 포함. 본인 소유 + 바인딩 귀속만(아니면 404).",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCaseDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/허용 범위 밖"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1625,6 +1724,123 @@
           "connectionId",
           "scopes",
           "userId"
+        ]
+      },
+      "AgentCaseListResponse": {
+        "type": "object",
+        "description": "에이전트 case 검색 결과 목록.",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseSummaryResponse"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AgentCaseSummaryResponse": {
+        "type": "object",
+        "description": "에이전트 case 검색 결과 요약(허용 범위: 본인 소유 + 바인딩 귀속).",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "status",
+          "title"
+        ]
+      },
+      "AgentCaseDetailResponse": {
+        "type": "object",
+        "description": "에이전트 case 상세(Step·Solution 포함). 본인 소유 + 바인딩 귀속만.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseStepResponse"
+            }
+          },
+          "solutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCaseSolutionResponse"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "solutions",
+          "status",
+          "steps",
+          "title"
+        ]
+      },
+      "AgentCaseSolutionResponse": {
+        "type": "object",
+        "description": "case 상세의 Solution 요약.",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "AgentCaseStepResponse": {
+        "type": "object",
+        "description": "case 상세의 Step 요약.",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "title"
         ]
       },
       "CaptureDetailResponse": {

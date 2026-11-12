@@ -206,6 +206,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 사례 검색
+         * @description 본인 소유 + 바인딩 귀속 케이스. projectBindingId 로 특정 바인딩만 필터.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 사례 상세
+         * @description Step·Solution 포함. 본인 소유 + 바인딩 귀속만(아니면 404).
+         */
+        get: operations["detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -420,6 +460,40 @@ export interface components {
             userId: number;
             connectionId: string;
             scopes: string[];
+        };
+        /** @description 에이전트 case 검색 결과 목록. */
+        AgentCaseListResponse: {
+            items: components["schemas"]["AgentCaseSummaryResponse"][];
+        };
+        /** @description 에이전트 case 검색 결과 요약(허용 범위: 본인 소유 + 바인딩 귀속). */
+        AgentCaseSummaryResponse: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            status: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description 에이전트 case 상세(Step·Solution 포함). 본인 소유 + 바인딩 귀속만. */
+        AgentCaseDetailResponse: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            status: string;
+            project?: string | null;
+            /** Format: int64 */
+            projectBindingId?: number | null;
+            steps: components["schemas"]["AgentCaseStepResponse"][];
+            solutions: components["schemas"]["AgentCaseSolutionResponse"][];
+        };
+        /** @description case 상세의 Solution 요약. */
+        AgentCaseSolutionResponse: {
+            title: string;
+        };
+        /** @description case 상세의 Step 요약. */
+        AgentCaseStepResponse: {
+            title: string;
+            status: string;
         };
         /** @description 초안 상세(요약 + Attempt·Solution·Artifact 목록). */
         CaptureDetailResponse: {
@@ -968,6 +1042,61 @@ export interface operations {
             };
             /** @description 토큰 없음/무효/폐기/만료 */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+                projectBindingId?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AgentCaseListResponse"];
+                };
+            };
+        };
+    };
+    detail: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+            };
+            header?: never;
+            path: {
+                caseId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AgentCaseDetailResponse"];
+                };
+            };
+            /** @description 없음/허용 범위 밖 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

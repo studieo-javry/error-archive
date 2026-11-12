@@ -19,6 +19,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotReviewableEx
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSealedException
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictException
+import org.studieojavry.coreapi.agentcapture.domain.model.AgentCaseNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
@@ -49,6 +50,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(ProjectBindingNotFoundException::class)
     fun bindingNotFound(ex: ProjectBindingNotFoundException): ProblemDetail =
         problem(HttpStatus.NOT_FOUND, "PROJECT_BINDING_NOT_FOUND", ex.message)
+
+    @ExceptionHandler(AgentCaseNotFoundException::class)
+    fun agentCaseNotFound(ex: AgentCaseNotFoundException): ProblemDetail =
+        problem(HttpStatus.NOT_FOUND, "AGENT_CASE_NOT_FOUND", ex.message)
 
     @ExceptionHandler(CaptureSealedException::class)
     fun sealed(ex: CaptureSealedException): ProblemDetail =

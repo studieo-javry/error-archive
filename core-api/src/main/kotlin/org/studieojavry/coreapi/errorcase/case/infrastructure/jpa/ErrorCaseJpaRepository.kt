@@ -11,6 +11,24 @@ import org.studieojavry.coreapi.errorcase.case.infrastructure.jpa.entity.ErrorCa
 
 interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
 
+    /**
+     * 에이전트 case:read — 본인 소유 + 선택적 바인딩 필터 + query LIKE(제목·설명·예외클래스·예외메시지).
+     * `:q` 는 호출측에서 소문자 + `%…%` 로 감싸 전달(null 이면 전체). projectBindingId null → 미귀속 포함 전체.
+     */
+    @Query(
+        "SELECT e FROM ErrorCaseEntity e WHERE e.ownerUserId = :owner " +
+            "AND (:bindingId IS NULL OR e.projectBindingId = :bindingId) " +
+            "AND (:q IS NULL OR lower(e.title) LIKE :q OR lower(e.description) LIKE :q " +
+            "OR lower(e.snapshot.exceptionClass) LIKE :q OR lower(e.snapshot.exceptionMessage) LIKE :q) " +
+            "ORDER BY e.createdAt DESC, e.id DESC",
+    )
+    fun searchOwnedCasesForAgent(
+        @Param("owner") owner: Long,
+        @Param("bindingId") bindingId: Long?,
+        @Param("q") q: String?,
+        pageable: Pageable,
+    ): List<ErrorCaseEntity>
+
     @Query("SELECT e.ownerUserId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findOwnerUserIdById(@Param("id") id: Long): Long?
 

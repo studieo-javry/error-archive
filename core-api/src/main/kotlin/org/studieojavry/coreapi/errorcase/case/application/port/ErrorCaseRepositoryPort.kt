@@ -46,6 +46,13 @@ interface ErrorCaseRepositoryPort {
     /** caseIds 의 summary 일괄 (lastActivityAt 계산 후 다른 case 가 추가 식별되면 보충). */
     fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary>
 
+    /**
+     * 에이전트 case:read 검색 — **본인 소유** Case 를 query(제목·설명·예외클래스·예외메시지 LIKE)로 찾는다.
+     * projectBindingId 지정 시 그 바인딩만, **미지정 시 미귀속(null) 포함 전체**(ProjectBinding 귀속은 필수 아님).
+     * createdAt DESC. 과거 해결경험 재활용용(#161 후속 재설계: 조회를 바인딩에서 분리).
+     */
+    fun searchOwnedCasesForAgent(ownerUserId: Long, query: String?, projectBindingId: Long?, limit: Int): List<ErrorCaseSummary>
+
     /** ownerUserId 내가 actor 로서 RESOLVED 한 case 들 (since 이후). resolvedAt DESC, id DESC. */
     fun findRecentlyResolvedByActor(actorUserId: Long, since: LocalDateTime, limit: Int): List<ErrorCaseSummary>
 

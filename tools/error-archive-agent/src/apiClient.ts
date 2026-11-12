@@ -15,6 +15,8 @@ import { newIdempotencyKey } from './idempotency.js';
 import type {
   AddAttemptRequest,
   AddSolutionRequest,
+  AgentCaseDetail,
+  AgentCaseListResponse,
   AgentIdentity,
   AttemptResponse,
   CaptureDetailResponse,
@@ -87,6 +89,10 @@ export interface ApiClient {
   updateSolution(captureUuid: string, clientSolutionId: string, req: UpdateSolutionRequest): Promise<SolutionResponse>;
   uploadArtifact(captureUuid: string, clientArtifactId: string, filePath: string): Promise<UploadArtifactResult>;
   completeCapture(captureUuid: string, req: CompleteCaptureRequest, idempotencyKey?: string): Promise<CaptureResponse>;
+  /** 본인 소유 과거 사례 검색(ProjectBinding 독립). query 로 유사 오류 탐색, projectBindingId 로 프로젝트 좁히기(선택). */
+  searchCases(query?: string, projectBindingId?: number, limit?: number): Promise<AgentCaseListResponse>;
+  /** 과거 사례 상세(본인 소유만, 아니면 404). Step 본문·Solution 설명·검증 포함. */
+  getCase(caseId: number): Promise<AgentCaseDetail>;
 }
 
 /** 파일 확장자 → MIME(서버가 매직 바이트로 재검사하므로 추정이면 충분). */
@@ -223,5 +229,17 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
       }
       return { artifact: JSON.parse(text), deduplicated: res.status === 200 };
     },
+
+    searchCases: (query, projectBindingId, limit) => {
+      const qs = new URLSearchParams();
+      if (query != null && query !== '') qs.set('query', query);
+      if (projectBindingId != null) qs.set('projectBindingId', String(projectBindingId));
+      if (limit != null) qs.set('limit', String(limit));
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<AgentCaseListResponse>({ method: 'GET', path: `/api/v1/agent/cases${suffix}` });
+    },
+
+    getCase: (caseId) =>
+      request<AgentCaseDetail>({ method: 'GET', path: `/api/v1/agent/cases/${encodeURIComponent(caseId)}` }),
   };
 }

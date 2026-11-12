@@ -108,12 +108,19 @@ data class RegisterSessionCommand(
 class CreateCaptureUseCase(
     private val captures: AgentCaptureRepositoryPort,
     private val sessions: CaptureSessionRepositoryPort,
+    private val bindings: ProjectBindingRepositoryPort,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
     fun invoke(cmd: CreateCaptureCommand): AgentCapture {
+        // 명시 지정 바인딩은 본인 소유여야 함(없거나 타인 → 404, 존재 노출 회피).
+        cmd.projectBindingId?.let { bid ->
+            val b = bindings.findById(bid)
+            if (b == null || b.ownerUserId != cmd.ownerUserId) throw ProjectBindingNotFoundException(bid)
+        }
         // 프로젝트 문맥: 명시 projectBindingId 우선, 없으면 세션에서 상속(PR-Y).
-        val session = cmd.sessionUuid?.let { sessions.findByUuid(it) }
+        // 세션은 **현재 연결에서 등록한 것**만 상속·연결(타 연결 세션 uuid 는 무시 — 교차연결 누출 방지).
+        val session = cmd.sessionUuid?.let { sessions.findByUuid(it) }?.takeIf { it.connectionId == cmd.connectionId }
         val effectiveBinding = cmd.projectBindingId ?: session?.projectBindingId
         val saved = captures.save(
             AgentCapture.start(

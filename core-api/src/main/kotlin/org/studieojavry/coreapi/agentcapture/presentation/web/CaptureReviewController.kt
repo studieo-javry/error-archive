@@ -143,6 +143,7 @@ class CaptureReviewController(
                     },
                     note = request.note,
                     projectBindingId = request.projectBindingId,
+                    clearProjectBinding = request.clearProjectBinding,
                 )
             )
             ImportCaptureResponse(captureUuid = captureUuid, caseId = r.caseId, alreadyImported = r.alreadyImported)

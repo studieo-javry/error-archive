@@ -65,6 +65,10 @@ class ErrorCaseRepositoryAdapter(
         return hydrateSummaries(entities)
     }
 
+    override fun updateProjectBinding(errorCaseId: Long, projectBindingId: Long?) {
+        errorCaseRepo.updateProjectBinding(errorCaseId, projectBindingId)
+    }
+
     override fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary> {
         if (caseIds.isEmpty()) return emptyList()
         val entities = errorCaseRepo.findAllByIdIn(caseIds)

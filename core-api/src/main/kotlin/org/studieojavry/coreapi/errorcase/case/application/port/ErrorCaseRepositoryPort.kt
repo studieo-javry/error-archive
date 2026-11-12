@@ -49,6 +49,12 @@ interface ErrorCaseRepositoryPort {
      */
     fun findBoundByOwner(ownerUserId: Long, projectBindingId: Long?, limit: Int): List<ErrorCaseSummary>
 
+    /**
+     * 기존 Case 의 ProjectBinding 귀속을 설정(id) 또는 해제(null). 대상 컬럼만 타깃 UPDATE —
+     * 소유권 검증은 호출측 책임(use case). 애그리거트 재로드/재저장 부수효과(updatedAt 등) 없음.
+     */
+    fun updateProjectBinding(errorCaseId: Long, projectBindingId: Long?)
+
     /** caseIds 의 summary 일괄 (lastActivityAt 계산 후 다른 case 가 추가 식별되면 보충). */
     fun findSummariesByIds(caseIds: Collection<Long>): List<ErrorCaseSummary>
 

@@ -25,6 +25,11 @@ interface ErrorCaseJpaRepository : JpaRepository<ErrorCaseEntity, Long> {
         pageable: Pageable,
     ): List<ErrorCaseEntity>
 
+    /** 기존 Case 의 ProjectBinding 귀속만 타깃 UPDATE(설정/해제). 소유권은 호출측 검증. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE ErrorCaseEntity e SET e.projectBindingId = :bindingId WHERE e.id = :caseId")
+    fun updateProjectBinding(@Param("caseId") caseId: Long, @Param("bindingId") bindingId: Long?): Int
+
     @Query("SELECT e.meta.workspaceId FROM ErrorCaseEntity e WHERE e.id = :id")
     fun findWorkspaceIdById(@Param("id") id: Long): Long?
 

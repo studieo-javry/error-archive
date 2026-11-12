@@ -3,8 +3,11 @@ package org.studieojavry.coreapi.agentcapture.application.usecase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
+import org.studieojavry.coreapi.agentcapture.domain.model.CaseNotOwnedException
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.StoragePolicy
+import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import java.time.Clock
 import java.time.Instant
 
@@ -53,4 +56,41 @@ class ListProjectBindingsUseCase(
 ) {
     @Transactional(readOnly = true)
     fun invoke(ownerUserId: Long): List<ProjectBinding> = bindings.listByOwner(ownerUserId)
+}
+
+/**
+ * 이미 만들어진 Case 를 ProjectBinding 에 사후 귀속/해제 — 웹 세션 사용자(본인 소유)만.
+ *
+ * #162 는 import(검토 반영) 시점에만 신규 Case 를 귀속시켰다. 바인딩 도입 전에 만든 Case,
+ * 또는 바인딩 없이 반영한 Case(project_binding_id = null)는 에이전트 case:read(IS NOT NULL 필터)에
+ * 영영 안 보였다 → 사용자가 과거 Case 를 프로젝트에 명시 연결할 수 있게 한다.
+ *
+ * 존재 노출 회피: 대상 Case 가 없거나 타인 소유면 404(CaseNotOwned), 바인딩이 없거나 타인 소유면
+ * 404(ProjectBindingNotFound). 둘 다 본인 소유여야 귀속 가능(이름/repo 동일만으로 확대 금지 원칙).
+ */
+@Service
+class AssignCaseProjectBindingUseCase(
+    private val errorCases: ErrorCaseRepositoryPort,
+    private val bindings: ProjectBindingRepositoryPort,
+) {
+    /** 기존 Case 를 지정 ProjectBinding 에 귀속. */
+    @Transactional
+    fun bind(userId: Long, caseId: Long, projectBindingId: Long) {
+        requireOwnedCase(userId, caseId)
+        val binding = bindings.findById(projectBindingId)
+        if (binding == null || binding.ownerUserId != userId) throw ProjectBindingNotFoundException(projectBindingId)
+        errorCases.updateProjectBinding(caseId, projectBindingId)
+    }
+
+    /** 기존 Case 의 귀속 해제(미귀속으로 — 에이전트 case:read 대상에서 제외). */
+    @Transactional
+    fun unbind(userId: Long, caseId: Long) {
+        requireOwnedCase(userId, caseId)
+        errorCases.updateProjectBinding(caseId, null)
+    }
+
+    private fun requireOwnedCase(userId: Long, caseId: Long) {
+        val ownerId = errorCases.findOwnerUserIdById(caseId)
+        if (ownerId == null || ownerId != userId) throw CaseNotOwnedException(caseId)
+    }
 }

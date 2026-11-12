@@ -1,5 +1,6 @@
 package org.studieojavry.coreapi.errorcase.attachment.application.usecase
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -21,6 +22,7 @@ class CreateAttachmentUseCase(
     private val presigner: AttachmentPresigner,
     private val presignTtl: PresignTtlProperties,
 ) {
+    private val log = KotlinLogging.logger {}
 
     @Transactional
     fun invoke(command: CreateAttachmentCommand): Result {
@@ -42,7 +44,14 @@ class CreateAttachmentUseCase(
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
                 override fun afterCompletion(status: Int) {
                     if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                        // best-effort — 실패 시 삼키되 WARN 으로 가시화한다. 실패하면 DB row 없는
+                        // 스토리지 고아가 남고, 이는 row 기준인 PurgeOrphan/백로그 게이지로는 보이지
+                        // 않는다(수집 불가·비용 문제, 정합성 아님). Loki 로 추세를 보고, 누적이
+                        // 유의미해지면 스토리지↔DB 조정 스윕(attachment-lifecycle.md 참고)으로 회수.
                         runCatching { attachmentStoragePort.delete(objectKey) }
+                            .onFailure { ex ->
+                                log.warn(ex) { "[attachment] rollback cleanup failed, orphan object remains objectKey=$objectKey" }
+                            }
                     }
                 }
             })

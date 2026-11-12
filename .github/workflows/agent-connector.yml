@@ -40,6 +40,28 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: tools/error-archive-agent/package-lock.json
+      - name: 버전 범프 가드 (커넥터 src/openapi 변경 시 version 필수 · PR 전용)
+        # 게시물(src·openapi)이 바뀐 PR 인데 package.json version 을 안 올리면 실패 → '도구 추가/계약
+        # 변경 후 재게시 누락'(npm 은 동일 버전 거부)을 방지. 같은 PR 에서 version 을 함께 범프해야 한다.
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed=$(git diff --name-only "$BASE_SHA" HEAD -- \
+            tools/error-archive-agent/src tools/error-archive-agent/openapi)
+          if [ -z "$changed" ]; then
+            echo "커넥터 게시물(src/openapi) 변경 없음 — 범프 가드 skip"; exit 0
+          fi
+          base_ver=$(git show "$BASE_SHA:tools/error-archive-agent/package.json" \
+            | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          head_ver=$(node -pe "require('./tools/error-archive-agent/package.json').version")
+          if [ "$base_ver" = "$head_ver" ]; then
+            echo "::error::커넥터 게시물(src/openapi)이 변경됐는데 package.json version 이 '$head_ver' 그대로입니다. 같은 PR 에서 version 을 범프하세요(재게시 누락 방지)."
+            exit 1
+          fi
+          echo "version 범프 확인: $base_ver -> $head_ver"
       - run: npm ci
       - name: Typecheck (계약 브리지 포함)
         # contract-bridge.ts 가 손 타입 ⊆ 생성(계약) 타입을 컴파일타임에 강제 → 계약 드리프트가 손 타입에

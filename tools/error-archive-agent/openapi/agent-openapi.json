@@ -18,6 +18,10 @@
   ],
   "tags": [
     {
+      "name": "agent-event",
+      "description": "Hook 이벤트 배치 적재(case:read 아님 — capture:write 필요)."
+    },
+    {
       "name": "agent-capture",
       "description": "자동 수집 초안(Capture/Attempt/Solution) — agent 토큰 전용."
     },
@@ -90,6 +94,68 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/events/batch": {
+      "post": {
+        "tags": [
+          "agent-event"
+        ],
+        "summary": "이벤트 배치 적재",
+        "description": "최대 100건·본문 ≤1 MiB·이벤트당 payload ≤64 KiB. ACCEPTED 는 적재일 뿐 Step 구조화가 아니다.",
+        "operationId": "batch",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "이벤트별 ACCEPTED/DUPLICATE/REJECTED",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "빈 배치/100건 초과/본문 1 MiB 초과 등 배치 외형 오류",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "capture:write 스코프 없음",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
                 }
               }
             }
@@ -251,6 +317,63 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/events": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "이벤트 → 초안 연결",
+        "description": "미분류 Hook 이벤트(clientEventId)를 OPEN 초안에 연결한다. 봉인/반영 초안엔 연결 불가(409). 없거나 다른 초안에 묶인 이벤트는 가로채지 않고 skipped 로 반환.",
+        "operationId": "linkEvents",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "연결 결과(linked/skipped)",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkEventsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유"
+          },
+          "409": {
+            "description": "봉인/반영된 초안"
           }
         }
       }
@@ -1014,6 +1137,231 @@
           "startedAt"
         ]
       },
+      "EventBatchRequest": {
+        "type": "object",
+        "description": "Hook 자동수집 이벤트 배치(최대 100건, 본문 ≤1 MiB).",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventItemRequest"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "EventItemRequest": {
+        "type": "object",
+        "description": "정규화한 CaptureEvent 1건.",
+        "properties": {
+          "clientEventId": {
+            "type": "string",
+            "description": "최초 로컬 저장 시 1회 생성, 재전송에서 유지. (connectionId,clientEventId) 로 멱등.",
+            "minLength": 1
+          },
+          "eventType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "localSequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "클라이언트 관측 시각(ISO-8601). 서버 수신 시각과 구분 저장."
+          },
+          "redactedPayload": {
+            "$ref": "#/components/schemas/JsonNode",
+            "description": "마스킹된 payload(≤64 KiB). 더 큰 근거는 첨부로."
+          },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "clientKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clientVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streamId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toolCallId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "clientEventId",
+          "eventType",
+          "evidenceRefs",
+          "localSequence",
+          "observedAt",
+          "redactedPayload",
+          "truncated"
+        ]
+      },
+      "JsonNode": {
+        "type": "object",
+        "properties": {
+          "null": {
+            "type": "boolean"
+          },
+          "empty": {
+            "type": "boolean"
+          },
+          "array": {
+            "type": "boolean"
+          },
+          "number": {
+            "type": "boolean"
+          },
+          "container": {
+            "type": "boolean"
+          },
+          "valueNode": {
+            "type": "boolean"
+          },
+          "nodeType": {
+            "type": "string",
+            "enum": [
+              "ARRAY",
+              "BINARY",
+              "BOOLEAN",
+              "MISSING",
+              "NULL",
+              "NUMBER",
+              "OBJECT",
+              "POJO",
+              "STRING"
+            ]
+          },
+          "pojo": {
+            "type": "boolean"
+          },
+          "integralNumber": {
+            "type": "boolean"
+          },
+          "floatingPointNumber": {
+            "type": "boolean"
+          },
+          "short": {
+            "type": "boolean"
+          },
+          "int": {
+            "type": "boolean"
+          },
+          "long": {
+            "type": "boolean"
+          },
+          "double": {
+            "type": "boolean"
+          },
+          "bigDecimal": {
+            "type": "boolean"
+          },
+          "bigInteger": {
+            "type": "boolean"
+          },
+          "textual": {
+            "type": "boolean",
+            "deprecated": true
+          },
+          "boolean": {
+            "type": "boolean"
+          },
+          "binary": {
+            "type": "boolean"
+          },
+          "object": {
+            "type": "boolean"
+          },
+          "float": {
+            "type": "boolean"
+          },
+          "missingNode": {
+            "type": "boolean"
+          },
+          "string": {
+            "type": "boolean"
+          },
+          "embeddedValue": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EventBatchResponse": {
+        "type": "object",
+        "description": "배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventResultResponse"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "EventResultResponse": {
+        "type": "object",
+        "description": "이벤트별 적재 결과.",
+        "properties": {
+          "clientEventId": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "description": "ACCEPTED(저장) | DUPLICATE(재전송) | REJECTED(충돌·과대 등)"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clientEventId",
+          "result"
+        ]
+      },
       "CaptureContent": {
         "type": "object",
         "properties": {
@@ -1350,6 +1698,44 @@
           "content",
           "createdAt",
           "title"
+        ]
+      },
+      "LinkEventsRequest": {
+        "type": "object",
+        "description": "미분류 이벤트를 OPEN Capture 에 연결하는 요청.",
+        "properties": {
+          "clientEventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "clientEventIds"
+        ]
+      },
+      "LinkEventsResponse": {
+        "type": "object",
+        "description": "연결 결과. linked=연결됨(멱등 포함), skipped=없음/타 Capture 소속이라 가로채지 않음.",
+        "properties": {
+          "linked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "linked",
+          "skipped"
         ]
       },
       "CompleteCaptureRequest": {

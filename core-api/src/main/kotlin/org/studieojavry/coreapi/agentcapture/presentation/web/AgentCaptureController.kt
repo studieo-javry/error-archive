@@ -352,7 +352,10 @@ class AgentCaptureController(
             content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
         ),
         ApiResponse(
-            responseCode = "422", description = "존재하지 않는 Attempt 참조 (code=UNKNOWN_ATTEMPT_REFERENCE)",
+            responseCode = "422",
+            description = "없는 Attempt 참조 / 참조 0개 / 미실행 PASSED·근거 없음 " +
+                "(code=UNKNOWN_ATTEMPT_REFERENCE·SOLUTION_WITHOUT_ATTEMPT·" +
+                "UNEXECUTED_VERIFICATION_PASSED·VERIFICATION_EVIDENCE_REQUIRED)",
             content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
         ),
     )

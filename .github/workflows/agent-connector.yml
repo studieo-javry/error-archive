@@ -1,7 +1,13 @@
 name: agent-connector
 
 # error-archive-agent(로컬 MCP 커넥터, TS) 검증 — Gradle 밖 유일한 패키지라 별도 워크플로.
-# 타입체크·테스트·빌드 + OpenAPI 계약 타입 드리프트 검사(생성 타입이 커밋된 스펙과 일치하는지).
+# 타입체크(계약 브리지 포함)·테스트·빌드 + OpenAPI 계약 타입 드리프트 검사 + 실제 서버 계약 E2E 연계.
+#
+# 계약 게이팅 사슬(이슈 #144):
+#   Kotlin DTO ─(AgentOpenApiContractTest; agent-contract-drift.yml)→ 스냅샷
+#             ─(openapi:check)→ 생성 TS 타입 ─(contract-bridge.ts; typecheck)→ 손 타입(apiClient)
+#   계약이 바뀌면 이 중 한 단계에서 반드시 깨진다. 여기서는 손 타입 게이트(typecheck)와 실제 서버
+#   계약 E2E 를 같은 트리거(계약/커넥터 변경)에 묶어, 타입 검사와 런타임 계약을 함께 검증한다.
 on:
   push:
     branches: [ alpha ]
@@ -23,6 +29,10 @@ jobs:
     defaults:
       run:
         working-directory: tools/error-archive-agent
+    # 실제 서버 계약 E2E 자격증명(선택). 없으면 test:e2e 가 자체적으로 skip 한다(아래 스텝 주석 참조).
+    env:
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL }}
+      E2E_AGENT_TOKEN: ${{ secrets.E2E_AGENT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +41,9 @@ jobs:
           cache: npm
           cache-dependency-path: tools/error-archive-agent/package-lock.json
       - run: npm ci
-      - name: Typecheck
+      - name: Typecheck (계약 브리지 포함)
+        # contract-bridge.ts 가 손 타입 ⊆ 생성(계약) 타입을 컴파일타임에 강제 → 계약 드리프트가 손 타입에
+        # 반영 안 되면 여기서 실패.
         run: npm run typecheck
       - name: Unit tests
         run: npm test
@@ -41,3 +53,8 @@ jobs:
         # 커밋된 스냅샷(openapi/agent-openapi.json)에서 타입을 다시 생성 → 커밋본과 다르면 실패.
         # (Kotlin DTO 변경 후 `npm run openapi:snapshot && npm run openapi:gen` 으로 갱신·커밋해야 함)
         run: npm run openapi:check
+      - name: 실제 서버 계약 E2E (타입검사와 연계)
+        # 계약이 바뀌면 타입 게이트(위)와 함께 런타임 계약도 검증. 커넥터 apiClient 로 실제 게이트웨이
+        # /api/v1/agent/** 를 호출한다. E2E_BASE_URL/E2E_AGENT_TOKEN(repo Variables/Secrets)이 있을
+        # 때만 실제 실행되고, 없으면 테스트가 스스로 skip 한다(가짜 통과 방지 — skip 은 로그에 남음).
+        run: npm run test:e2e

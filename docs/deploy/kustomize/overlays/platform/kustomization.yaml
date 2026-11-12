@@ -25,4 +25,4 @@ generatorOptions:
 images:
 - name: gateway
   newName: ghcr.io/studieo-javry/gateway
-  newTag: da7c857d31aa3fad5522db7ea762b95370807950
+  newTag: 4e2558404b217524a6baa2a578054b1aa2b7aa29

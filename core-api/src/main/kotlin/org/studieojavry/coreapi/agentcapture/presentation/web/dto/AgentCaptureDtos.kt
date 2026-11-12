@@ -267,8 +267,10 @@ data class ImportCaptureRequest(
     val solutionEdits: Map<String, SolutionEditRequest> = emptyMap(),
     @Schema(description = "검토 확인 설명(선택).")
     val note: String? = null,
-    @Schema(description = "생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). case:read 스코프 기준. 미지정 시 미귀속.")
+    @Schema(description = "귀속시킬 ProjectBinding id(본인 소유). 미지정 시 capture 의 프로젝트를 그대로 확인(상속). 정정 시 지정.")
     val projectBindingId: Long? = null,
+    @Schema(description = "명시적 프로젝트 해제. true 면 capture 가 프로젝트에 귀속돼 있어도 프로젝트 없이 반영한다(projectBindingId 보다 우선).")
+    val clearProjectBinding: Boolean = false,
 )
 
 @Schema(description = "검토 중 Step 수정. null 필드는 캡처 원본 유지, body 는 빈 문자열이면 본문 없음.")

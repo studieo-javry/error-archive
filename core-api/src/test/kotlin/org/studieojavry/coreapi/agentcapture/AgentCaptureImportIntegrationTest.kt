@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -327,6 +328,20 @@ class AgentCaptureImportIntegrationTest {
         ).andExpect(status().isCreated)
         val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
         assertEquals(binding.id, errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
+    fun `import clearProjectBinding=true 면 projectBindingId 지정해도 미귀속으로 반영`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = userId, projectKey = "to-clear", createdAt = now(), updatedAt = now()),
+        )
+        doImport(
+            uuid, userId, "imp-clear",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":["s1"],"projectBindingId":${binding.id},"clearProjectBinding":true}""",
+        ).andExpect(status().isCreated)
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertNull(errorCases.findById(caseId)!!.projectBindingId)
     }
 
     @Test

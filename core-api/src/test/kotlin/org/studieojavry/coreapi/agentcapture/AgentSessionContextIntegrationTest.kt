@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.agentcapture
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
@@ -114,5 +115,30 @@ class AgentSessionContextIntegrationTest {
         assertThrows<ProjectBindingNotFoundException> {
             registerSession.invoke(registerCmd(UUID.randomUUID(), projectBindingId = othersBinding))
         }
+    }
+
+    @Test
+    fun `capture 에 타인 소유 projectBindingId 명시 → 404`() {
+        val othersBinding = newBinding(7777L, "theirs")
+        assertThrows<ProjectBindingNotFoundException> {
+            createCapture.invoke(createCmd(sessionUuid = null, projectBindingId = othersBinding))
+        }
+    }
+
+    @Test
+    fun `타 연결에서 등록한 세션 uuid 는 상속·연결하지 않는다`() {
+        // 같은 사용자지만 다른 연결에서 등록한 세션(projectBinding 포함)
+        val bindingId = newBinding(userId, "other-conn-proj")
+        val sessionUuid = UUID.randomUUID()
+        registerSession.invoke(
+            RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = userId, connectionId = UUID.randomUUID(), // 타 연결
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-x",
+                projectBindingId = bindingId,
+            ),
+        )
+        // 현재 연결(this.conn)로 그 세션 uuid 를 써서 capture 생성 → 상속 안 됨
+        val capture = createCapture.invoke(createCmd(sessionUuid))
+        assertNull(capture.projectBindingId)
     }
 }

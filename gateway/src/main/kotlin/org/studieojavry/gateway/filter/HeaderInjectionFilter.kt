@@ -76,6 +76,8 @@ class HeaderInjectionFilter(
             uri.startsWith("/api/v1/captures") ||
             // 프로젝트 바인딩 관리(ProjectBindingController, core-api) — projectBindingsRoute 와 정합.
             uri.startsWith("/api/v1/me/project-bindings") ||
+            // 기존 Case 사후 귀속(CaseProjectBindingController, core-api) — projectBindingsRoute 와 정합.
+            (uri.startsWith("/api/v1/me/cases/") && uri.endsWith("/project-binding")) ||
             // 홈 대시보드 위젯 (MeController) + 공개 프로필 (PublicProfileController).
             // iam 의 /api/v1/users/** 서브셋이라 else(iam) 로 새지 않도록 명시.
             uri.startsWith("/api/v1/users/me/recent-active-cases") ||

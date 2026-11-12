@@ -80,10 +80,17 @@ class AgentCaptureImportIntegrationTest {
         val postgres = PostgreSQLContainer("postgres:16-alpine")
     }
 
-    /** 발행 이벤트를 기록해 origin/type 을 검증(@Primary 로 Noop 대체). */
+    /**
+     * 발행 이벤트를 기록해 origin/type 을 검증(@Primary 로 Noop 대체).
+     * failNext=true 면 publish 에서 예외를 던져 "이벤트 저장(아웃박스) 실패" 를 주입한다.
+     */
     class RecordingPublisher : ActivityEventPublisherPort {
         val events = mutableListOf<ActivityEventPublisherPort.ActivityEvent>()
-        override fun publish(event: ActivityEventPublisherPort.ActivityEvent) { events += event }
+        @Volatile var failNext = false
+        override fun publish(event: ActivityEventPublisherPort.ActivityEvent) {
+            if (failNext) throw IllegalStateException("simulated activity/outbox write failure")
+            events += event
+        }
     }
 
     /** 근거 승격 경로용 In-memory 스토리지(Mockito 매처 회피). put/delete 를 추적해 롤백 정리 검증. */
@@ -125,6 +132,7 @@ class AgentCaptureImportIntegrationTest {
     @BeforeEach
     fun setUp() {
         publisher.events.clear()
+        publisher.failNext = false
         mvc = MockMvcBuilders.webAppContextSetup(context)
             .apply<org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder>(springSecurity()).build()
     }
@@ -311,6 +319,44 @@ class AgentCaptureImportIntegrationTest {
             .andExpect(status().isNotFound)
     }
 
+    @Test
+    fun `이벤트 저장(아웃박스) 실패 시 전체 롤백 - 부분 Case 없음, 초안 READY 유지`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+        val casesBefore = errorCases.findRecentByOwner(userId, 100).size
+
+        // Case·Step·Solution 과 이벤트 발행(아웃박스 저장)은 한 @Transactional.
+        // 이벤트 저장이 실패하도록 주입 → 전체가 롤백되어야 한다(부분 Case 금지).
+        publisher.failNext = true
+        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+            .andExpect(status().is5xxServerError)
+
+        // 초안은 여전히 READY(IMPORTED 아님), 케이스 백링크 없음 = 반영 전체 롤백.
+        val reloaded = captures.findByUuid(uuid)!!
+        assertEquals(CaptureStatus.READY_FOR_REVIEW, reloaded.status)
+        assertEquals(null, reloaded.importedCaseId)
+        // Case/Step/Solution 어느 것도 영속되지 않음(부분 생성 없음).
+        assertEquals(casesBefore, errorCases.findRecentByOwner(userId, 100).size)
+    }
+
+    @Test
+    fun `반영 실패 후 재반영 가능 - 실패가 부분 상태를 남기지 않음(재시도 정합성)`() {
+        val (uuid, _) = seedCapture(userId, seal = true)
+
+        publisher.failNext = true
+        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+            .andExpect(status().is5xxServerError)
+
+        // 실패가 Case·백링크·이벤트를 전혀 남기지 않았으므로, 재반영이 정상 성공한다.
+        publisher.failNext = false
+        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.alreadyImported").value(false))
+            .andExpect(jsonPath("$.caseId").isNumber)
+
+        assertEquals(CaptureStatus.IMPORTED, captures.findByUuid(uuid)!!.status)
+        assertTrue(publisher.events.any { it.type == ActivityEventPublisherPort.Type.CASE_CREATED })
+    }    
+    
     @Test
     fun `검토 완료 이력 - IMPORTED·DISCARDED 를 caseId 백링크와 함께 조회`() {
         val histUser = 8101L // 테스트 간 DB 공유 → 이력 격리 위해 전용 유저.

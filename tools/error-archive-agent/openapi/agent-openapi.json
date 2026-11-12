@@ -7,13 +7,13 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8081",
-      "description": "로컬(게이트웨이 우회 직접 호출)"
+      "url": "https://api.error-archive.com",
+      "description": "게이트웨이 (커넥터 호출 대상)"
     }
   ],
   "security": [
     {
-      "X-Internal-Auth": []
+      "AgentToken": []
     }
   ],
   "tags": [
@@ -1556,11 +1556,11 @@
       }
     },
     "securitySchemes": {
-      "X-Internal-Auth": {
-        "type": "apiKey",
-        "description": "internal JWT (RS256, aud=core-api). 로컬은 `scripts/mint-jwt.sh internal core-api <userId> USER`.",
-        "name": "X-Internal-Auth",
-        "in": "header"
+      "AgentToken": {
+        "type": "http",
+        "description": "연결 토큰(`eaa_…`). `Authorization: Bearer eaa_…` 로 전송하면 게이트웨이가 introspection 으로 사용자·연결·scope(capture:read/write, artifact:write)로 해석한다. 웹 로그인 JWT 와 분리된다.",
+        "scheme": "bearer",
+        "bearerFormat": "opaque eaa_ token"
       }
     }
   }

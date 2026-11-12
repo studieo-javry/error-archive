@@ -144,6 +144,26 @@ export interface paths {
         patch: operations["patch"];
         trace?: never;
     };
+    "/api/v1/agent/captures/{captureUuid}/solutions/{clientSolutionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Solution 후보 수정
+         * @description 통째 교체(봉인 전 정정). 모르는 clientSolutionId → 422. 봉인 후 → 409. PASSED 검증은 executed=true + 근거 필요(수집 규칙과 일관).
+         */
+        patch: operations["updateSolution"];
+        trace?: never;
+    };
     "/api/v1/agent/captures/{captureUuid}/attempts/{clientAttemptId}": {
         parameters: {
             query?: never;
@@ -381,6 +401,11 @@ export interface components {
             title?: string | null;
             project?: string | null;
             content: components["schemas"]["CaptureContent"];
+        };
+        /** @description 기존 Solution 후보 수정(통째 교체). clientSolutionId 는 경로로 지정. OPEN 에서만. */
+        UpdateSolutionRequest: {
+            title: string;
+            content: components["schemas"]["SolutionContent"];
         };
         /** @description Attempt 갱신(clientAttemptId 는 경로). */
         UpdateAttemptRequest: {
@@ -809,6 +834,62 @@ export interface operations {
             };
             /** @description revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    updateSolution: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+            };
+            header?: never;
+            path: {
+                captureUuid: string;
+                clientSolutionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSolutionRequest"];
+            };
+        };
+        responses: {
+            /** @description 수정됨 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["SolutionResponse"];
+                };
+            };
+            /** @description 없음/타인 소유 Capture (code=CAPTURE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 봉인 후 수정 시도 (code=CAPTURE_SEALED) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 모르는 clientSolutionId / 없는 Attempt 참조 / 참조 0개 / 미실행 PASSED·근거 없음 (code=UNKNOWN_SOLUTION_REFERENCE·UNKNOWN_ATTEMPT_REFERENCE·SOLUTION_WITHOUT_ATTEMPT·UNEXECUTED_VERIFICATION_PASSED·VERIFICATION_EVIDENCE_REQUIRED) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

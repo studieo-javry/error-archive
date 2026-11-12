@@ -25,6 +25,8 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.AddAttemptComma
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddAttemptUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddSolutionCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.AddSolutionUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.UpdateSolutionCommand
+import org.studieojavry.coreapi.agentcapture.application.usecase.UpdateSolutionUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.CompleteCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureUseCase
@@ -40,6 +42,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.UploadArtifactC
 import org.studieojavry.coreapi.agentcapture.application.usecase.UploadCaptureArtifactUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddAttemptRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddSolutionRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.UpdateSolutionRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentErrorResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AttemptResponse
@@ -69,6 +72,7 @@ class AgentCaptureController(
     private val addAttempt: AddAttemptUseCase,
     private val updateAttempt: UpdateAttemptUseCase,
     private val addSolution: AddSolutionUseCase,
+    private val updateSolution: UpdateSolutionUseCase,
     private val completeCapture: CompleteCaptureUseCase,
     private val uploadArtifact: UploadCaptureArtifactUseCase,
     private val idempotency: IdempotencyService,
@@ -378,6 +382,50 @@ class AgentCaptureController(
             )
         }
         return ResponseEntity.status(result.status).body(result.body)
+    }
+
+    @Operation(
+        summary = "Solution 후보 수정",
+        description = "통째 교체(봉인 전 정정). 모르는 clientSolutionId → 422. 봉인 후 → 409. " +
+            "PASSED 검증은 executed=true + 근거 필요(수집 규칙과 일관).",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "수정됨"),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 Capture (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "봉인 후 수정 시도 (code=CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "422",
+            description = "모르는 clientSolutionId / 없는 Attempt 참조 / 참조 0개 / 미실행 PASSED·근거 없음 " +
+                "(code=UNKNOWN_SOLUTION_REFERENCE·UNKNOWN_ATTEMPT_REFERENCE·SOLUTION_WITHOUT_ATTEMPT·" +
+                "UNEXECUTED_VERIFICATION_PASSED·VERIFICATION_EVIDENCE_REQUIRED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+    )
+    @PatchMapping("/captures/{captureUuid}/solutions/{clientSolutionId}")
+    fun updateSolution(
+        principal: AgentPrincipal,
+        @PathVariable captureUuid: UUID,
+        @PathVariable clientSolutionId: String,
+        @Valid @RequestBody request: UpdateSolutionRequest,
+    ): SolutionResponse {
+        principal.requireScope(AgentScopes.CAPTURE_WRITE)
+        return SolutionResponse.from(
+            updateSolution.invoke(
+                UpdateSolutionCommand(
+                    captureUuid = captureUuid,
+                    ownerUserId = principal.userId,
+                    clientSolutionId = clientSolutionId,
+                    title = request.title,
+                    content = request.content,
+                )
+            )
+        )
     }
 
     @Operation(summary = "초안 봉인(READY_FOR_REVIEW)", description = "문제 해결 여부와 무관. Stop Hook 만으로 자동 호출하지 않는다.")

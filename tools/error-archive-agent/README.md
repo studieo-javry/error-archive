@@ -148,6 +148,7 @@ Claude Code MCP 설정에 평문으로 저장됩니다.
 | `capture_add_attempt` | 시도(조사·수정·검증) 1건 기록(결과→상태) |
 | `capture_update_attempt` | 기존 시도 수정(잘못된 `evidenceRefs` 정정 등). detail 전체 교체 |
 | `capture_add_solution` | 해결 후보 기록(참조 시도 1개 이상) |
+| `capture_update_solution` | 기존 해결 후보 수정(잘못된 verification 정정 등). content 전체 교체 |
 | `capture_attach_evidence` | 로컬 파일(스크린샷·로그·diff·JSON)을 근거로 업로드 |
 | `capture_update` | 초안 기본 정보·서사 교체(`expectedRevision` 낙관 검사) |
 | `capture_get` | 초안 현재 상태 조회 |

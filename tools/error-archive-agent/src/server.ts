@@ -219,6 +219,50 @@ export function createServer(client: ApiClient): McpServer {
   );
 
   server.registerTool(
+    'capture_update_solution',
+    {
+      title: '해결 후보 수정',
+      description:
+        '기존 해결 후보(Solution)를 수정한다(통째 교체). 잘못 기록한 검증 정보(verification) 정정 등에 사용 — ' +
+        'capture_update_attempt 의 Solution 짝. 유지할 값도 함께 보낸다(먼저 capture_get 으로 현재 값 확인 권장). ' +
+        '검증 결과(PASSED)는 실제 실행(executed=true) + 근거가 있을 때만.',
+      inputSchema: {
+        captureUuid: z.string().uuid(),
+        clientSolutionId: z.string().describe('수정할 해결 후보의 clientSolutionId'),
+        title: z.string(),
+        description: z.string().optional(),
+        clientAttemptIds: z.array(z.string()).min(1).describe('기여한 시도(clientAttemptId) — 최소 1개'),
+        verificationResult: VERIFICATION_RESULT.optional(),
+        verificationScope: VERIFICATION_SCOPE.optional(),
+        verificationCommand: z.string().optional(),
+        verificationExecuted: z.boolean().optional(),
+        verificationEvidence: z.string().optional(),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        const verification = args.verificationResult
+          ? {
+              result: args.verificationResult,
+              scope: args.verificationScope,
+              command: args.verificationCommand,
+              executed: args.verificationExecuted,
+              evidence: args.verificationEvidence,
+            }
+          : undefined;
+        const saved = await client.updateSolution(args.captureUuid, args.clientSolutionId, {
+          title: args.title,
+          content: buildSolutionContent({
+            description: args.description,
+            clientAttemptIds: args.clientAttemptIds,
+            verification,
+          }),
+        });
+        return ok({ clientSolutionId: saved.clientSolutionId, title: saved.title });
+      }),
+  );
+
+  server.registerTool(
     'capture_attach_evidence',
     {
       title: '근거 첨부',

@@ -19,6 +19,7 @@ import type {
   AddAttemptRequest,
   UpdateAttemptRequest,
   AddSolutionRequest,
+  UpdateSolutionRequest,
   CompleteCaptureRequest,
   AgentIdentity,
   SessionResponse,
@@ -50,6 +51,7 @@ type _PatchCaptureRequest = Expect<AssignableTo<PatchCaptureRequest, Schemas['Pa
 type _AddAttemptRequest = Expect<AssignableTo<AddAttemptRequest, Schemas['AddAttemptRequest']>>;
 type _UpdateAttemptRequest = Expect<AssignableTo<UpdateAttemptRequest, Schemas['UpdateAttemptRequest']>>;
 type _AddSolutionRequest = Expect<AssignableTo<AddSolutionRequest, Schemas['AddSolutionRequest']>>;
+type _UpdateSolutionRequest = Expect<AssignableTo<UpdateSolutionRequest, Schemas['UpdateSolutionRequest']>>;
 type _CompleteCaptureRequest = Expect<AssignableTo<CompleteCaptureRequest, Schemas['CompleteCaptureRequest']>>;
 
 // --- 응답: 손 ⊆ 계약 (손 타입이 계약이 허용하는 범위를 벗어나지 않음) ---

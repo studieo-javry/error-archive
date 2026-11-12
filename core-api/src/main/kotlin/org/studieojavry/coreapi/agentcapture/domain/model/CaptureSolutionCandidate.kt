@@ -19,6 +19,14 @@ class CaptureSolutionCandidate private constructor(
         require(content.clientAttemptIds.isNotEmpty()) { "solution must reference at least one attempt" }
     }
 
+    /** 통째 교체(봉인 전 정정). title/content 불변식은 생성과 동일하게 재검증. */
+    fun update(title: String, content: SolutionContent) {
+        require(title.isNotBlank()) { "solution title must not be blank" }
+        require(content.clientAttemptIds.isNotEmpty()) { "solution must reference at least one attempt" }
+        this.title = title
+        this.content = content
+    }
+
     companion object {
         fun create(
             captureId: Long,

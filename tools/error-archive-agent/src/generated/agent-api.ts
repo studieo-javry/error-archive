@@ -303,6 +303,13 @@ export interface components {
             clientKind: string;
             clientVersion?: string | null;
             clientSessionId: string;
+            /**
+             * Format: int64
+             * @description 이 세션의 프로젝트 귀속(본인 소유 ProjectBinding). 생성될 Capture 가 상속한다. projectKey 보다 우선.
+             */
+            projectBindingId?: number | null;
+            /** @description 프로젝트 식별자 — 해당 바인딩이 없으면 본인 소유로 생성(findOrCreate). 커넥터가 로컬 프로젝트 키를 보낼 때. */
+            projectKey?: string | null;
         };
         /** @description agent 경로 공통 에러 바디(RFC 7807 ProblemDetail + 커넥터 분기용 `code`). media type 는 `application/problem+json`. */
         AgentErrorResponse: {
@@ -376,15 +383,14 @@ export interface components {
             evidenceRefs: string[];
         };
         JsonNode: {
-            number?: boolean;
-            float?: boolean;
+            string?: boolean;
             empty?: boolean;
             array?: boolean;
-            container?: boolean;
             missingNode?: boolean;
             valueNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            pojo?: boolean;
             integralNumber?: boolean;
             floatingPointNumber?: boolean;
             short?: boolean;
@@ -396,11 +402,12 @@ export interface components {
             /** @deprecated */
             textual?: boolean;
             boolean?: boolean;
-            object?: boolean;
-            null?: boolean;
-            string?: boolean;
             binary?: boolean;
-            pojo?: boolean;
+            object?: boolean;
+            container?: boolean;
+            null?: boolean;
+            number?: boolean;
+            float?: boolean;
             embeddedValue?: boolean;
         };
         /** @description 배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
@@ -438,9 +445,14 @@ export interface components {
             content: components["schemas"]["CaptureContent"];
             /**
              * Format: uuid
-             * @description 이 초안을 이을 세션(선택). 등록된 세션이면 연결한다.
+             * @description 이 초안을 이을 세션(선택). 등록된 세션이면 연결하고 그 세션의 프로젝트를 상속한다.
              */
             sessionUuid?: string | null;
+            /**
+             * Format: int64
+             * @description 명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속.
+             */
+            projectBindingId?: number | null;
         };
         Reproduction: {
             steps: string[];

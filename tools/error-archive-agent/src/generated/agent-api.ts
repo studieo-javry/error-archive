@@ -204,6 +204,37 @@ export interface components {
             clientVersion?: string | null;
             clientSessionId: string;
         };
+        /** @description agent 경로 공통 에러 바디(RFC 7807 ProblemDetail + 커넥터 분기용 `code`). media type 는 `application/problem+json`. */
+        AgentErrorResponse: {
+            /**
+             * @description RFC 7807 문제 유형 URI.
+             * @example about:blank
+             */
+            type?: string | null;
+            /**
+             * @description HTTP 상태 사유구.
+             * @example Unprocessable Entity
+             */
+            title?: string | null;
+            /**
+             * Format: int32
+             * @description HTTP 상태 코드.
+             * @example 422
+             */
+            status: number;
+            /** @description 사람이 읽는 상세 메시지. */
+            detail?: string | null;
+            /** @description 문제를 일으킨 요청 인스턴스 경로. */
+            instance?: string | null;
+            /**
+             * @description 커넥터가 분기에 쓰는 안정적 에러 코드.
+             * @example EVIDENCE_NOT_READY
+             * @enum {string}
+             */
+            code: "CAPTURE_NOT_FOUND" | "CAPTURE_SEALED" | "REVISION_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "CONCURRENT_REQUEST" | "ARTIFACT_HASH_MISMATCH" | "ARTIFACT_TOO_LARGE" | "UNSUPPORTED_ARTIFACT" | "CAPTURE_NOT_REVIEWABLE" | "CAPTURE_ALREADY_IMPORTED" | "UNKNOWN_ATTEMPT_REFERENCE" | "EVIDENCE_NOT_READY" | "INVALID_REQUEST" | "INTERNAL_ERROR";
+            /** @description EVIDENCE_NOT_READY 에서 아직 준비되지 않은(업로드 안 된) 근거 참조 ID 목록. 그 외 코드에선 생략. */
+            missingEvidenceRefs?: string[] | null;
+        };
         /** @description 등록된 세션. */
         SessionResponse: {
             /** Format: uuid */
@@ -407,19 +438,23 @@ export interface operations {
                     "*/*": components["schemas"]["SessionResponse"];
                 };
             };
-            /** @description Idempotency-Key 누락/검증 실패 */
+            /** @description Idempotency-Key 누락/검증 실패 (code=INVALID_REQUEST) */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description 같은 키·다른 payload */
+            /** @description 같은 키·다른 payload (code=IDEMPOTENCY_CONFLICT) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -449,19 +484,23 @@ export interface operations {
                     "*/*": components["schemas"]["CaptureResponse"];
                 };
             };
-            /** @description Idempotency-Key 누락 */
+            /** @description Idempotency-Key 누락 (code=INVALID_REQUEST) */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description 같은 키·다른 payload / 동시 경합 */
+            /** @description 같은 키·다른 payload / 동시 경합 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -493,19 +532,32 @@ export interface operations {
                     "*/*": components["schemas"]["SolutionResponse"];
                 };
             };
-            /** @description 중복 clientSolutionId / 봉인 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 중복 clientSolutionId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description 존재하지 않는 Attempt 참조 */
+            /** @description 존재하지 않는 Attempt 참조 (code=UNKNOWN_ATTEMPT_REFERENCE) */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -537,12 +589,32 @@ export interface operations {
                     "*/*": components["schemas"]["CaptureResponse"];
                 };
             };
-            /** @description revision 충돌 / 이미 봉인 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 근거 미준비 — Attempt 가 참조한 evidenceRef 중 업로드 안 된 것이 있음 (code=EVIDENCE_NOT_READY, body.missingEvidenceRefs 에 누락 ref 목록) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -574,12 +646,23 @@ export interface operations {
                     "*/*": components["schemas"]["AttemptResponse"];
                 };
             };
-            /** @description 같은 키·다른 payload / 중복 clientAttemptId / 봉인 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 같은 키·다른 payload / 중복 clientAttemptId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -618,26 +701,41 @@ export interface operations {
                     "*/*": components["schemas"]["ArtifactResponse"];
                 };
             };
-            /** @description 같은 clientArtifactId·다른 해시 / 봉인 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 같은 clientArtifactId·다른 해시 / 봉인 (code=ARTIFACT_HASH_MISMATCH·CAPTURE_SEALED) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description 파일/총량 한도 초과 */
+            /** @description 파일/총량 한도 초과 (code=ARTIFACT_TOO_LARGE) */
             413: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description 허용되지 않은 형식(SVG/HTML/실행/압축) */
+            /** @description 허용되지 않은 형식(SVG/HTML/실행/압축) (code=UNSUPPORTED_ARTIFACT) */
             415: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -663,12 +761,14 @@ export interface operations {
                     "*/*": components["schemas"]["CaptureDetailResponse"];
                 };
             };
-            /** @description 없음/타인 소유 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -698,19 +798,23 @@ export interface operations {
                     "*/*": components["schemas"]["CaptureResponse"];
                 };
             };
-            /** @description 없음/타인 소유 */
+            /** @description 없음/타인 소유 (code=CAPTURE_NOT_FOUND) */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
-            /** @description revision 충돌 / 이미 봉인 */
+            /** @description revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };
@@ -741,12 +845,23 @@ export interface operations {
                     "*/*": components["schemas"]["AttemptResponse"];
                 };
             };
-            /** @description 없음 */
+            /** @description 없는 clientAttemptId / 없음·타인 소유 Capture (code=CAPTURE_NOT_FOUND) */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description 봉인 후 수정 시도 (code=CAPTURE_SEALED) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["AgentErrorResponse"];
+                };
             };
         };
     };

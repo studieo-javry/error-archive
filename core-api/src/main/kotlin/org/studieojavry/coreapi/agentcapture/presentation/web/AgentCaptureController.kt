@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture.presentation.web
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -39,6 +40,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.UploadArtifactC
 import org.studieojavry.coreapi.agentcapture.application.usecase.UploadCaptureArtifactUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddAttemptRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AddSolutionRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentErrorResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ArtifactResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AttemptResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureDetailResponse
@@ -75,8 +77,14 @@ class AgentCaptureController(
     @Operation(summary = "세션 등록", description = "동일 sessionUuid 재전송은 같은 세션을 재사용한다.")
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "등록/재사용"),
-        ApiResponse(responseCode = "400", description = "Idempotency-Key 누락/검증 실패", content = [Content()]),
-        ApiResponse(responseCode = "409", description = "같은 키·다른 payload", content = [Content()]),
+        ApiResponse(
+            responseCode = "400", description = "Idempotency-Key 누락/검증 실패 (code=INVALID_REQUEST)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "같은 키·다른 payload (code=IDEMPOTENCY_CONFLICT)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/sessions")
     fun registerSession(
@@ -108,8 +116,14 @@ class AgentCaptureController(
     @Operation(summary = "OPEN 초안 생성")
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "생성/재생"),
-        ApiResponse(responseCode = "400", description = "Idempotency-Key 누락", content = [Content()]),
-        ApiResponse(responseCode = "409", description = "같은 키·다른 payload / 동시 경합", content = [Content()]),
+        ApiResponse(
+            responseCode = "400", description = "Idempotency-Key 누락 (code=INVALID_REQUEST)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "같은 키·다른 payload / 동시 경합 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/captures")
     fun create(
@@ -143,7 +157,10 @@ class AgentCaptureController(
     @Operation(summary = "초안 조회·재개", description = "Attempt·Solution 포함. 본인 소유만(아니면 404).")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "성공"),
-        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @GetMapping("/captures/{captureUuid}")
     fun get(
@@ -171,9 +188,22 @@ class AgentCaptureController(
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "업로드됨"),
         ApiResponse(responseCode = "200", description = "동일 첨부 재업로드(멱등)"),
-        ApiResponse(responseCode = "409", description = "같은 clientArtifactId·다른 해시 / 봉인", content = [Content()]),
-        ApiResponse(responseCode = "413", description = "파일/총량 한도 초과", content = [Content()]),
-        ApiResponse(responseCode = "415", description = "허용되지 않은 형식(SVG/HTML/실행/압축)", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "같은 clientArtifactId·다른 해시 / 봉인 (code=ARTIFACT_HASH_MISMATCH·CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "413", description = "파일/총량 한도 초과 (code=ARTIFACT_TOO_LARGE)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "415", description = "허용되지 않은 형식(SVG/HTML/실행/압축) (code=UNSUPPORTED_ARTIFACT)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/captures/{captureUuid}/artifacts", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun uploadArtifact(
@@ -201,8 +231,14 @@ class AgentCaptureController(
     @Operation(summary = "OPEN 초안 기본 정보 수정", description = "expectedRevision 불일치 → 409. title/project/content 전체 교체.")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수정됨"),
-        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
-        ApiResponse(responseCode = "409", description = "revision 충돌 / 이미 봉인", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PatchMapping("/captures/{captureUuid}")
     fun patch(
@@ -228,7 +264,14 @@ class AgentCaptureController(
     @Operation(summary = "Attempt 추가")
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "추가/재생"),
-        ApiResponse(responseCode = "409", description = "같은 키·다른 payload / 중복 clientAttemptId / 봉인", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "같은 키·다른 payload / 중복 clientAttemptId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/captures/{captureUuid}/attempts")
     fun addAttempt(
@@ -262,7 +305,14 @@ class AgentCaptureController(
     @Operation(summary = "Attempt 갱신", description = "모르는 clientAttemptId → 404. 봉인 후 → 409.")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "갱신됨"),
-        ApiResponse(responseCode = "404", description = "없음", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없는 clientAttemptId / 없음·타인 소유 Capture (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "봉인 후 수정 시도 (code=CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PatchMapping("/captures/{captureUuid}/attempts/{clientAttemptId}")
     fun updateAttempt(
@@ -289,8 +339,18 @@ class AgentCaptureController(
     @Operation(summary = "Solution 후보 추가", description = "content.clientAttemptIds 는 같은 Capture 의 Attempt 여야 한다.")
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "추가/재생"),
-        ApiResponse(responseCode = "409", description = "중복 clientSolutionId / 봉인", content = [Content()]),
-        ApiResponse(responseCode = "422", description = "존재하지 않는 Attempt 참조", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "중복 clientSolutionId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "422", description = "존재하지 않는 Attempt 참조 (code=UNKNOWN_ATTEMPT_REFERENCE)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/captures/{captureUuid}/solutions")
     fun addSolution(
@@ -323,7 +383,20 @@ class AgentCaptureController(
     @Operation(summary = "초안 봉인(READY_FOR_REVIEW)", description = "문제 해결 여부와 무관. Stop Hook 만으로 자동 호출하지 않는다.")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "봉인됨/재생"),
-        ApiResponse(responseCode = "409", description = "revision 충돌 / 이미 봉인", content = [Content()]),
+        ApiResponse(
+            responseCode = "404", description = "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409", description = "revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "422",
+            description = "근거 미준비 — Attempt 가 참조한 evidenceRef 중 업로드 안 된 것이 있음 " +
+                "(code=EVIDENCE_NOT_READY, body.missingEvidenceRefs 에 누락 ref 목록)",
+            content = [Content(mediaType = "application/problem+json", schema = Schema(implementation = AgentErrorResponse::class))],
+        ),
     )
     @PostMapping("/captures/{captureUuid}/complete")
     fun complete(

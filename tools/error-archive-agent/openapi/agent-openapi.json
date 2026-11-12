@@ -1,0 +1,1567 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Error Archive — core-api",
+    "description": "에러케이스(에러 사례/스니펫/첨부) 도메인의 코어 API.\n\n## 인증\n모든 비즈니스 엔드포인트는 `X-Internal-Auth` 헤더의 internal JWT 가 필요합니다.\nSwagger UI 우상단의 **Authorize** 버튼을 눌러 토큰을 등록하세요.\n\n### 로컬 토큰 발급\n```bash\nscripts/mint-jwt.sh internal core-api <userId> USER\n```\n- 표준출력의 토큰을 그대로 입력(Bearer 접두사 X).\n- 수명 90초.\n\n## 리소스 모델\n- **에러 케이스(error-case)** — 본문/메타/스냅샷을 가진 사례. 스니펫·첨부를 markerId 로 연결.\n- **코드 스니펫(error-snippet)** — 독립 생성 → markerId 발급 → 케이스에 연결. 본문에 `@snippet(markerId)` 로 인라인 임베드 가능.\n- **첨부(error-attachment)** — 파일 업로드 → markerId 발급 → 케이스에 연결. 본문에 `@attach(markerId)`.\n\n## 사용 흐름 (등록)\n1. (선택) `POST /error-snippets`, `POST /error-attachments` 로 스니펫/첨부를 먼저 생성 → markerId 수령.\n2. `POST /error-cases` 본문에 `snippetMarkerIds`/`attachmentMarkerIds` 로 연결.\n\n## 사용 흐름 (수정)\n- `PATCH /error-cases/{id}` — 케이스 본문·메타 + **스니펫/첨부 연결 집합** 변경(선언형: 보낸 marker 집합이 최종 상태).\n- `PATCH /error-snippets/{markerId}` — 스니펫 **내용** 수정. markerId 는 유지되므로 본문 인라인 참조 안 깨짐.",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8081",
+      "description": "로컬(게이트웨이 우회 직접 호출)"
+    }
+  ],
+  "security": [
+    {
+      "X-Internal-Auth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "agent-capture",
+      "description": "자동 수집 초안(Capture/Attempt/Solution) — agent 토큰 전용."
+    },
+    {
+      "name": "agent",
+      "description": "로컬 커넥터(MCP) 전용 경로. opaque 연결 토큰으로만 호출(사용자 JWT 아님)."
+    }
+  ],
+  "paths": {
+    "/api/v1/agent/sessions": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "세션 등록",
+        "description": "동일 sessionUuid 재전송은 같은 세션을 재사용한다.",
+        "operationId": "registerSession",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "등록/재사용",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key 누락/검증 실패 (code=INVALID_REQUEST)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 키·다른 payload (code=IDEMPOTENCY_CONFLICT)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "OPEN 초안 생성",
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "생성/재생",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Idempotency-Key 누락 (code=INVALID_REQUEST)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 키·다른 payload / 동시 경합 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/solutions": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "Solution 후보 추가",
+        "description": "content.clientAttemptIds 는 같은 Capture 의 Attempt 여야 한다.",
+        "operationId": "addSolution",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddSolutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "추가/재생",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolutionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "중복 clientSolutionId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "존재하지 않는 Attempt 참조 (code=UNKNOWN_ATTEMPT_REFERENCE)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/complete": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "초안 봉인(READY_FOR_REVIEW)",
+        "description": "문제 해결 여부와 무관. Stop Hook 만으로 자동 호출하지 않는다.",
+        "operationId": "complete",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteCaptureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "봉인됨/재생",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "근거 미준비 — Attempt 가 참조한 evidenceRef 중 업로드 안 된 것이 있음 (code=EVIDENCE_NOT_READY, body.missingEvidenceRefs 에 누락 ref 목록)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/attempts": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "Attempt 추가",
+        "operationId": "addAttempt",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "추가/재생",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 키·다른 payload / 중복 clientAttemptId / 봉인 (code=IDEMPOTENCY_CONFLICT·CONCURRENT_REQUEST·CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/artifacts": {
+      "post": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "근거 첨부 업로드(multipart)",
+        "description": "\n            로컬 파일을 실제로 전송해 Capture 근거로 저장한다(로컬 경로 문자열만 보내는 것 금지).\n            허용: PNG/JPEG/WebP, UTF-8 텍스트·로그·diff, JSON. 파일당 10 MiB, Capture당 20개·총 50 MiB.\n            멱등: 같은 clientArtifactId·같은 내용은 기존 첨부 반환(200), 다른 내용은 409. OPEN 에서만.\n        ",
+        "operationId": "uploadArtifact",
+        "parameters": [
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "clientArtifactId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPrincipal"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "동일 첨부 재업로드(멱등)",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "업로드됨",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 clientArtifactId·다른 해시 / 봉인 (code=ARTIFACT_HASH_MISMATCH·CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "파일/총량 한도 초과 (code=ARTIFACT_TOO_LARGE)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "허용되지 않은 형식(SVG/HTML/실행/압축) (code=UNSUPPORTED_ARTIFACT)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}": {
+      "get": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "초안 조회·재개",
+        "description": "Attempt·Solution 포함. 본인 소유만(아니면 404).",
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "OPEN 초안 기본 정보 수정",
+        "description": "expectedRevision 불일치 → 409. title/project/content 전체 교체.",
+        "operationId": "patch",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "수정됨",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없음/타인 소유 (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision 충돌 / 이미 봉인 (code=REVISION_CONFLICT·CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/captures/{captureUuid}/attempts/{clientAttemptId}": {
+      "patch": {
+        "tags": [
+          "agent-capture"
+        ],
+        "summary": "Attempt 갱신",
+        "description": "모르는 clientAttemptId → 404. 봉인 후 → 409.",
+        "operationId": "updateAttempt",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "captureUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "clientAttemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "갱신됨",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는 clientAttemptId / 없음·타인 소유 Capture (code=CAPTURE_NOT_FOUND)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "봉인 후 수정 시도 (code=CAPTURE_SEALED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/me": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "연결 확인(whoami)",
+        "description": "\n            제시한 agent 토큰이 어떤 사용자·연결·범위로 해석되는지 반환한다. 커넥터의 설정/진단\n            (`doctor`)에서 토큰 유효성과 연결 상태를 확인하는 용도. 특정 scope 를 요구하지 않는다\n            (유효한 토큰이면 누구나). 폐기/만료 토큰은 게이트웨이에서 이미 401 로 차단된다.\n        ",
+        "operationId": "me",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "유효 — principal 반환",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentIdentityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "토큰 없음/무효/폐기/만료"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentPrincipal": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "connectionId",
+          "scopes",
+          "userId"
+        ]
+      },
+      "RegisterSessionRequest": {
+        "type": "object",
+        "description": "세션 등록. 동일 sessionUuid 재전송은 같은 세션을 재사용한다.",
+        "properties": {
+          "sessionUuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientKind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "clientVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clientSessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "clientKind",
+          "clientSessionId",
+          "sessionUuid"
+        ]
+      },
+      "AgentErrorResponse": {
+        "type": "object",
+        "description": "agent 경로 공통 에러 바디(RFC 7807 ProblemDetail + 커넥터 분기용 `code`). media type 는 `application/problem+json`.",
+        "properties": {
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 7807 문제 유형 URI.",
+            "example": "about:blank"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HTTP 상태 사유구.",
+            "example": "Unprocessable Entity"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTP 상태 코드.",
+            "example": 422
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "사람이 읽는 상세 메시지."
+          },
+          "instance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "문제를 일으킨 요청 인스턴스 경로."
+          },
+          "code": {
+            "type": "string",
+            "description": "커넥터가 분기에 쓰는 안정적 에러 코드.",
+            "enum": [
+              "CAPTURE_NOT_FOUND",
+              "CAPTURE_SEALED",
+              "REVISION_CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "CONCURRENT_REQUEST",
+              "ARTIFACT_HASH_MISMATCH",
+              "ARTIFACT_TOO_LARGE",
+              "UNSUPPORTED_ARTIFACT",
+              "CAPTURE_NOT_REVIEWABLE",
+              "CAPTURE_ALREADY_IMPORTED",
+              "UNKNOWN_ATTEMPT_REFERENCE",
+              "EVIDENCE_NOT_READY",
+              "INVALID_REQUEST",
+              "INTERNAL_ERROR"
+            ],
+            "example": "EVIDENCE_NOT_READY"
+          },
+          "missingEvidenceRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "description": "EVIDENCE_NOT_READY 에서 아직 준비되지 않은(업로드 안 된) 근거 참조 ID 목록. 그 외 코드에선 생략.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "status"
+        ]
+      },
+      "SessionResponse": {
+        "type": "object",
+        "description": "등록된 세션.",
+        "properties": {
+          "sessionUuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientKind": {
+            "type": "string"
+          },
+          "clientVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clientSessionId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "clientKind",
+          "clientSessionId",
+          "connectionId",
+          "sessionUuid",
+          "startedAt"
+        ]
+      },
+      "CaptureContent": {
+        "type": "object",
+        "properties": {
+          "symptom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedFacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reproduction": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Reproduction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CaptureEnvironment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "hypotheses",
+          "observedFacts",
+          "unknowns"
+        ]
+      },
+      "CaptureEnvironment": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dirtyWorktree": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "diffRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateCaptureRequest": {
+        "type": "object",
+        "description": "OPEN 초안 생성. captureUuid 는 클라이언트가 부여하며 재전송 시 변경하지 않는다.",
+        "properties": {
+          "captureUuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "$ref": "#/components/schemas/CaptureContent"
+          },
+          "sessionUuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "이 초안을 이을 세션(선택). 등록된 세션이면 연결한다."
+          }
+        },
+        "required": [
+          "captureUuid",
+          "content"
+        ]
+      },
+      "Reproduction": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executed",
+          "steps"
+        ]
+      },
+      "CaptureResponse": {
+        "type": "object",
+        "description": "초안 요약(revision 포함 — 이후 편집/봉인의 expectedRevision 에 사용).",
+        "properties": {
+          "captureUuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "$ref": "#/components/schemas/CaptureContent"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "captureUuid",
+          "content",
+          "createdAt",
+          "revision",
+          "status",
+          "updatedAt"
+        ]
+      },
+      "AddSolutionRequest": {
+        "type": "object",
+        "description": "Solution 후보 추가. content.clientAttemptIds 는 같은 Capture 의 Attempt 여야 한다.",
+        "properties": {
+          "clientSolutionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "$ref": "#/components/schemas/SolutionContent"
+          }
+        },
+        "required": [
+          "clientSolutionId",
+          "content",
+          "title"
+        ]
+      },
+      "SolutionContent": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clientAttemptIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verification": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Verification"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "clientAttemptIds"
+        ]
+      },
+      "Verification": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN",
+              "PASSED",
+              "FAILED",
+              "INCONCLUSIVE"
+            ]
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LOCAL",
+              "CI",
+              "MANUAL"
+            ]
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "testId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executed": {
+            "type": "boolean"
+          },
+          "ranAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "executed",
+          "result"
+        ]
+      },
+      "SolutionResponse": {
+        "type": "object",
+        "description": "Solution 후보.",
+        "properties": {
+          "clientSolutionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/SolutionContent"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "clientSolutionId",
+          "content",
+          "createdAt",
+          "title"
+        ]
+      },
+      "CompleteCaptureRequest": {
+        "type": "object",
+        "description": "봉인 요청(expectedRevision 로 낙관 검사).",
+        "properties": {
+          "expectedRevision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AddAttemptRequest": {
+        "type": "object",
+        "description": "Attempt 추가/갱신. clientAttemptId 는 같은 Capture 안에서 유일.",
+        "properties": {
+          "clientAttemptId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED",
+              "INCONCLUSIVE"
+            ]
+          },
+          "attemptType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "$ref": "#/components/schemas/AttemptDetail"
+          }
+        },
+        "required": [
+          "clientAttemptId",
+          "detail",
+          "result"
+        ]
+      },
+      "AttemptDetail": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "hypothesis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "insight": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextStep": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "evidenceRefs",
+          "title"
+        ]
+      },
+      "AttemptResponse": {
+        "type": "object",
+        "description": "Attempt.",
+        "properties": {
+          "clientAttemptId": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED",
+              "INCONCLUSIVE"
+            ]
+          },
+          "attemptType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "$ref": "#/components/schemas/AttemptDetail"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "clientAttemptId",
+          "createdAt",
+          "detail",
+          "orderIndex",
+          "result",
+          "updatedAt"
+        ]
+      },
+      "ArtifactResponse": {
+        "type": "object",
+        "description": "근거 첨부 메타.",
+        "properties": {
+          "clientArtifactId": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fileName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "clientArtifactId",
+          "contentType",
+          "createdAt",
+          "sha256",
+          "sizeBytes",
+          "status"
+        ]
+      },
+      "PatchCaptureRequest": {
+        "type": "object",
+        "description": "OPEN 초안 기본 정보 교체(title/project/content 전체 교체).",
+        "properties": {
+          "expectedRevision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "$ref": "#/components/schemas/CaptureContent"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "UpdateAttemptRequest": {
+        "type": "object",
+        "description": "Attempt 갱신(clientAttemptId 는 경로).",
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED",
+              "INCONCLUSIVE"
+            ]
+          },
+          "attemptType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "$ref": "#/components/schemas/AttemptDetail"
+          }
+        },
+        "required": [
+          "detail",
+          "result"
+        ]
+      },
+      "AgentIdentityResponse": {
+        "type": "object",
+        "description": "agent 토큰이 해석된 principal.",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "connectionId",
+          "scopes",
+          "userId"
+        ]
+      },
+      "CaptureDetailResponse": {
+        "type": "object",
+        "description": "초안 상세(요약 + Attempt·Solution·Artifact 목록).",
+        "properties": {
+          "capture": {
+            "$ref": "#/components/schemas/CaptureResponse"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttemptResponse"
+            }
+          },
+          "solutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SolutionResponse"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactResponse"
+            }
+          }
+        },
+        "required": [
+          "artifacts",
+          "attempts",
+          "capture",
+          "solutions"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "X-Internal-Auth": {
+        "type": "apiKey",
+        "description": "internal JWT (RS256, aud=core-api). 로컬은 `scripts/mint-jwt.sh internal core-api <userId> USER`.",
+        "name": "X-Internal-Auth",
+        "in": "header"
+      }
+    }
+  }
+}

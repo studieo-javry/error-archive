@@ -6,6 +6,7 @@ import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.security.SecurityRequirement
 import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
+import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -76,4 +77,16 @@ class OpenApiConfig {
             // 기본적으로 모든 엔드포인트가 이 스킴을 요구한다고 표시(개별 엔드포인트에서 해제 가능).
             .addSecurityItem(SecurityRequirement().addList(schemeName))
     }
+
+    /**
+     * `agent` 그룹 — 로컬 커넥터(MCP)가 호출하는 에이전트 수집 API(경로 `/api/v1/agent` 하위)만 묶은 OpenAPI 문서.
+     * `/v3/api-docs/agent` 로 노출된다. 커넥터(TS)의 요청/응답 타입을 **이 계약에서 생성**(openapi-typescript)해,
+     * Kotlin DTO ↔ TS 타입 드리프트를 좁은 표면에서 감시한다. 전체 도메인이 섞인 기본 `/v3/api-docs` 와 분리.
+     */
+    @Bean
+    fun agentApiGroup(): GroupedOpenApi =
+        GroupedOpenApi.builder()
+            .group("agent")
+            .pathsToMatch("/api/v1/agent/**")
+            .build()
 }

@@ -53,7 +53,7 @@ const CONTENT_SHAPE = {
 };
 
 export function createServer(client: ApiClient): McpServer {
-  const server = new McpServer({ name: 'error-archive-agent', version: '0.1.0' });
+  const server = new McpServer({ name: 'error-archive-agent', version: '1.1.0' });
 
   server.registerTool(
     'diagnose',

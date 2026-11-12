@@ -13,12 +13,17 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContentSanitizer
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
+import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
+import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
@@ -67,7 +72,7 @@ class CreateCaptureUseCase(
                 originatingConnectionId = cmd.connectionId,
                 title = cmd.title,
                 project = cmd.project,
-                content = cmd.content,
+                content = CaptureContentSanitizer.sanitize(cmd.content),
                 now = Instant.now(clock),
             )
         )
@@ -127,7 +132,7 @@ class PatchCaptureUseCase(
         val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireRevision(cmd.expectedRevision)
-        capture.edit(cmd.title, cmd.project, cmd.content, Instant.now(clock))
+        capture.edit(cmd.title, cmd.project, CaptureContentSanitizer.sanitize(cmd.content), Instant.now(clock))
         return captures.save(capture)
     }
 }
@@ -161,7 +166,7 @@ class AddAttemptUseCase(
                 orderIndex = order,
                 result = cmd.result,
                 attemptType = cmd.attemptType,
-                detail = cmd.detail,
+                detail = CaptureContentSanitizer.sanitize(cmd.detail),
                 now = Instant.now(clock),
             )
         )
@@ -191,7 +196,7 @@ class UpdateAttemptUseCase(
         capture.requireAgentWritable()
         val attempt = attempts.findByCaptureAndClientId(capture.id!!, cmd.clientAttemptId)
             ?: throw UnknownAttemptReferenceException(cmd.captureUuid, cmd.clientAttemptId)
-        attempt.update(cmd.result, cmd.attemptType, cmd.detail, Instant.now(clock))
+        attempt.update(cmd.result, cmd.attemptType, CaptureContentSanitizer.sanitize(cmd.detail), Instant.now(clock))
         return attempts.save(attempt)
     }
 }
@@ -218,16 +223,28 @@ class AddSolutionUseCase(
         val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.ownerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.requireAgentWritable()
+        if (cmd.content.clientAttemptIds.isEmpty()) throw SolutionWithoutAttemptException(cmd.captureUuid)
         val known = attempts.clientAttemptIds(capture.id!!)
         cmd.content.clientAttemptIds.forEach { ref ->
             if (ref !in known) throw UnknownAttemptReferenceException(cmd.captureUuid, ref)
+        }
+        cmd.content.verification?.let { v ->
+            if (v.result == VerificationResult.PASSED) {
+                // 정책: 실행하지 않은(executed=false) PASSED 금지 — 안 돌려보고 "통과" 확정 방지.
+                // 수집 시점에 fail-fast 해, 봉인 후 import(validateVerification)에서야 422 나는 비대칭을 없앤다.
+                if (!v.executed) throw UnexecutedVerificationPassedException(cmd.captureUuid)
+                // PASSED 는 근거(command·testId·evidence) 최소 1개 필요.
+                if (v.command.isNullOrBlank() && v.testId.isNullOrBlank() && v.evidence.isNullOrBlank()) {
+                    throw VerificationEvidenceRequiredException(cmd.captureUuid)
+                }
+            }
         }
         return solutions.save(
             CaptureSolutionCandidate.create(
                 captureId = capture.id!!,
                 clientSolutionId = cmd.clientSolutionId,
                 title = cmd.title,
-                content = cmd.content,
+                content = CaptureContentSanitizer.sanitize(cmd.content),
                 now = Instant.now(clock),
             )
         )

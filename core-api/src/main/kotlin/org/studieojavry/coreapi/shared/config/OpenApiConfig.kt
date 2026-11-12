@@ -6,6 +6,7 @@ import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.security.SecurityRequirement
 import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
+import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -75,5 +76,41 @@ class OpenApiConfig {
             )
             // 기본적으로 모든 엔드포인트가 이 스킴을 요구한다고 표시(개별 엔드포인트에서 해제 가능).
             .addSecurityItem(SecurityRequirement().addList(schemeName))
+    }
+
+    /**
+     * `agent` 그룹 — 로컬 커넥터(MCP)가 호출하는 에이전트 수집 API(경로 `/api/v1/agent` 하위)만 묶은 OpenAPI 문서.
+     * `/v3/api-docs/agent` 로 노출된다. 커넥터(TS)의 요청/응답 타입을 **이 계약에서 생성**(openapi-typescript)해,
+     * Kotlin DTO ↔ TS 타입 드리프트를 좁은 표면에서 감시한다. 전체 도메인이 섞인 기본 `/v3/api-docs` 와 분리.
+     */
+    @Bean
+    fun agentApiGroup(): GroupedOpenApi {
+        val tokenScheme = "AgentToken"
+        return GroupedOpenApi.builder()
+            .group("agent")
+            .pathsToMatch("/api/v1/agent/**")
+            // 이 그룹은 **커넥터 → 게이트웨이** 계약이다. core-api 전역 보안스킴(X-Internal-Auth =
+            // 게이트웨이가 내부 홉에 주입하는 RS256 JWT)은 커넥터가 보내는 값이 아니므로, 실제 커넥터가
+            // 싣는 opaque 연결 토큰(`Authorization: Bearer eaa_…`)으로 교체하고 서버도 게이트웨이로 둔다.
+            .addOpenApiCustomizer { api ->
+                val components = api.components ?: Components()
+                components.securitySchemes = linkedMapOf(
+                    tokenScheme to SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("opaque eaa_ token")
+                        .description(
+                            "연결 토큰(`eaa_…`). `Authorization: Bearer eaa_…` 로 전송하면 게이트웨이가 " +
+                                "introspection 으로 사용자·연결·scope(capture:read/write, artifact:write)로 해석한다. " +
+                                "웹 로그인 JWT 와 분리된다.",
+                        ),
+                )
+                api.components = components
+                api.security = listOf(SecurityRequirement().addList(tokenScheme))
+                api.servers = listOf(
+                    Server().url("https://api.error-archive.com").description("게이트웨이 (커넥터 호출 대상)"),
+                )
+            }
+            .build()
     }
 }

@@ -12,6 +12,7 @@ import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSe
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSessionLinkEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureSolutionCandidateEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.IdempotencyReceiptEntity
 import java.util.UUID
 
@@ -77,4 +78,12 @@ interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEnti
         operation: String,
         idempotencyKey: String,
     ): IdempotencyReceiptEntity?
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("delete from IdempotencyReceiptEntity r where r.createdAt < :threshold")
+    fun deleteByCreatedAtBefore(@Param("threshold") threshold: java.time.Instant): Int
+}
+
+interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> {
+    fun findByCaptureId(captureId: Long): CaptureImportEntity?
 }

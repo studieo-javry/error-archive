@@ -53,19 +53,26 @@ class UploadCaptureArtifactUseCase(
         val objectKey = objectKeyFor(markerId)
         storage.put(objectKey, cmd.bytes, contentType)
 
-        val saved = artifacts.save(
-            CaptureArtifact.completed(
-                captureId = captureId,
-                clientArtifactId = cmd.clientArtifactId,
-                objectKey = objectKey,
-                sha256 = sha256,
-                contentType = contentType,
-                sizeBytes = cmd.bytes.size.toLong(),
-                fileName = cmd.fileName,
-                uploaderUserId = cmd.ownerUserId,
-                now = Instant.now(clock),
+        // 업로드는 됐으나 DB 저장이 실패(동시 업로드 경합의 UNIQUE 위반 등)하면 S3 오브젝트가 고아로 남는다.
+        // 보상 삭제로 즉시 정리한 뒤 예외를 전파한다(부분 Case·고아 누적 방지, 이슈 §7).
+        val saved = try {
+            artifacts.save(
+                CaptureArtifact.completed(
+                    captureId = captureId,
+                    clientArtifactId = cmd.clientArtifactId,
+                    objectKey = objectKey,
+                    sha256 = sha256,
+                    contentType = contentType,
+                    sizeBytes = cmd.bytes.size.toLong(),
+                    fileName = cmd.fileName,
+                    uploaderUserId = cmd.ownerUserId,
+                    now = Instant.now(clock),
+                )
             )
-        )
+        } catch (ex: Exception) {
+            runCatching { storage.delete(objectKey) }
+            throw ex
+        }
         return Outcome(saved, deduplicated = false)
     }
 

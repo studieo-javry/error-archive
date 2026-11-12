@@ -2,6 +2,8 @@ package org.studieojavry.coreapi.errorcase.attachment.application.usecase
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.studieojavry.coreapi.errorcase.attachment.application.command.CreateAttachmentCommand
 import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
@@ -32,6 +34,19 @@ class CreateAttachmentUseCase(
             bytes = command.bytes,
             contentType = command.contentType,
         )
+
+        // 롤백 정리: 트랜잭션이 롤백되면 방금 올린 스토리지 객체를 삭제한다. (DB row 는 롤백돼 사라지므로
+        // PurgeOrphan(미링크 row 기준)이 못 잡는 "row 없는 스토리지 고아"를 방지. import 처럼 더 큰 트랜잭션
+        // 안에서 호출돼 뒤 단계가 실패하는 경우가 핵심. put 멱등 삭제라 재시도·중복에 안전.)
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                override fun afterCompletion(status: Int) {
+                    if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                        runCatching { attachmentStoragePort.delete(objectKey) }
+                    }
+                }
+            })
+        }
 
         val attachment = Attachment(
             markerId = markerId,

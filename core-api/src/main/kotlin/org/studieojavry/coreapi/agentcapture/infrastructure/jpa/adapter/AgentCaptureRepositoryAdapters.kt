@@ -7,8 +7,12 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRep
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceipt
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceiptPort
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureImportJpaRepository
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
@@ -267,6 +271,9 @@ class IdempotencyReceiptAdapter(
     override fun find(scopeKey: String, operation: String, key: String): IdempotencyReceipt? =
         jpa.findByScopeKeyAndOperationAndIdempotencyKey(scopeKey, operation, key)?.toDomain()
 
+    override fun deleteOlderThan(threshold: java.time.Instant): Int =
+        jpa.deleteByCreatedAtBefore(threshold)
+
     override fun save(receipt: IdempotencyReceipt): IdempotencyReceipt {
         val entity = IdempotencyReceiptEntity(
             scopeKey = receipt.scopeKey,
@@ -287,6 +294,43 @@ class IdempotencyReceiptAdapter(
         requestHash = requestHash,
         responseStatus = responseStatus,
         responseBody = responseBody,
+        createdAt = createdAt,
+    )
+}
+
+@Repository
+class CaptureImportRepositoryAdapter(
+    private val jpa: CaptureImportJpaRepository,
+    private val objectMapper: ObjectMapper,
+) : CaptureImportRepositoryPort {
+
+    override fun findByCaptureId(captureId: Long): CaptureImport? =
+        jpa.findByCaptureId(captureId)?.toDomain()
+
+    override fun save(record: CaptureImport): CaptureImport {
+        val entity = CaptureImportEntity(
+            captureId = record.captureId,
+            reviewedRevision = record.reviewedRevision,
+            reviewerUserId = record.reviewerUserId,
+            reviewedAt = record.reviewedAt,
+            targetCaseId = record.targetCaseId,
+            requestHash = record.requestHash,
+            attemptStepMap = objectMapper.writeValueAsString(record.attemptStepMap),
+            createdAt = record.createdAt,
+        )
+        return jpa.save(entity).toDomain()
+    }
+
+    // attemptStepMap 은 영속 전용(출처 보존) — read-back 소비처가 없어 도메인엔 빈 맵으로 둔다.
+    private fun CaptureImportEntity.toDomain(): CaptureImport = CaptureImport(
+        id = id,
+        captureId = captureId,
+        reviewedRevision = reviewedRevision,
+        reviewerUserId = reviewerUserId,
+        reviewedAt = reviewedAt,
+        targetCaseId = targetCaseId,
+        requestHash = requestHash,
+        attemptStepMap = emptyMap(),
         createdAt = createdAt,
     )
 }

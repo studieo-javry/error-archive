@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture.application.port
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
@@ -17,6 +18,12 @@ interface AgentCaptureRepositoryPort {
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
     /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
     fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
+}
+
+/** 검토 반영 기록(Capture 당 1건). 재반영 멱등·충돌 판정의 기준. */
+interface CaptureImportRepositoryPort {
+    fun save(record: CaptureImport): CaptureImport
+    fun findByCaptureId(captureId: Long): CaptureImport?
 }
 
 interface CaptureAttemptRepositoryPort {
@@ -69,4 +76,6 @@ interface IdempotencyReceiptPort {
     fun find(scopeKey: String, operation: String, key: String): IdempotencyReceipt?
     /** UNIQUE(scope_key, operation, key) 위반 시 예외를 던진다(동시 요청 → service 가 재조회). */
     fun save(receipt: IdempotencyReceipt): IdempotencyReceipt
+    /** 보존 기간 지난 영수증 정리(벌크 삭제). 반환=삭제 건수. 엔티티 원본·CaptureImport 매핑은 건드리지 않는다. */
+    fun deleteOlderThan(threshold: Instant): Int
 }

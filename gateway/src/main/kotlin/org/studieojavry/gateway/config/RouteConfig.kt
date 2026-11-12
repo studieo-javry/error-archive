@@ -8,6 +8,7 @@ import org.springframework.cloud.gateway.server.mvc.handler.GatewayRouterFunctio
 import org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctions.http
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpStatus
 import org.springframework.web.servlet.function.RequestPredicates.path
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
@@ -257,6 +258,16 @@ class RouteConfig(
                 path("/api/v1/agent/**"),
                 http()
             )
+            // 게이트웨이 코스 크기 캡 — 앱의 파일당 10 MiB 한도와 일관된 방어선(multipart 여유 포함 12 MiB).
+            // Content-Length 가 있고 초과하면 큰 바디를 core 로 흘리기 전에 413 으로 거른다.
+            .filter { request, next ->
+                val declared = request.headers().firstHeader("Content-Length")?.toLongOrNull()
+                if (declared != null && declared > MAX_AGENT_BODY_BYTES) {
+                    ServerResponse.status(HttpStatus.PAYLOAD_TOO_LARGE).build()
+                } else {
+                    next.handle(request)
+                }
+            }
             .before(uri(downstream.coreApi))
             .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
             .build()
@@ -312,4 +323,19 @@ class RouteConfig(
             .before(uri(downstream.coreApi))
             .before(setPath("/v3/api-docs"))
             .build()
+
+    /**
+     * `agent` 그룹 docs — core-api 의 `/v3/api-docs/agent`(GroupedOpenApi, 에이전트 경로만).
+     * 커넥터(TS) 계약 타입 생성(openapi-typescript)의 소스. `/api-docs` 하위는 permitAll.
+     */
+    @Bean
+    fun agentDocsRoute(): RouterFunction<ServerResponse> =
+        route("agent-docs")
+            .GET("/api-docs/agent", http())
+            .before(uri(downstream.coreApi))
+            .before(setPath("/v3/api-docs/agent"))
+            .build()
 }
+
+/** 에이전트 경로 게이트웨이 바디 상한 — 앱 파일당 10 MiB + multipart 여유. */
+private const val MAX_AGENT_BODY_BYTES = 12L * 1024 * 1024

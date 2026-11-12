@@ -12,6 +12,8 @@ import jakarta.persistence.Index
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.OrderColumn
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import org.studieojavry.coreapi.errorcase.solution.domain.model.Solution
 import java.time.LocalDateTime
 
@@ -37,6 +39,18 @@ class SolutionEntity(
     @Column(name = "title", nullable = false, length = 200)
     var title: String,
 
+    /** 상세 설명(마크다운). V23. */
+    @Column(name = "description", columnDefinition = "TEXT")
+    var description: String? = null,
+
+    /**
+     * 검증 근거(SolutionVerification 직렬화 JSON). V23.
+     * 직렬화/역직렬화는 어댑터가 담당(@JdbcTypeCode(SqlTypes.JSON) + columnDefinition="jsonb" — 저장 패턴).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "verification", columnDefinition = "jsonb")
+    var verification: String? = null,
+
     /**
      * 묶인 step id 목록. join table `solution_step_link(solution_id, step_id, order_index)`.
      * `@OrderColumn` 이 사용자 선택 순서를 보존한다.
@@ -57,22 +71,18 @@ class SolutionEntity(
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime,
 ) {
-    fun toDomain(): Solution = Solution.rehydrate(
-        id = id!!,
-        errorCaseId = errorCaseId,
-        authorUserId = authorUserId,
-        title = title,
-        stepIds = stepIds,
-        createdAt = createdAt,
-        updatedAt = updatedAt
-    )
-
     companion object {
+        /**
+         * description 은 그대로, verification(VO→JSON) 직렬화는 어댑터가 저장 직전 채운다.
+         * (엔티티 companion 은 ObjectMapper 를 주입받을 수 없으므로 String 변환은 어댑터 책임.)
+         */
         fun fromDomain(s: Solution) = SolutionEntity(
             id = s.id,
             errorCaseId = s.errorCaseId,
             authorUserId = s.authorUserId,
             title = s.title,
+            description = s.description,
+            verification = null,
             stepIds = s.stepIds.toMutableList(),
             createdAt = s.createdAt,
             updatedAt = s.updatedAt

@@ -327,7 +327,7 @@ class AgentCaptureImportIntegrationTest {
         // Case·Step·Solution 과 이벤트 발행(아웃박스 저장)은 한 @Transactional.
         // 이벤트 저장이 실패하도록 주입 → 전체가 롤백되어야 한다(부분 Case 금지).
         publisher.failNext = true
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "k-outbox-rollback")
             .andExpect(status().is5xxServerError)
 
         // 초안은 여전히 READY(IMPORTED 아님), 케이스 백링크 없음 = 반영 전체 롤백.
@@ -343,12 +343,12 @@ class AgentCaptureImportIntegrationTest {
         val (uuid, _) = seedCapture(userId, seal = true)
 
         publisher.failNext = true
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "k-retry")
             .andExpect(status().is5xxServerError)
 
-        // 실패가 Case·백링크·이벤트를 전혀 남기지 않았으므로, 재반영이 정상 성공한다.
+        // 실패가 Case·백링크·이벤트·멱등영수증을 전혀 남기지 않았으므로, 같은 키로 재반영해도 정상 성공한다.
         publisher.failNext = false
-        mvc.perform(post("/api/v1/captures/$uuid/import").with(asUser(userId)))
+        doImport(uuid, userId, "k-retry")
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.alreadyImported").value(false))
             .andExpect(jsonPath("$.caseId").isNumber)

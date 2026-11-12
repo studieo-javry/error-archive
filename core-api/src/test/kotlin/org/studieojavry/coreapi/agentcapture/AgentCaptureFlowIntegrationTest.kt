@@ -219,6 +219,26 @@ class AgentCaptureFlowIntegrationTest {
     }
 
     @Test
+    fun `실행하지 않은(executed=false) PASSED 는 수집 시점에 422 UNEXECUTED_VERIFICATION_PASSED`() {
+        val uuid = UUID.randomUUID()
+        createCapture(uuid, "k-sol-unexec")
+        addAttempt(uuid, "a1", "SUCCEEDED", "k-a1-unexec")
+        mvc.perform(
+            post("/api/v1/agent/captures/$uuid/solutions").with(agent())
+                .header("Idempotency-Key", "k-sol-unexec-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "clientSolutionId" to "s-unexec", "title" to "passed but not executed",
+                    "content" to mapOf(
+                        "clientAttemptIds" to listOf("a1"),
+                        // 근거(command)는 있지만 executed=false → import 전에 수집에서 바로 거부(정책 대칭).
+                        "verification" to mapOf("result" to "PASSED", "executed" to false, "command" to "./gradlew test"),
+                    ),
+                ))),
+        ).andExpect(status().isUnprocessableEntity).andExpect(jsonPath("$.code").value("UNEXECUTED_VERIFICATION_PASSED"))
+    }
+
+    @Test
     fun `타인 소유 초안 조회는 404`() {
         val uuid = UUID.randomUUID()
         createCapture(uuid, "k3")

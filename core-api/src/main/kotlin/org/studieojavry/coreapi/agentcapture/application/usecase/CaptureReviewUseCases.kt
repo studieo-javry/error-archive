@@ -380,6 +380,7 @@ class ImportCaptureUseCase(
                     env.branch?.let { add("- branch: $it") }
                     env.commitSha?.let { add("- commit: $it") }
                     env.dirtyWorktree?.let { add("- dirtyWorktree: $it") }
+                    env.diffRef?.let { add("- diffRef: $it") }
                 }
                 if (lines.isNotEmpty()) add("## 환경\n" + lines.joinToString("\n"))
             }

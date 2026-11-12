@@ -20,6 +20,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandida
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
 import org.studieojavry.coreapi.agentcapture.domain.model.VerificationResult
@@ -228,10 +229,14 @@ class AddSolutionUseCase(
             if (ref !in known) throw UnknownAttemptReferenceException(cmd.captureUuid, ref)
         }
         cmd.content.verification?.let { v ->
-            if (v.result == VerificationResult.PASSED &&
-                v.command.isNullOrBlank() && v.testId.isNullOrBlank() && v.evidence.isNullOrBlank()
-            ) {
-                throw VerificationEvidenceRequiredException(cmd.captureUuid)
+            if (v.result == VerificationResult.PASSED) {
+                // 정책: 실행하지 않은(executed=false) PASSED 금지 — 안 돌려보고 "통과" 확정 방지.
+                // 수집 시점에 fail-fast 해, 봉인 후 import(validateVerification)에서야 422 나는 비대칭을 없앤다.
+                if (!v.executed) throw UnexecutedVerificationPassedException(cmd.captureUuid)
+                // PASSED 는 근거(command·testId·evidence) 최소 1개 필요.
+                if (v.command.isNullOrBlank() && v.testId.isNullOrBlank() && v.evidence.isNullOrBlank()) {
+                    throw VerificationEvidenceRequiredException(cmd.captureUuid)
+                }
             }
         }
         return solutions.save(

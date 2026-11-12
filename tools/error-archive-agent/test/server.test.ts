@@ -37,6 +37,8 @@ function fakeClient(overrides: Partial<ApiClient> = {}) {
     addSolution: async () => { throw new Error('unused'); },
     uploadArtifact: async () => { throw new Error('unused'); },
     completeCapture: async () => { throw new Error('unused'); },
+    searchCases: async () => { throw new Error('unused'); },
+    getCase: async () => { throw new Error('unused'); },
     ...overrides,
   };
   return { client: base, calls };
@@ -70,6 +72,8 @@ test('모든 기대 도구가 등록돼 있다', async () => {
     'capture_update_attempt',
     'capture_update_solution',
     'diagnose',
+    'find_cases',
+    'get_case',
   ]);
 });
 

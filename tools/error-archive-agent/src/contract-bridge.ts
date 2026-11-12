@@ -34,6 +34,8 @@ import type {
   SolutionContent,
   Reproduction,
   CaptureEnvironment,
+  AgentCaseListResponse,
+  AgentCaseDetail,
 } from './types.js';
 
 type Schemas = components['schemas'];
@@ -62,6 +64,8 @@ type _AttemptResponse = Expect<AssignableTo<AttemptResponse, Schemas['AttemptRes
 type _SolutionResponse = Expect<AssignableTo<SolutionResponse, Schemas['SolutionResponse']>>;
 type _ArtifactResponse = Expect<AssignableTo<ArtifactResponse, Schemas['ArtifactResponse']>>;
 type _CaptureDetailResponse = Expect<AssignableTo<CaptureDetailResponse, Schemas['CaptureDetailResponse']>>;
+type _AgentCaseListResponse = Expect<AssignableTo<AgentCaseListResponse, Schemas['AgentCaseListResponse']>>;
+type _AgentCaseDetail = Expect<AssignableTo<AgentCaseDetail, Schemas['AgentCaseDetailResponse']>>;
 
 // --- 공유 VO: 요청·응답에 임베드되므로 손 ⊆ 계약 ---
 type _CaptureContent = Expect<AssignableTo<CaptureContent, Schemas['CaptureContent']>>;

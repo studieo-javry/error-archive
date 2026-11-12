@@ -106,10 +106,19 @@ class ImportCaptureUseCase(
         // 검토 시점 revision 일치 확인(봉인 후 편집이 끼면 409 REVISION_CONFLICT).
         capture.requireRevision(cmd.reviewedRevision)
 
-        // 귀속할 ProjectBinding 은 본인 소유여야 함(없거나 타인 소유면 404 — 존재 노출 회피).
-        cmd.projectBindingId?.let { bid ->
-            val binding = projectBindings.findById(bid)
-            if (binding == null || binding.ownerUserId != cmd.reviewerUserId) throw ProjectBindingNotFoundException(bid)
+        // 귀속할 ProjectBinding: 명시 지정(cmd) 우선, 없으면 capture 가 상속한 바인딩(= 확인/정정; PR-Y).
+        //  - 명시 지정은 본인 소유여야 함(없거나 타인 → 404, 존재 노출 회피).
+        //  - 상속값이 무효(삭제됨/타인)면 사용자가 고른 게 아니므로 미귀속(null)으로 처리(404 아님).
+        val effectiveProjectBindingId: Long? = run {
+            cmd.projectBindingId?.let { bid ->
+                val binding = projectBindings.findById(bid)
+                if (binding == null || binding.ownerUserId != cmd.reviewerUserId) throw ProjectBindingNotFoundException(bid)
+                return@run bid
+            }
+            capture.projectBindingId?.let { bid ->
+                val binding = projectBindings.findById(bid)
+                if (binding != null && binding.ownerUserId == cmd.reviewerUserId) bid else null
+            }
         }
 
         val now = Instant.now(clock)
@@ -171,7 +180,7 @@ class ImportCaptureUseCase(
                 source = ContentSource.AGENT_IMPORT,
                 reviewedByUserId = reviewer,
                 sourceCaptureId = captureId,
-                projectBindingId = cmd.projectBindingId,
+                projectBindingId = effectiveProjectBindingId,
             )
         )
         val caseId = case.id!!

@@ -66,6 +66,7 @@ class AgentCaptureRepositoryAdapter(
             updatedAt = capture.updatedAt,
             completedAt = capture.completedAt,
             importedCaseId = capture.importedCaseId,
+            projectBindingId = capture.projectBindingId,
         )
         // saveAndFlush: @Version(revision) 증가가 flush 시점에 일어나므로, 응답에 새 revision 을
         // 반영하려면 즉시 flush 해야 한다(그래야 멱등 영수증에도 올바른 revision 이 저장된다).
@@ -101,6 +102,7 @@ class AgentCaptureRepositoryAdapter(
         updatedAt = updatedAt,
         completedAt = completedAt,
         importedCaseId = importedCaseId,
+        projectBindingId = projectBindingId,
     )
 }
 
@@ -198,6 +200,7 @@ class CaptureSessionRepositoryAdapter(
             clientVersion = session.clientVersion,
             clientSessionId = session.clientSessionId,
             startedAt = session.startedAt,
+            projectBindingId = session.projectBindingId,
         )
         return jpa.save(entity).toDomain()
     }
@@ -219,6 +222,7 @@ class CaptureSessionRepositoryAdapter(
         clientVersion = clientVersion,
         clientSessionId = clientSessionId,
         startedAt = startedAt,
+        projectBindingId = projectBindingId,
     )
 }
 

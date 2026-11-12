@@ -59,6 +59,9 @@ class AgentCaptureEntity(
     @Column(name = "project", length = 200)
     var project: String? = null,
 
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "content", columnDefinition = "jsonb", nullable = false)
     var content: String,
@@ -170,6 +173,9 @@ class CaptureSessionEntity(
 
     @Column(name = "started_at", nullable = false, updatable = false)
     var startedAt: Instant,
+
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
 )
 
 @Entity

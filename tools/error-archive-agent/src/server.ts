@@ -12,6 +12,14 @@ import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
+import { createRequire } from 'node:module';
+
+/**
+ * 단일 소스: MCP 핸드셰이크 버전을 package.json 에서 읽는다 → 버전 범프는 package.json 한 곳만.
+ * createRequire 라 tsc rootDir 제약(JSON import TS6059)을 피하고, dist/src/설치본 모두 `../package.json`
+ * 이 패키지 자신의 매니페스트로 해석된다.
+ */
+const { version: PKG_VERSION } = createRequire(import.meta.url)('../package.json') as { version: string };
 
 function ok(data: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -53,7 +61,7 @@ const CONTENT_SHAPE = {
 };
 
 export function createServer(client: ApiClient): McpServer {
-  const server = new McpServer({ name: 'error-archive-agent', version: '0.1.0' });
+  const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
 
   server.registerTool(
     'diagnose',

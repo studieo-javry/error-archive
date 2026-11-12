@@ -1,0 +1,57 @@
+name: agent-connector-publish
+
+# error-archive-agent(MCP 커넥터)를 npm 에 게시한다. **수동 트리거 전용** — 실수 게시 방지.
+#
+# 사전 준비(저장소 관리자):
+#   1) npm 에 @error-archive 조직(scope) + 게시 권한 토큰 발급
+#   2) 리포 Secrets 에 NPM_TOKEN 추가
+#   3) package.json 의 version 을 올리고(semver), license/공개여부 확정
+#   4) Actions 탭 → agent-connector-publish → Run workflow
+#
+# 비공개 scoped 패키지(`publishConfig.access=restricted`)로 게시된다 — npm 유료 조직(@error-archive) 필요.
+# 설치하는 쪽도 읽기 권한 토큰으로 인증해야 한다(README 참고).
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '실제 게시 대신 pack 만 (검증용)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: agent-connector-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/error-archive-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          cache-dependency-path: tools/error-archive-agent/package-lock.json
+      - run: npm ci
+      - name: Verify (typecheck/test/build)
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+      - name: NPM_TOKEN 확인
+        if: ${{ !inputs.dry_run }}
+        run: test -n "${NODE_AUTH_TOKEN}" || { echo "::error::NPM_TOKEN secret 이 없습니다. 게시 전 설정 필요."; exit 1; }
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish (dry-run)
+        if: ${{ inputs.dry_run }}
+        run: npm publish --dry-run --access restricted
+      - name: Publish (npm)
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access restricted
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

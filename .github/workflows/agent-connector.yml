@@ -18,6 +18,9 @@ on:
     paths:
       - 'tools/error-archive-agent/**'
       - '.github/workflows/agent-connector.yml'
+  # 실제 서버 계약 E2E 는 stg 에 capture 를 남기므로(자동 정리 없음) 상시(push/PR)엔 안 돌리고
+  # 수동 실행(workflow_dispatch) 때만 돌린다. typecheck/test/build/openapi:check 는 push/PR 에서 계속 돈다.
+  workflow_dispatch:
 
 concurrency:
   group: agent-connector-${{ github.ref }}
@@ -75,8 +78,9 @@ jobs:
         # 커밋된 스냅샷(openapi/agent-openapi.json)에서 타입을 다시 생성 → 커밋본과 다르면 실패.
         # (Kotlin DTO 변경 후 `npm run openapi:snapshot && npm run openapi:gen` 으로 갱신·커밋해야 함)
         run: npm run openapi:check
-      - name: 실제 서버 계약 E2E (타입검사와 연계)
-        # 계약이 바뀌면 타입 게이트(위)와 함께 런타임 계약도 검증. 커넥터 apiClient 로 실제 게이트웨이
-        # /api/v1/agent/** 를 호출한다. E2E_BASE_URL/E2E_AGENT_TOKEN(repo Variables/Secrets)이 있을
-        # 때만 실제 실행되고, 없으면 테스트가 스스로 skip 한다(가짜 통과 방지 — skip 은 로그에 남음).
+      - name: 실제 서버 계약 E2E (수동 실행 전용)
+        # 실제 게이트웨이 /api/v1/agent/** 를 호출해 런타임 계약을 검증한다. stg 에 capture 를 생성하고
+        # 서버측 자동 정리가 없으므로, 매 push/PR 가 아니라 **workflow_dispatch(수동)** 일 때만 실행한다.
+        # E2E_BASE_URL/E2E_AGENT_TOKEN(repo Variables/Secrets)이 있을 때 실제 실행, 없으면 자체 skip.
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: npm run test:e2e

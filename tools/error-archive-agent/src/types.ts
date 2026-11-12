@@ -79,6 +79,10 @@ export interface RegisterSessionRequest {
   clientKind: string;
   clientVersion?: string;
   clientSessionId: string;
+  /** 세션의 프로젝트 귀속(본인 소유 ProjectBinding). 생성될 Capture 가 상속. projectKey 보다 우선. */
+  projectBindingId?: number;
+  /** 프로젝트 식별자 — 바인딩 없으면 본인 소유로 생성(findOrCreate). */
+  projectKey?: string;
 }
 
 export interface CreateCaptureRequest {
@@ -87,6 +91,8 @@ export interface CreateCaptureRequest {
   project?: string;
   content: CaptureContent;
   sessionUuid?: string;
+  /** 명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속. */
+  projectBindingId?: number;
 }
 
 export interface PatchCaptureRequest {

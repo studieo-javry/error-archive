@@ -2,6 +2,7 @@ package org.studieojavry.coreapi.agentcapture.presentation.web.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Positive
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import java.time.Instant
 
@@ -36,4 +37,11 @@ data class ProjectBindingResponse(
 @Schema(description = "소유자의 프로젝트 바인딩 목록.")
 data class ProjectBindingListResponse(
     val items: List<ProjectBindingResponse>,
+)
+
+@Schema(description = "기존 Case 를 ProjectBinding 에 귀속시키는 요청. 본인 소유 Case + 본인 소유 Binding 만.")
+data class AssignCaseProjectBindingRequest(
+    @field:Positive
+    @Schema(description = "귀속시킬 ProjectBinding id(본인 소유).")
+    val projectBindingId: Long,
 )

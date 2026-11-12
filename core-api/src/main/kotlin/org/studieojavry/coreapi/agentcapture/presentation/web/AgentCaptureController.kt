@@ -110,10 +110,13 @@ class AgentCaptureController(
                 registerSession.invoke(
                     RegisterSessionCommand(
                         sessionUuid = request.sessionUuid,
+                        ownerUserId = principal.userId,
                         connectionId = UUID.fromString(principal.connectionId),
                         clientKind = request.clientKind,
                         clientVersion = request.clientVersion,
                         clientSessionId = request.clientSessionId,
+                        projectBindingId = request.projectBindingId,
+                        projectKey = request.projectKey,
                     )
                 )
             )
@@ -155,6 +158,7 @@ class AgentCaptureController(
                         project = request.project,
                         content = request.content,
                         sessionUuid = request.sessionUuid,
+                        projectBindingId = request.projectBindingId,
                     )
                 )
             )

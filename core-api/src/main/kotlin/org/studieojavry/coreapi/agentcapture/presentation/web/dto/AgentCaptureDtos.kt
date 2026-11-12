@@ -24,6 +24,10 @@ data class RegisterSessionRequest(
     @field:NotBlank val clientKind: String,
     val clientVersion: String? = null,
     @field:NotBlank val clientSessionId: String,
+    @Schema(description = "이 세션의 프로젝트 귀속(본인 소유 ProjectBinding). 생성될 Capture 가 상속한다. projectKey 보다 우선.")
+    val projectBindingId: Long? = null,
+    @Schema(description = "프로젝트 식별자 — 해당 바인딩이 없으면 본인 소유로 생성(findOrCreate). 커넥터가 로컬 프로젝트 키를 보낼 때.")
+    val projectKey: String? = null,
 )
 
 @Schema(description = "OPEN 초안 생성. captureUuid 는 클라이언트가 부여하며 재전송 시 변경하지 않는다.")
@@ -32,8 +36,10 @@ data class CreateCaptureRequest(
     val title: String? = null,
     val project: String? = null,
     val content: CaptureContent = CaptureContent.EMPTY,
-    @Schema(description = "이 초안을 이을 세션(선택). 등록된 세션이면 연결한다.")
+    @Schema(description = "이 초안을 이을 세션(선택). 등록된 세션이면 연결하고 그 세션의 프로젝트를 상속한다.")
     val sessionUuid: UUID? = null,
+    @Schema(description = "명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속.")
+    val projectBindingId: Long? = null,
 )
 
 @Schema(description = "OPEN 초안 기본 정보 교체(title/project/content 전체 교체).")
@@ -261,8 +267,10 @@ data class ImportCaptureRequest(
     val solutionEdits: Map<String, SolutionEditRequest> = emptyMap(),
     @Schema(description = "검토 확인 설명(선택).")
     val note: String? = null,
-    @Schema(description = "생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). case:read 스코프 기준. 미지정 시 미귀속.")
+    @Schema(description = "귀속시킬 ProjectBinding id(본인 소유). 미지정 시 capture 의 프로젝트를 그대로 확인(상속). 정정 시 지정.")
     val projectBindingId: Long? = null,
+    @Schema(description = "명시적 프로젝트 해제. true 면 capture 가 프로젝트에 귀속돼 있어도 프로젝트 없이 반영한다(projectBindingId 보다 우선).")
+    val clearProjectBinding: Boolean = false,
 )
 
 @Schema(description = "검토 중 Step 수정. null 필드는 캡처 원본 유지, body 는 빈 문자열이면 본문 없음.")

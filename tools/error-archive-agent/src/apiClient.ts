@@ -26,6 +26,7 @@ import type {
   SessionResponse,
   SolutionResponse,
   UpdateAttemptRequest,
+  UpdateSolutionRequest,
   UploadArtifactResult,
 } from './types.js';
 
@@ -83,6 +84,7 @@ export interface ApiClient {
   addAttempt(captureUuid: string, req: AddAttemptRequest, idempotencyKey?: string): Promise<AttemptResponse>;
   updateAttempt(captureUuid: string, clientAttemptId: string, req: UpdateAttemptRequest): Promise<AttemptResponse>;
   addSolution(captureUuid: string, req: AddSolutionRequest, idempotencyKey?: string): Promise<SolutionResponse>;
+  updateSolution(captureUuid: string, clientSolutionId: string, req: UpdateSolutionRequest): Promise<SolutionResponse>;
   uploadArtifact(captureUuid: string, clientArtifactId: string, filePath: string): Promise<UploadArtifactResult>;
   completeCapture(captureUuid: string, req: CompleteCaptureRequest, idempotencyKey?: string): Promise<CaptureResponse>;
 }
@@ -179,6 +181,9 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     addSolution: (uuid, req, key) =>
       request<SolutionResponse>({ method: 'POST', path: `/api/v1/agent/captures/${uuid}/solutions`, body: req, idempotencyKey: key ?? newIdempotencyKey() }),
+
+    updateSolution: (uuid, clientSolutionId, req) =>
+      request<SolutionResponse>({ method: 'PATCH', path: `/api/v1/agent/captures/${uuid}/solutions/${encodeURIComponent(clientSolutionId)}`, body: req }),
 
     completeCapture: (uuid, req, key) =>
       request<CaptureResponse>({ method: 'POST', path: `/api/v1/agent/captures/${uuid}/complete`, body: req, idempotencyKey: key ?? newIdempotencyKey() }),

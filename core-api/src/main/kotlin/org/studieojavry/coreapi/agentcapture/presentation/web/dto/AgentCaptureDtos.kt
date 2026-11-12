@@ -66,6 +66,12 @@ data class AddSolutionRequest(
     val content: SolutionContent,
 )
 
+@Schema(description = "기존 Solution 후보 수정(통째 교체). clientSolutionId 는 경로로 지정. OPEN 에서만.")
+data class UpdateSolutionRequest(
+    @field:NotBlank val title: String,
+    val content: SolutionContent,
+)
+
 @Schema(description = "봉인 요청(expectedRevision 로 낙관 검사).")
 data class CompleteCaptureRequest(
     val expectedRevision: Int? = null,

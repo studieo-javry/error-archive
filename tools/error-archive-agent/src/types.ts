@@ -115,6 +115,11 @@ export interface AddSolutionRequest {
   content: SolutionContent;
 }
 
+export interface UpdateSolutionRequest {
+  title: string;
+  content: SolutionContent;
+}
+
 export interface CompleteCaptureRequest {
   expectedRevision?: number;
 }

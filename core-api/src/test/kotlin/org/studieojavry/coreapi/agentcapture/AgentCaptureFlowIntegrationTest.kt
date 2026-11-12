@@ -239,6 +239,54 @@ class AgentCaptureFlowIntegrationTest {
     }
 
     @Test
+    fun `Solution 수정(PATCH) 으로 title·verification 교체가 반영된다`() {
+        val uuid = UUID.randomUUID()
+        createCapture(uuid, "k-us")
+        addAttempt(uuid, "a1", "SUCCEEDED", "k-us-a1")
+        mvc.perform(
+            post("/api/v1/agent/captures/$uuid/solutions").with(agent())
+                .header("Idempotency-Key", "k-us-sol")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "clientSolutionId" to "s1", "title" to "초안 해결",
+                    "content" to mapOf("clientAttemptIds" to listOf("a1")),
+                ))),
+        ).andExpect(status().isCreated)
+        // 수정: title + verification 통째 교체
+        mvc.perform(
+            patch("/api/v1/agent/captures/$uuid/solutions/s1").with(agent())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "title" to "정정된 해결",
+                    "content" to mapOf(
+                        "clientAttemptIds" to listOf("a1"),
+                        "verification" to mapOf("result" to "PASSED", "executed" to true, "command" to "./gradlew test"),
+                    ),
+                ))),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.title").value("정정된 해결"))
+        // 영속 확인
+        mvc.perform(get("/api/v1/agent/captures/$uuid").with(agent()))
+            .andExpect(jsonPath("$.solutions[0].title").value("정정된 해결"))
+            .andExpect(jsonPath("$.solutions[0].content.verification.result").value("PASSED"))
+            .andExpect(jsonPath("$.solutions[0].content.verification.executed").value(true))
+            .andExpect(jsonPath("$.solutions[0].content.verification.command").value("./gradlew test"))
+    }
+
+    @Test
+    fun `모르는 clientSolutionId 수정은 422 UNKNOWN_SOLUTION_REFERENCE`() {
+        val uuid = UUID.randomUUID()
+        createCapture(uuid, "k-us404")
+        addAttempt(uuid, "a1", "SUCCEEDED", "k-us404-a1")
+        mvc.perform(
+            patch("/api/v1/agent/captures/$uuid/solutions/does-not-exist").with(agent())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf(
+                    "title" to "x", "content" to mapOf("clientAttemptIds" to listOf("a1")),
+                ))),
+        ).andExpect(status().isUnprocessableEntity).andExpect(jsonPath("$.code").value("UNKNOWN_SOLUTION_REFERENCE"))
+    }
+
+    @Test
     fun `타인 소유 초안 조회는 404`() {
         val uuid = UUID.randomUUID()
         createCapture(uuid, "k3")

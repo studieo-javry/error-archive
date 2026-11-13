@@ -84,7 +84,13 @@ class AgentCaptureRepositoryAdapter(
         status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
     ): List<AgentCapture> =
         jpa.findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(ownerUserId, status).map { it.toDomain() }
-        
+
+    override fun listByConnectionAndStatus(
+        connectionId: UUID,
+        status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
+    ): List<AgentCapture> =
+        jpa.findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(connectionId, status).map { it.toDomain() }
+
     override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
@@ -207,6 +213,9 @@ class CaptureSessionRepositoryAdapter(
 
     override fun findByUuid(sessionUuid: UUID): CaptureSession? =
         jpa.findBySessionUuid(sessionUuid)?.toDomain()
+
+    override fun linkedCaptureIds(sessionId: Long): Set<Long> =
+        linkJpa.captureIdsBySessionId(sessionId).toSet()
 
     override fun link(sessionId: Long, captureId: Long) {
         if (!linkJpa.existsBySessionIdAndCaptureId(sessionId, captureId)) {

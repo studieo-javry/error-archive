@@ -19,6 +19,8 @@ interface AgentCaptureRepositoryPort {
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
     /** 소유자의 특정 상태 초안 목록(검토 큐 = READY_FOR_REVIEW). 최근 갱신순. */
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
+    /** 연결(install)이 생성한 특정 상태 초안 목록. 최근 갱신순. 진행 중(OPEN) Capture 재사용 후보 조회용. */
+    fun listByConnectionAndStatus(connectionId: UUID, status: CaptureStatus): List<AgentCapture>
     /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
     fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
 }
@@ -84,6 +86,8 @@ interface CaptureSessionRepositoryPort {
     fun findByUuid(sessionUuid: UUID): CaptureSession?
     /** Capture↔Session 연결(멱등 — 이미 연결돼 있으면 무시). */
     fun link(sessionId: Long, captureId: Long)
+    /** 이 세션에 연결된 Capture id 집합(진행 중 후보를 세션 범위로 좁힐 때). */
+    fun linkedCaptureIds(sessionId: Long): Set<Long>
 }
 
 /**

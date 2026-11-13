@@ -204,6 +204,11 @@ data class CaptureDetailResponse(
     val artifacts: List<ArtifactResponse>,
 )
 
+@Schema(description = "진행 중(OPEN) Capture 후보 목록 — 같은 버그 재사용·다른 버그 분리 판단용.")
+data class OpenCaptureListResponse(
+    val items: List<CaptureResponse>,
+)
+
 // ── 검토 반영(PR4) ────────────────────────────────────────────────────────────
 
 @Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록.")

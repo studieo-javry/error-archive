@@ -42,6 +42,9 @@ interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
         @Param("since") since: java.time.Instant,
     ): List<Array<Any>>
 
+    /** 전역 상태별 현재 건수(ARC Prometheus 게이지 — scrape 마다 조회). */
+    fun countByStatus(status: CaptureStatus): Long
+
     /**
      * 변이(쓰기·봉인) 연산 전용 — capture 행을 PESSIMISTIC_WRITE(SELECT … FOR UPDATE)로 잠가
      * complete 와 add-attempt/solution/edit 를 capture 단위로 직렬화한다. add-attempt 는 capture

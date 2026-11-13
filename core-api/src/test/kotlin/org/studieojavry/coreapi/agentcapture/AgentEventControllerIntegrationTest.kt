@@ -12,6 +12,7 @@ import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfig
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -108,5 +109,50 @@ class AgentEventControllerIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(om.writeValueAsString(mapOf("events" to listOf(event("e1", mapOf("a" to 1)))))),
         ).andExpect(status().isForbidden)
+    }
+
+    private fun eventWithSession(id: String, session: String) = mapOf(
+        "clientEventId" to id, "eventType" to "PostToolUse", "localSequence" to 1,
+        "observedAt" to "2026-11-10T00:00:00Z", "redactedPayload" to mapOf("tool" to "bash"), "sessionId" to session,
+    )
+
+    @Test
+    fun `미분류 조회 — 본인 것만·sessionId 필터·타인 제외`() {
+        mvc.perform(
+            post("/api/v1/agent/events/batch").with(agent())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("events" to listOf(
+                    eventWithSession("o1", "s1"), eventWithSession("o2", "s1"), eventWithSession("o3", "s2"),
+                )))),
+        ).andExpect(status().isOk)
+
+        // 타인 이벤트
+        val other = authentication(
+            InternalAuthentication(5555L, listOf(SimpleGrantedAuthority("SCOPE_capture:write")), "gateway", UUID.randomUUID().toString(), listOf("capture:write")),
+        )
+        mvc.perform(
+            post("/api/v1/agent/events/batch").with(other)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(mapOf("events" to listOf(eventWithSession("x1", "s1"))))),
+        ).andExpect(status().isOk)
+
+        // 전체(본인) → o1·o3 포함, 타인 x1 제외
+        mvc.perform(get("/api/v1/agent/events").with(agent(listOf("capture:read"))))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='o1')]").exists())
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='o3')]").exists())
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='x1')]").doesNotExist())
+
+        // sessionId=s1 → o1 포함, o3(s2) 제외
+        mvc.perform(get("/api/v1/agent/events").with(agent(listOf("capture:read"))).queryParam("sessionId", "s1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='o1')]").exists())
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='o3')]").doesNotExist())
+    }
+
+    @Test
+    fun `조회는 capture-read 필요 — 없으면 403`() {
+        mvc.perform(get("/api/v1/agent/events").with(agent(listOf("capture:write"))))
+            .andExpect(status().isForbidden)
     }
 }

@@ -356,6 +356,15 @@ class CaptureEventRepositoryAdapter(
     override fun findByConnectionAndClientId(connectionId: java.util.UUID, clientEventId: String): CaptureEvent? =
         jpa.findByConnectionIdAndClientEventId(connectionId, clientEventId)?.toDomain()
 
+    override fun findByOwnerAndStatus(
+        ownerUserId: Long,
+        status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus,
+        sessionId: String?,
+        limit: Int,
+    ): List<CaptureEvent> =
+        jpa.findByOwnerAndStatus(ownerUserId, status, sessionId, org.springframework.data.domain.PageRequest.of(0, limit))
+            .map { it.toDomain() }
+
     override fun save(event: CaptureEvent): CaptureEvent {
         val entity = CaptureEventEntity(
             id = event.id,

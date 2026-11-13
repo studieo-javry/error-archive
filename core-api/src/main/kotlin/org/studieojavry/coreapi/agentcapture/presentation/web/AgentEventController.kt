@@ -5,12 +5,19 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventItem
 import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventsUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.ListAgentEventsUseCase
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentEventListResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentEventSummaryResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.EventBatchRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.EventBatchResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.EventResultResponse
@@ -27,8 +34,42 @@ import java.util.UUID
 @RequestMapping("/api/v1/agent/events")
 class AgentEventController(
     private val ingestEvents: IngestEventsUseCase,
+    private val listEvents: ListAgentEventsUseCase,
     private val objectMapper: ObjectMapper,
 ) {
+
+    @Operation(
+        summary = "미분류 이벤트 조회",
+        description = "본인 소유 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 " +
+            "판단하기 위한 후보. sessionId 로 현재 세션만 좁힐 수 있다. 조회는 연결하지 않는다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "403", description = "capture:read 스코프 없음"),
+    )
+    @GetMapping
+    fun list(
+        principal: AgentPrincipal,
+        @RequestParam(required = false, defaultValue = "UNCLASSIFIED") status: String,
+        @RequestParam(required = false) sessionId: String?,
+        @RequestParam(defaultValue = "30") limit: Int,
+    ): AgentEventListResponse {
+        principal.requireScope(AgentScopes.CAPTURE_READ)
+        val st = runCatching { CaptureEventStatus.valueOf(status.uppercase()) }.getOrDefault(CaptureEventStatus.UNCLASSIFIED)
+        val items = listEvents.invoke(principal.userId, st, sessionId?.takeIf { it.isNotBlank() }, limit.coerceIn(1, 100))
+        return AgentEventListResponse(items.map(::toSummary))
+    }
+
+    private fun toSummary(e: CaptureEvent): AgentEventSummaryResponse = AgentEventSummaryResponse(
+        clientEventId = e.clientEventId,
+        eventType = e.eventType,
+        sessionId = e.sessionId,
+        observedAt = e.observedAt,
+        toolCallId = e.toolCallId,
+        truncated = e.truncated,
+        status = e.status.name,
+        redactedPayload = objectMapper.readTree(e.redactedPayload),
+    )
 
     @Operation(
         summary = "이벤트 배치 적재",

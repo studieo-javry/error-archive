@@ -4,6 +4,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -32,6 +33,17 @@ interface CaptureImportRepositoryPort {
 interface CaptureEventRepositoryPort {
     fun findByConnectionAndClientId(connectionId: UUID, clientEventId: String): CaptureEvent?
     fun save(event: CaptureEvent): CaptureEvent
+
+    /**
+     * 본인 소유 이벤트를 상태별 조회(선택적 sessionId 필터). AI 가 어떤 이벤트를 Capture 에 연결할지
+     * 판단하기 위한 후보 조회(B). observedAt DESC. 인덱스 ix_capture_event_owner_status 활용.
+     */
+    fun findByOwnerAndStatus(
+        ownerUserId: Long,
+        status: CaptureEventStatus,
+        sessionId: String?,
+        limit: Int,
+    ): List<CaptureEvent>
 }
 
 /** 프로젝트 바인딩(P1 토대). 소유자별 projectKey 유일. */

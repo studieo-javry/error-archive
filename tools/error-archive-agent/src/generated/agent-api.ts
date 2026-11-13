@@ -246,6 +246,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 미분류 이벤트 조회
+         * @description 본인 소유 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보. sessionId 로 현재 세션만 좁힐 수 있다. 조회는 연결하지 않는다.
+         */
+        get: operations["list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/cases": {
         parameters: {
             query?: never;
@@ -383,10 +403,14 @@ export interface components {
             evidenceRefs: string[];
         };
         JsonNode: {
-            string?: boolean;
+            container?: boolean;
             empty?: boolean;
             array?: boolean;
+            number?: boolean;
+            object?: boolean;
+            float?: boolean;
             missingNode?: boolean;
+            null?: boolean;
             valueNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
@@ -403,11 +427,7 @@ export interface components {
             textual?: boolean;
             boolean?: boolean;
             binary?: boolean;
-            object?: boolean;
-            container?: boolean;
-            null?: boolean;
-            number?: boolean;
-            float?: boolean;
+            string?: boolean;
             embeddedValue?: boolean;
         };
         /** @description 배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
@@ -588,6 +608,24 @@ export interface components {
             userId: number;
             connectionId: string;
             scopes: string[];
+        };
+        /** @description 미분류 이벤트 조회 목록. */
+        AgentEventListResponse: {
+            items: components["schemas"]["AgentEventSummaryResponse"][];
+        };
+        /** @description 미분류 이벤트 조회 결과 1건(AI 가 Capture 연결 여부를 판단하기 위한 후보). */
+        AgentEventSummaryResponse: {
+            clientEventId: string;
+            eventType: string;
+            sessionId?: string | null;
+            /** Format: date-time */
+            observedAt: string;
+            toolCallId?: string | null;
+            truncated: boolean;
+            /** @description UNCLASSIFIED | LINKED | DISCARDED */
+            status: string;
+            /** @description 마스킹된 payload(≤64 KiB). AI 판단 재료. */
+            redactedPayload: components["schemas"]["JsonNode"];
         };
         /** @description 에이전트 case 검색 결과 목록. */
         AgentCaseListResponse: {
@@ -1285,6 +1323,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+                status?: string;
+                sessionId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AgentEventListResponse"];
+                };
+            };
+            /** @description capture:read 스코프 없음 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AgentEventListResponse"];
+                };
             };
         };
     };

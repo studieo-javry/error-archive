@@ -10,10 +10,11 @@
  *
  * ⚠️ MCP 모드에서 stdout 은 프로토콜 채널이다. 로그/진단은 반드시 stderr 로만 낸다.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
@@ -142,9 +143,24 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * Hook 어댑터(P1-4 + G) — Claude Code 가 Hook 으로 호출. stdin JSON 에서:
+ * ARC 자동기록 정책 — UserPromptSubmit Hook 이 모델에게 일시 문맥(additionalContext)으로 전달한다.
+ * 사용자 프롬프트 원문을 저장·전송하지 않고(개인정보 최소화, 결정 3), "무엇을 기록하는가"의 정책만 알린다.
+ * 명령문이 아니라 **사실 서술**로 쓴다(명령형 system 문구는 프롬프트 인젝션 방어를 자극할 수 있어 — Claude Code 문서).
+ */
+const RECORDING_POLICY =
+  '[Error Archive 자동기록] 이 세션에는 문제 해결 경험을 남기는 MCP 도구가 연결돼 있다' +
+  '(capture_list_open, capture_start, capture_link_events, capture_add_attempt, capture_add_solution, capture_complete). ' +
+  '이 연동의 기록 정책: 사용자가 버그를 제보했거나 AI 가 테스트·빌드 실패 등 오류를 발견해 원인 조사·수정·검증을 수행하는 작업은, ' +
+  '사용자가 기록을 따로 요청하지 않아도 하나의 Capture 로 남기는 것이 대상이다. 같은 세션에서 진행 중인 Capture 는 ' +
+  'capture_list_open 으로 확인할 수 있고, 같은 문제의 연속이면 그 captureUuid 를 재사용하며 원인이 다른 별개 문제면 새 Capture 로 분리한다. ' +
+  '사용자가 수정 방향을 직접 선택했다면 그 판단과 이유도 같은 Capture 에 함께 남는다. 단순 질문·설명·의도적 실패 테스트·일시적 환경 오류는 대상이 아니다. ' +
+  '정식 Case 반영은 사용자 검토 단계에서 이뤄지므로 AI 는 Capture 작성·봉인(capture_complete)까지만 담당하며, 미해결로 끝난 조사도 봉인해 남길 수 있다.';
+
+/**
+ * Hook 어댑터(P1-4 + G + ARC) — Claude Code 가 Hook 으로 호출. stdin JSON 에서:
  *   1) 세션 문맥({session_id, cwd}) 을 로컬 저장소에 기록(G — 수집 대상 여부와 무관, MCP 서버가 읽어 복원).
- *   2) 수집 대상(PostToolUse·Stop)이면 정규화해 로컬 큐에 적재(네트워크 X).
+ *   2) UserPromptSubmit 이면 원문을 저장하지 않고 자동기록 정책만 additionalContext 로 주입(ARC 결정 3).
+ *   3) 수집 대상(PostToolUse·PostToolUseFailure·Stop)이면 정규화해 로컬 큐에 적재(네트워크 X).
  * 항상 0 종료(Claude Code 흐름을 막지 않음). 오류여도 조용히 통과.
  */
 async function runHook(): Promise<number> {
@@ -160,7 +176,16 @@ async function runHook(): Promise<number> {
     } catch (err) {
       process.stderr.write(`[hook] 문맥 기록 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
     }
-    // (2) 수집 대상만 이벤트 큐에 적재.
+    // (2) UserPromptSubmit: 프롬프트 원문은 적재·전송하지 않고(개인정보 최소화), 자동기록 정책만 전달.
+    if (input.hook_event_name === 'UserPromptSubmit') {
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: RECORDING_POLICY },
+        }),
+      );
+      return 0;
+    }
+    // (3) 수집 대상만 이벤트 큐에 적재.
     if (!shouldCollect(input)) return 0;
     const queue = new EventQueue(ns);
     queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
@@ -180,10 +205,34 @@ async function runFlush(): Promise<number> {
   return 0;
 }
 
+/** 설치할 Hook 이벤트. UserPromptSubmit=사용자 제보 감지+정책 주입(ARC), PostToolUseFailure=도구 실패(에러) 수집. */
+const INSTALLED_HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'Stop'];
+
+/**
+ * 자동기록 Skill(error-archive-recording/SKILL.md)을 사용자 skills 디렉터리에 설치한다. 모델이 버그 조사·수정
+ * 작업에서 이 Skill 을 자동 로드해 기록 절차를 따르도록(ARC). 실패해도 비치명적(Hook·additionalContext 로도 동작).
+ */
+function installSkill(): string | null {
+  try {
+    const src = fileURLToPath(new URL('../skill/error-archive-recording/SKILL.md', import.meta.url));
+    const skillsDir = process.env.CLAUDE_SKILLS_DIR ?? join(homedir(), '.claude', 'skills');
+    const destDir = join(skillsDir, 'error-archive-recording');
+    mkdirSync(destDir, { recursive: true });
+    const dest = join(destDir, 'SKILL.md');
+    writeFileSync(dest, readFileSync(src, 'utf8'));
+    return dest;
+  } catch (err) {
+    process.stderr.write(`[install] Skill 설치 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    return null;
+  }
+}
+
 /**
  * Claude Code settings.json 에 Hook 설정 주입.
  *   SessionStart → 세션 시작 시 cwd·session_id 기록(첫 도구 실행 전에 프로젝트 문맥 확보, G).
- *   PostToolUse·Stop → 이벤트 수집 + 문맥 갱신.
+ *   UserPromptSubmit → 사용자 제보형 버그 감지 + 자동기록 정책 주입(원문 미저장, ARC 결정 3).
+ *   PostToolUse·PostToolUseFailure → 도구 성공·실패 이벤트 수집 + 문맥 갱신(실패는 PostToolUseFailure 로 발화).
+ *   Stop → 세션 종료 신호 수집.
  * 모두 `error-archive-agent hook` 으로 연결.
  */
 async function runInstallHooks(): Promise<number> {
@@ -196,7 +245,7 @@ async function runInstallHooks(): Promise<number> {
     settings = {};
   }
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
+  for (const event of INSTALLED_HOOK_EVENTS) {
     const arr = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     const already = arr.some((m) => JSON.stringify(m).includes('error-archive-agent hook'));
     if (!already) arr.push({ hooks: [hookCmd] });
@@ -205,11 +254,13 @@ async function runInstallHooks(): Promise<number> {
   settings.hooks = hooks;
   try {
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-    process.stderr.write(`✓ Hook 설치: ${settingsPath} (SessionStart·PostToolUse·Stop → error-archive-agent hook)\n`);
+    process.stderr.write(`✓ Hook 설치: ${settingsPath} (${INSTALLED_HOOK_EVENTS.join('·')} → error-archive-agent hook)\n`);
+    const skillPath = installSkill();
+    if (skillPath) process.stderr.write(`✓ Skill 설치: ${skillPath} (error-archive-recording)\n`);
     return 0;
   } catch (err) {
     process.stderr.write(`✗ settings.json 쓰기 실패(${settingsPath}): ${err instanceof Error ? err.message : String(err)}\n`);
-    process.stderr.write('수동 설정: SessionStart·PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
+    process.stderr.write(`수동 설정: ${INSTALLED_HOOK_EVENTS.join('·')} Hook 에 \`error-archive-agent hook\` 커맨드를 추가하세요.\n`);
     return 1;
   }
 }

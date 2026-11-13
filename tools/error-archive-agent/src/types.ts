@@ -193,6 +193,11 @@ export interface CaptureDetailResponse {
   artifacts: ArtifactResponse[];
 }
 
+/** 진행 중(OPEN) Capture 후보 목록 — 같은 버그 재사용·다른 버그 분리 판단용(ARC). */
+export interface OpenCaptureListResponse {
+  items: CaptureResponse[];
+}
+
 /** 업로드 결과 — 서버가 201(신규)/200(멱등 재업로드)로 구분한다. */
 export interface UploadArtifactResult {
   artifact: ArtifactResponse;

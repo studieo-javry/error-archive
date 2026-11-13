@@ -1,6 +1,6 @@
 {
   "name": "@error-archive/agent",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "error-archive AI Agent Capture 커넥터 — Claude Code 등 로컬 AI 도구가 개발 중 오류·해결 과정을 비공개 초안으로 수집하는 MCP 서버.",
   "license": "UNLICENSED",
   "author": "error-archive",

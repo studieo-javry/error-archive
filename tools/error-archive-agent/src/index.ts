@@ -180,7 +180,12 @@ async function runFlush(): Promise<number> {
   return 0;
 }
 
-/** Claude Code settings.json 에 Hook(PostToolUse·Stop → `error-archive-agent hook`) 설정 주입. */
+/**
+ * Claude Code settings.json 에 Hook 설정 주입.
+ *   SessionStart → 세션 시작 시 cwd·session_id 기록(첫 도구 실행 전에 프로젝트 문맥 확보, G).
+ *   PostToolUse·Stop → 이벤트 수집 + 문맥 갱신.
+ * 모두 `error-archive-agent hook` 으로 연결.
+ */
 async function runInstallHooks(): Promise<number> {
   const settingsPath = process.env.CLAUDE_SETTINGS ?? join(homedir(), '.claude', 'settings.json');
   const hookCmd = { type: 'command', command: 'error-archive-agent hook' };
@@ -191,7 +196,7 @@ async function runInstallHooks(): Promise<number> {
     settings = {};
   }
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  for (const event of ['PostToolUse', 'Stop']) {
+  for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
     const arr = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     const already = arr.some((m) => JSON.stringify(m).includes('error-archive-agent hook'));
     if (!already) arr.push({ hooks: [hookCmd] });
@@ -200,11 +205,11 @@ async function runInstallHooks(): Promise<number> {
   settings.hooks = hooks;
   try {
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-    process.stderr.write(`✓ Hook 설치: ${settingsPath} (PostToolUse·Stop → error-archive-agent hook)\n`);
+    process.stderr.write(`✓ Hook 설치: ${settingsPath} (SessionStart·PostToolUse·Stop → error-archive-agent hook)\n`);
     return 0;
   } catch (err) {
     process.stderr.write(`✗ settings.json 쓰기 실패(${settingsPath}): ${err instanceof Error ? err.message : String(err)}\n`);
-    process.stderr.write('수동 설정: PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
+    process.stderr.write('수동 설정: SessionStart·PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
     return 1;
   }
 }

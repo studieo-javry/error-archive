@@ -32,6 +32,42 @@ export function shouldCollect(input: HookInput): boolean {
   return typeof input.hook_event_name === 'string' && COLLECTED_EVENTS.has(input.hook_event_name);
 }
 
+/**
+ * 데이터 수집 활성 여부(Q4) — 프로젝트 **귀속 승인**과 분리된 **수집 토글**. 끄면 이벤트 적재를 멈춘다
+ * (문맥 기록은 유지). 기본 on(hook 설치 자체가 명시적 opt-in). `ERROR_ARCHIVE_COLLECT=off|0|false|no` 로 중지.
+ */
+export function collectionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = (env.ERROR_ARCHIVE_COLLECT ?? 'on').trim().toLowerCase();
+  return !(v === 'off' || v === '0' || v === 'false' || v === 'no');
+}
+
+/** 기본 민감 패턴 — 이 경로/명령을 건드리는 도구 이벤트는 수집에서 제외(마스킹과 별개의 2차 방어). */
+const DEFAULT_SENSITIVE = [
+  '.env', 'id_rsa', 'id_ed25519', '.pem', '.p12', '.pfx', 'credentials',
+  '.npmrc', '.pypirc', '.aws/', '.ssh/', '.kube/config', '.git-credentials',
+];
+
+/** 사용자 추가 제외 패턴(ERROR_ARCHIVE_COLLECT_EXCLUDE, 콤마 구분, 소문자 부분일치). */
+export function sensitivePatterns(env: NodeJS.ProcessEnv = process.env): string[] {
+  const extra = (env.ERROR_ARCHIVE_COLLECT_EXCLUDE ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+  return [...DEFAULT_SENSITIVE, ...extra];
+}
+
+/** 이 이벤트의 tool_input 이 민감 경로/명령을 건드려 수집 제외해야 하는지. */
+export function isSensitive(input: HookInput, patterns: string[] = sensitivePatterns()): boolean {
+  if (input.tool_input == null) return false;
+  let hay: string;
+  try {
+    hay = JSON.stringify(input.tool_input).toLowerCase();
+  } catch {
+    return false;
+  }
+  return patterns.some((p) => hay.includes(p));
+}
+
 /** Hook JSON → 정규화 이벤트. redactedPayload 는 마스킹·절단된다. */
 export function normalizeHookEvent(input: HookInput, localSequence: number): EventItemRequest {
   const base = input.hook_event_name ?? 'Unknown';

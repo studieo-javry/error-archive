@@ -20,7 +20,7 @@ import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
 import { accountNamespace, EventQueue } from './eventQueue.js';
 import { flushQueue } from './eventSender.js';
-import { normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
+import { collectionEnabled, isSensitive, normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
 import { ProjectContext } from './projectContext.js';
 import { createServer } from './server.js';
@@ -123,8 +123,20 @@ async function runConnectProject(): Promise<number> {
     process.stderr.write('✓ 이미 연결됨.\n');
     return 0;
   }
+  // 수집 고지(Q4) — 승인은 "귀속 동의"일 뿐 아니라 "데이터 수집 동의"도 포함함을 명확히 알린다.
+  process.stderr.write(
+    '\n연결하면 이 프로젝트에서:\n' +
+      '  • Capture 가 이 프로젝트에 귀속됩니다.\n' +
+      '  • Hook 이 도구 실행의 입력/출력을 **마스킹·절단**해 이벤트로 수집합니다(시크릿은 가려짐).\n' +
+      '  • .env·키·크리덴셜 등 민감 경로를 건드리는 이벤트는 수집에서 제외됩니다.\n' +
+      '  • 사용자 프롬프트 원문은 저장·전송하지 않습니다.\n' +
+      '  • 수집을 끄려면 ERROR_ARCHIVE_COLLECT=off (추가 제외는 ERROR_ARCHIVE_COLLECT_EXCLUDE).\n',
+  );
+  if (!collectionEnabled()) {
+    process.stderr.write('  ⓘ 현재 ERROR_ARCHIVE_COLLECT=off — 승인해도 이벤트 수집은 중지 상태입니다.\n');
+  }
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const answer = await new Promise<string>((res) => rl.question('이 프로젝트로 연결할까요? [y/N] ', res));
+  const answer = await new Promise<string>((res) => rl.question('\n이 프로젝트로 연결·수집에 동의할까요? [y/N] ', res));
   rl.close();
   if (answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes') {
     await project.approve(resolved);
@@ -185,8 +197,10 @@ async function runHook(): Promise<number> {
       );
       return 0;
     }
-    // (3) 수집 대상만 이벤트 큐에 적재.
+    // (3) 수집 대상만 이벤트 큐에 적재. 단 수집 토글 off(Q4) 또는 민감 경로/명령 이벤트는 제외.
     if (!shouldCollect(input)) return 0;
+    if (!collectionEnabled()) return 0; // 귀속 승인과 분리된 수집 토글 — 문맥은 기록, 적재만 중지
+    if (isSensitive(input)) return 0; // .env·키·크리덴셜 등을 건드리는 이벤트는 수집 안 함(마스킹과 별개 2차 방어)
     const queue = new EventQueue(ns);
     queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
   } catch (err) {

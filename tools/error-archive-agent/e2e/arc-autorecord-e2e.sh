@@ -60,12 +60,16 @@ run_trial() { # id condition(nudge|plain) task(bug|noise) variant prompt
   local id="$1" cond="$2" task="$3" variant="$4" prompt="$5"
   local dist="$DIST_NUDGE"; [[ "$cond" == plain ]] && dist="$BASELINE_DIST"
   local repo="$WORK/$id" cfg="$WORK/$id-cfg"
-  mkdir -p "$repo/.claude/skills/error-archive-recording" "$cfg/queue"
+  mkdir -p "$repo/.claude" "$cfg/queue"
   ( cd "$repo" && git init -q && git remote add origin "https://github.com/acme/arc-$id.git" && git config user.email t@local && git config user.name t )
   write_bug "$repo" "$variant"
   ( cd "$repo" && git add -A && git commit -qm init )
   if [[ "$cond" == nudge ]]; then
-    cp "$SKILLSRC" "$repo/.claude/skills/error-archive-recording/SKILL.md"
+    # 기본은 Skill 미설치(= install-hooks 기본 동작 반영). ARC_WITH_SKILL=1 일 때만 상세 절차 Skill 포함.
+    if [[ "${ARC_WITH_SKILL:-0}" == "1" ]]; then
+      mkdir -p "$repo/.claude/skills/error-archive-recording"
+      cp "$SKILLSRC" "$repo/.claude/skills/error-archive-recording/SKILL.md"
+    fi
     printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"node %s hook"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"node %s hook"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"node %s hook"}]}],"PostToolUseFailure":[{"hooks":[{"type":"command","command":"node %s hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"node %s hook"}]}]}}\n' "$dist" "$dist" "$dist" "$dist" "$dist" > "$repo/.claude/settings.json"
   else
     rm -rf "$repo/.claude/skills"

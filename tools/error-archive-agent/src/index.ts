@@ -223,8 +223,11 @@ async function runFlush(): Promise<number> {
 const INSTALLED_HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'Stop'];
 
 /**
- * 자동기록 Skill(error-archive-recording/SKILL.md)을 사용자 skills 디렉터리에 설치한다. 모델이 버그 조사·수정
- * 작업에서 이 Skill 을 자동 로드해 기록 절차를 따르도록(ARC). 실패해도 비치명적(Hook·additionalContext 로도 동작).
+ * 자동기록 Skill(error-archive-recording/SKILL.md)을 사용자 skills 디렉터리에 설치한다(선택, opt-in).
+ *
+ * ablation 결과 Skill 없이도 additionalContext(UserPromptSubmit 정책)+도구 설명만으로 자발 기록이 100% 재현돼,
+ * **기본 설치하지 않는다**(과설계 회피). 상세 절차 가이드를 원하면 `install-hooks --with-skill` 로 설치한다.
+ * 실패해도 비치명적(Hook·additionalContext 로도 동작).
  */
 function installSkill(): string | null {
   try {
@@ -269,8 +272,13 @@ async function runInstallHooks(): Promise<number> {
   try {
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
     process.stderr.write(`✓ Hook 설치: ${settingsPath} (${INSTALLED_HOOK_EVENTS.join('·')} → error-archive-agent hook)\n`);
-    const skillPath = installSkill();
-    if (skillPath) process.stderr.write(`✓ Skill 설치: ${skillPath} (error-archive-recording)\n`);
+    // Skill 은 기본 미설치(opt-in). --with-skill 일 때만 설치.
+    if (process.argv.includes('--with-skill')) {
+      const skillPath = installSkill();
+      if (skillPath) process.stderr.write(`✓ Skill 설치: ${skillPath} (error-archive-recording)\n`);
+    } else {
+      process.stderr.write('ⓘ 자동기록은 Hook 만으로 동작합니다. 상세 절차 Skill 을 쓰려면: install-hooks --with-skill\n');
+    }
     return 0;
   } catch (err) {
     process.stderr.write(`✗ settings.json 쓰기 실패(${settingsPath}): ${err instanceof Error ? err.message : String(err)}\n`);

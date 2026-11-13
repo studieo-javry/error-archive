@@ -64,13 +64,17 @@ async function runServer(): Promise<void> {
   // 설정이 없으면 즉시 실패(MCP 핸드셰이크 전에 명확히 알림).
   const config = loadConfig();
   const client = createApiClient(config, undefined, resolveClientInfo());
+  const ns = accountNamespace(config.baseUrl, config.token);
   const project = new ProjectContext(client, {
     baseUrl: config.baseUrl,
     projectRoot: config.projectRoot,
     sessionId: config.sessionId,
+    // Hook 이 기록한 실제 cwd·session_id 를 읽어 문맥 복원(G). MCP 서버 프로세스의 process.cwd() 는
+    // Claude Code 작업 폴더가 아닐 수 있으므로 hook cwd 를 더 신뢰한다.
+    hookNamespace: ns,
   });
   // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
-  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+  const queue = new EventQueue(ns);
   const flushEvents = async () => {
     try {
       await flushQueue(client, queue);

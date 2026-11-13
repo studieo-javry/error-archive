@@ -70,6 +70,27 @@ docker · openssl · node/npm · 리포 루트 `./gradlew`. 포트 8000/8080/808
 > 로 실행하세요. core compose 의 MinIO 대신 `adobe/s3mock`(S3 호환, 인메모리)을 9000 포트로 띄워
 > 업로드 계약을 동일하게 검증합니다.
 
+## ARC 자발 기록 회귀 측정 (`arc-autorecord-e2e.sh`)
+
+자동 문제해결 기록(ARC)이 **실제 Claude Code 세션에서 사용자 요청 없이 작동하는지** 측정하는 on-demand E2E.
+버그 있는 repo 에 "테스트 고쳐줘"만 주고(Error Archive 언급 0), 모델이 스스로 `capture_*` 를 불러 Capture 를
+봉인하는 비율(자발 성공률)과, 노이즈(순수 질문·통과 테스트)에서 불필요한 Capture 를 만드는 비율(오생성률)을 낸다.
+
+```bash
+# 전제: 스택 기동 + eaa_ 토큰 (run-local-e2e.sh 를 KEEP_UP=1 로 띄우면 출력됨)
+E2E_AGENT_TOKEN=eaa_… ./e2e/arc-autorecord-e2e.sh
+
+# 넛지 OFF(구 커넥터)와 A/B 비교 + 시행수 조정
+E2E_BASE_URL=http://localhost:8000 E2E_AGENT_TOKEN=eaa_… \
+  E2E_BASELINE_DIST=/path/to/old-connector/dist/index.js \
+  ARC_BUG_TRIALS=5 ARC_NOISE_TRIALS=2 ./e2e/arc-autorecord-e2e.sh
+```
+
+- 측정 대상: 넛지 ON·버그(봉인 성공률), 넛지 ON·노이즈(오생성률), (선택) 베이스라인 OFF·버그.
+- 커넥터 자체 빌드(`dist/`)와 설치용 Skill 을 그대로 쓰므로 **릴리스 전 실동작 회귀**로 적합.
+- ⚠️ 모델 행동 측정이라 **결정론적 CI 게이트가 아니다**(비용·비결정성). 성공률 추세 추적용. 임시 repo·config 는
+  `$TMPDIR` 아래 생성 후 자동 정리된다. `claude` CLI·node·git·python3 필요.
+
 ## 정리
 
 ```bash

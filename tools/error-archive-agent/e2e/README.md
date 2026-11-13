@@ -91,6 +91,20 @@ E2E_BASE_URL=http://localhost:8000 E2E_AGENT_TOKEN=eaa_… \
 - ⚠️ 모델 행동 측정이라 **결정론적 CI 게이트가 아니다**(비용·비결정성). 성공률 추세 추적용. 임시 repo·config 는
   `$TMPDIR` 아래 생성 후 자동 정리된다. `claude` CLI·node·git·python3 필요.
 
+### Grafana 로 성공률 보내기 (Pushgateway, 선택)
+
+자동 트리거 **성공률**은 서버가 관측 못 한다(모델 행동). `PUSHGATEWAY_URL` 을 주면 이 하네스가 집계 후
+Prometheus Pushgateway 로 게이지를 밀어 Grafana 에서 서버 메트릭(`agent_capture_count`)과 한 화면에서 본다.
+
+```bash
+PUSHGATEWAY_URL=http://pushgateway:9091 E2E_AGENT_TOKEN=eaa_… ./e2e/arc-autorecord-e2e.sh
+```
+
+- 미는 게이지(job=`arc_autorecord_e2e`, `PUSH_JOB` 로 변경 가능): `arc_autorecord_success_rate`,
+  `arc_autorecord_overgen_rate`, `arc_autorecord_baseline_rate`, `arc_autorecord_bug_trials`.
+- Pushgateway 는 값을 유지(push-until-overwrite)하므로 **마지막 측정값**이 대시보드에 남는다 — 추세는 측정할 때마다 갱신.
+- `curl` 필요. 전송 실패는 무시(측정 자체는 완료).
+
 ## 정리
 
 ```bash

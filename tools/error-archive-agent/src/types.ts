@@ -290,3 +290,25 @@ export interface EventResultResponse {
 export interface EventBatchResponse {
   results: EventResultResponse[];
 }
+
+/** 미분류 이벤트 조회 결과 1건(AI 판단 재료). */
+export interface AgentEventSummary {
+  clientEventId: string;
+  eventType: string;
+  sessionId: string | null;
+  observedAt: string;
+  toolCallId: string | null;
+  truncated: boolean;
+  status: string;
+  redactedPayload: JsonValue;
+}
+
+export interface AgentEventListResponse {
+  items: AgentEventSummary[];
+}
+
+/** 이벤트→Capture 연결 결과. */
+export interface LinkEventsResponse {
+  linked: string[];
+  skipped: string[];
+}

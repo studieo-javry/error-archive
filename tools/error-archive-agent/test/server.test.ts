@@ -40,14 +40,16 @@ function fakeClient(overrides: Partial<ApiClient> = {}) {
     searchCases: async () => { throw new Error('unused'); },
     getCase: async () => { throw new Error('unused'); },
     ingestEvents: async () => { throw new Error('unused'); },
+    listEvents: async () => { throw new Error('unused'); },
+    linkEvents: async () => { throw new Error('unused'); },
     ...overrides,
   };
   return { client: base, calls };
 }
 
-async function connect(api: ApiClient): Promise<Client> {
+async function connect(api: ApiClient, flushEvents?: () => Promise<void>): Promise<Client> {
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
-  const server = createServer(api);
+  const server = createServer(api, undefined, flushEvents);
   await server.connect(serverT);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientT);
@@ -68,6 +70,8 @@ test('모든 기대 도구가 등록돼 있다', async () => {
     'capture_attach_evidence',
     'capture_complete',
     'capture_get',
+    'capture_link_events',
+    'capture_list_events',
     'capture_start',
     'capture_update',
     'capture_update_attempt',
@@ -220,4 +224,34 @@ test('API 오류는 isError 결과로 보고된다(코드 포함)', async () => 
   const res = (await mcp.callTool({ name: 'capture_start', arguments: { title: 'x' } })) as any;
   assert.equal(res.isError, true);
   assert.match(textOf(res), /IDEMPOTENCY_CONFLICT/);
+});
+
+test('capture_list_events: 조회 전 flush 하고 UNCLASSIFIED 를 sessionId 로 조회', async () => {
+  let listed: { status?: string; sessionId?: string } | null = null;
+  const { client } = fakeClient({
+    listEvents: async (status, sessionId) => {
+      listed = { status, sessionId };
+      return { items: [{ clientEventId: 'E1', eventType: 'PostToolUse:Bash', sessionId: 's1', observedAt: 't', toolCallId: null, truncated: false, status: 'UNCLASSIFIED', redactedPayload: {} }] };
+    },
+  });
+  let flushed = false;
+  const mcp = await connect(client, async () => { flushed = true; });
+  await mcp.callTool({ name: 'capture_list_events', arguments: { sessionId: 's1' } });
+  assert.equal(flushed, true); // 조회 전 flush
+  assert.equal(listed!.status, 'UNCLASSIFIED');
+  assert.equal(listed!.sessionId, 's1');
+});
+
+test('capture_link_events: 선택 이벤트만 링크 호출', async () => {
+  let captured: { uuid: string; ids: string[] } | null = null;
+  const { client } = fakeClient({
+    linkEvents: async (uuid, ids) => {
+      captured = { uuid, ids };
+      return { linked: ids, skipped: [] };
+    },
+  });
+  const mcp = await connect(client);
+  await mcp.callTool({ name: 'capture_link_events', arguments: { captureUuid: AUUID, clientEventIds: ['E1', 'E2'] } });
+  assert.equal(captured!.uuid, AUUID);
+  assert.deepEqual(captured!.ids, ['E1', 'E2']);
 });

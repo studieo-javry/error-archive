@@ -58,3 +58,22 @@ data class LinkEventsResponse(
     val linked: List<String>,
     val skipped: List<String>,
 )
+
+@Schema(description = "미분류 이벤트 조회 결과 1건(AI 가 Capture 연결 여부를 판단하기 위한 후보).")
+data class AgentEventSummaryResponse(
+    val clientEventId: String,
+    val eventType: String,
+    val sessionId: String?,
+    val observedAt: Instant,
+    val toolCallId: String?,
+    val truncated: Boolean,
+    @Schema(description = "UNCLASSIFIED | LINKED | DISCARDED")
+    val status: String,
+    @Schema(description = "마스킹된 payload(≤64 KiB). AI 판단 재료.")
+    val redactedPayload: JsonNode,
+)
+
+@Schema(description = "미분류 이벤트 조회 목록.")
+data class AgentEventListResponse(
+    val items: List<AgentEventSummaryResponse>,
+)

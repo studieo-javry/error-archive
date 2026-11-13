@@ -80,7 +80,11 @@ export function recordContext(
   const store = load(path);
   const key = ctx.sessionId?.trim() || DEFAULT_SESSION_KEY;
   const ns = (store[namespace] ??= {});
-  ns[key] = { sessionId: ctx.sessionId?.trim() || null, cwd, updatedAt: new Date().toISOString() };
+  // updatedAt 은 "마지막으로 쓴 엔트리 = 최신" 을 보장하는 논리 시계로 쓴다. ms 해상도 벽시계는 빠른
+  // 연속 쓰기에서 타이가 나 정렬이 삽입 순서로 깨지므로, 기존 최대보다 엄격히 크게 보정한다.
+  const maxExisting = Object.values(ns).reduce((m, e) => Math.max(m, Date.parse(e.updatedAt) || 0), 0);
+  const ts = Math.max(Date.now(), maxExisting + 1);
+  ns[key] = { sessionId: ctx.sessionId?.trim() || null, cwd, updatedAt: new Date(ts).toISOString() };
   store[namespace] = prune(ns);
   persist(path, store);
 }

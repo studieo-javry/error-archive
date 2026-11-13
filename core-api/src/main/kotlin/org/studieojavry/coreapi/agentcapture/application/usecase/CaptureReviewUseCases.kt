@@ -557,6 +557,55 @@ class ListCapturesForReviewUseCase(
 }
 
 /**
+ * 자동기록 계측 — 최근 창(window) 내 생성된 초안의 상태 퍼널. 성공률(자동 트리거)은 모델 행동이라 서버가
+ * 못 보지만, 사용자 검토 결과로 **오생성률(discarded/reviewed)** 과 **채택률(imported/reviewed)** 을 집계한다.
+ * 읽기 전용·소유자 범위. 스키마 변경 없이 상태 집계로만 계산한다.
+ */
+@Service
+class CaptureMetricsUseCase(
+    private val captures: AgentCaptureRepositoryPort,
+    private val clock: Clock = Clock.systemUTC(),
+) {
+    @Transactional(readOnly = true)
+    fun invoke(ownerUserId: Long, windowDays: Int): CaptureMetrics {
+        val days = windowDays.coerceIn(1, 365)
+        val since = Instant.now(clock).minusSeconds(days.toLong() * 86_400L)
+        val byStatus = captures.countByOwnerSinceByStatus(ownerUserId, since)
+        fun n(s: CaptureStatus) = byStatus[s] ?: 0L
+        val open = n(CaptureStatus.OPEN)
+        val ready = n(CaptureStatus.READY_FOR_REVIEW)
+        val imported = n(CaptureStatus.IMPORTED)
+        val discarded = n(CaptureStatus.DISCARDED)
+        val reviewed = imported + discarded
+        return CaptureMetrics(
+            windowDays = days,
+            since = since,
+            created = open + ready + imported + discarded,
+            open = open,
+            readyForReview = ready,
+            imported = imported,
+            discarded = discarded,
+            reviewed = reviewed,
+            discardRate = if (reviewed > 0) discarded.toDouble() / reviewed else null,
+            adoptionRate = if (reviewed > 0) imported.toDouble() / reviewed else null,
+        )
+    }
+}
+
+data class CaptureMetrics(
+    val windowDays: Int,
+    val since: Instant,
+    val created: Long,
+    val open: Long,
+    val readyForReview: Long,
+    val imported: Long,
+    val discarded: Long,
+    val reviewed: Long,
+    val discardRate: Double?,
+    val adoptionRate: Double?,
+)
+
+/**
  * 검토 완료 이력 조회 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).
  * status 지정 시 그 상태만, 없으면 둘 다. 종단 상태가 아닌 값 요청은 거부(400).
  */

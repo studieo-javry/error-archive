@@ -27,6 +27,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.SolutionEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.StepEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureHistoryUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.CaptureMetricsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureUseCase
@@ -38,6 +39,7 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistory
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistoryResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureMetricsResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ReviewQueueResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SolutionResponse
 import java.util.UUID
@@ -59,6 +61,7 @@ class CaptureReviewController(
     private val importCapture: ImportCaptureUseCase,
     private val discardCapture: DiscardCaptureUseCase,
     private val restoreCapture: RestoreCaptureUseCase,
+    private val captureMetrics: CaptureMetricsUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
@@ -72,6 +75,29 @@ class CaptureReviewController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
     ): ReviewQueueResponse =
         ReviewQueueResponse(items = listForReview.invoke(userId).map(CaptureResponse::from))
+
+    @Operation(
+        summary = "자동기록 계측(퍼널)",
+        description = """
+            최근 windowDays(기본 30, 1~365) 내 생성된 본인 초안의 상태 퍼널. 자동기록의 품질 모니터링용.
+            discardRate=폐기/검토완료(오생성 지표), adoptionRate=반영/검토완료. 검토완료(reviewed)=0 이면 두 비율은 null.
+            성공률(자동 트리거 자체)은 모델 행동이라 서버가 관측하지 않는다(E2E 하네스로 측정).
+        """,
+    )
+    @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
+    @GetMapping("/metrics")
+    fun metrics(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "집계 창(일). 기본 30, 1~365 로 클램프.")
+        @RequestParam(required = false, defaultValue = "30") windowDays: Int,
+    ): CaptureMetricsResponse {
+        val m = captureMetrics.invoke(userId, windowDays)
+        return CaptureMetricsResponse(
+            windowDays = m.windowDays, since = m.since, created = m.created, open = m.open,
+            readyForReview = m.readyForReview, imported = m.imported, discarded = m.discarded,
+            reviewed = m.reviewed, discardRate = m.discardRate, adoptionRate = m.adoptionRate,
+        )
+    }
 
     @Operation(
         summary = "초안 상세",

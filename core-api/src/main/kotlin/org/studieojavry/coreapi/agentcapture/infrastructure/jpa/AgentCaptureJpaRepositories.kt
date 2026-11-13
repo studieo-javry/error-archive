@@ -33,6 +33,15 @@ interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
         status: CaptureStatus,
     ): List<AgentCaptureEntity>
 
+    @Query(
+        "select c.status, count(c) from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.createdAt >= :since group by c.status",
+    )
+    fun countByStatusSince(
+        @Param("owner") owner: Long,
+        @Param("since") since: java.time.Instant,
+    ): List<Array<Any>>
+
     /**
      * 변이(쓰기·봉인) 연산 전용 — capture 행을 PESSIMISTIC_WRITE(SELECT … FOR UPDATE)로 잠가
      * complete 와 add-attempt/solution/edit 를 capture 단위로 직렬화한다. add-attempt 는 capture

@@ -23,6 +23,7 @@ import { normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
 import { ProjectContext } from './projectContext.js';
 import { createServer } from './server.js';
+import { recordContext } from './sessionContext.js';
 
 const FLUSH_INTERVAL_MS = 10_000;
 
@@ -137,17 +138,27 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * Hook 어댑터(P1-4) — Claude Code 가 Hook 으로 호출. stdin JSON 을 정규화해 **로컬 큐에 적재만** 한다
- * (네트워크 X). 항상 0 종료(Claude Code 흐름을 막지 않음). 수집 대상 아니거나 오류여도 조용히 통과.
+ * Hook 어댑터(P1-4 + G) — Claude Code 가 Hook 으로 호출. stdin JSON 에서:
+ *   1) 세션 문맥({session_id, cwd}) 을 로컬 저장소에 기록(G — 수집 대상 여부와 무관, MCP 서버가 읽어 복원).
+ *   2) 수집 대상(PostToolUse·Stop)이면 정규화해 로컬 큐에 적재(네트워크 X).
+ * 항상 0 종료(Claude Code 흐름을 막지 않음). 오류여도 조용히 통과.
  */
 async function runHook(): Promise<number> {
   try {
     const raw = await readStdin();
     if (!raw.trim()) return 0;
     const input = JSON.parse(raw) as HookInput;
-    if (!shouldCollect(input)) return 0;
     const config = loadConfig();
-    const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+    const ns = accountNamespace(config.baseUrl, config.token);
+    // (1) 실제 cwd·session_id 를 서버 프로세스로 넘기기 위해 기록(SessionStart 등 비수집 이벤트도 포함).
+    try {
+      recordContext(ns, { sessionId: input.session_id, cwd: input.cwd });
+    } catch (err) {
+      process.stderr.write(`[hook] 문맥 기록 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+    // (2) 수집 대상만 이벤트 큐에 적재.
+    if (!shouldCollect(input)) return 0;
+    const queue = new EventQueue(ns);
     queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
   } catch (err) {
     process.stderr.write(`[hook] 적재 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);

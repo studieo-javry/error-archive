@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
-export type RootTrust = 'explicit' | 'config' | 'roots' | 'cwd';
+export type RootTrust = 'explicit' | 'config' | 'hook' | 'roots' | 'cwd';
 
 export interface ResolvedProject {
   /** git 최상위 경로(승인 상태의 키). */
@@ -75,6 +75,8 @@ export interface ResolveOptions {
   explicitPath?: string;
   /** 사용자가 설정한 projectRoot. */
   configRoot?: string;
+  /** Claude Code Hook 이 보고한 실제 작업 경로(세션 문맥 핸드오프, G). config 다음 우선. */
+  hookPath?: string;
   /** MCP roots 로 받은 경로들(파일 경로로 변환된 상태). 정확히 1개일 때만 사용. */
   roots?: string[];
   /** 저신뢰 폴백. */
@@ -86,6 +88,7 @@ export function resolveProject(opts: ResolveOptions): ResolvedProject | null {
   const candidates: Array<[string | undefined, RootTrust]> = [
     [opts.explicitPath, 'explicit'],
     [opts.configRoot, 'config'],
+    [opts.hookPath, 'hook'],
     [opts.roots && opts.roots.length === 1 ? opts.roots[0] : undefined, 'roots'],
     [opts.cwd, 'cwd'],
   ];

@@ -24,12 +24,15 @@ export interface ProjectContextConfig {
   statePath?: string;
   /** cwd override(테스트용). */
   cwd?: string;
+  /** 프로젝트 해석 주입(테스트용 — 기본은 git 기반 resolveProject). */
+  resolve?: (explicitPath?: string) => ResolvedProject | null;
 }
 
 export class ProjectContext {
   private userId?: number;
   private cachedResolve?: ResolvedProject | null;
-  private readonly sessionUuid: string;
+  /** 세션 식별자. revoke/철회 시 로테이션되므로 가변. */
+  private sessionUuid: string;
   /** 마지막으로 세션에 등록한 projectKey. undefined=미등록, null=프로젝트 없이 등록됨. */
   private lastRegisteredKey: string | null | undefined = undefined;
 
@@ -41,11 +44,17 @@ export class ProjectContext {
     this.sessionUuid = sid && sid.length > 0 ? deriveUuid(sid) : newUuid();
   }
 
-  /** git 식별(프로세스 1회 캐시 — gitRoot 는 안정적). */
-  detect(explicitPath?: string): ResolvedProject | null {
+  private resolveAt(explicitPath?: string): ResolvedProject | null {
+    if (this.cfg.resolve) return this.cfg.resolve(explicitPath);
     if (explicitPath) return resolveProject({ explicitPath });
+    return resolveProject({ configRoot: this.cfg.projectRoot, cwd: this.cfg.cwd ?? process.cwd() });
+  }
+
+  /** git 식별. 무인자는 프로세스 1회 캐시(gitRoot 안정적). 명시 경로는 즉시 해석(캐시 안 함). */
+  detect(explicitPath?: string): ResolvedProject | null {
+    if (explicitPath) return this.resolveAt(explicitPath);
     if (this.cachedResolve === undefined) {
-      this.cachedResolve = resolveProject({ configRoot: this.cfg.projectRoot, cwd: this.cfg.cwd ?? process.cwd() });
+      this.cachedResolve = this.resolveAt();
     }
     return this.cachedResolve;
   }
@@ -76,18 +85,25 @@ export class ProjectContext {
     return getApproved(ns, p.gitRoot, p.remote, { path: this.cfg.statePath }) != null;
   }
 
-  /** 실제 사용자 승인 후 호출 — 로컬 저장 + 다음 ensureSession 에서 재등록 유도. */
+  /** 실제 사용자 승인 후 호출 — 로컬 저장 + 승인한 프로젝트를 현재 문맥으로 고정 + 재등록 유도. */
   async approve(p: ResolvedProject): Promise<void> {
     const ns = await this.namespace();
     if (!ns) throw new Error('계정(네임스페이스) 식별 실패 — 토큰/서버 설정을 확인하세요.');
     persistApprove(ns, p.gitRoot, { projectKey: p.projectKey, remote: p.remote }, { path: this.cfg.statePath });
+    // 명시 경로로 승인했어도 이후 ensureSession(무인자 detect)이 같은 프로젝트를 쓰도록 문맥 고정(②).
+    this.cachedResolve = p;
     this.lastRegisteredKey = undefined; // 재등록 유도
   }
 
+  /**
+   * 연결 해제 — 로컬 승인 삭제 + **새 sessionUuid 로 로테이션**(①). 서버의 세션 바인딩은 null 로 비울 수
+   * 없으므로(계약상 no-op), 기존 바운드 세션을 버리고 새 미귀속 세션을 쓴다. 기존 Capture 는 소급 변경 안 함.
+   */
   async revoke(p: ResolvedProject): Promise<void> {
     const ns = await this.namespace();
     if (!ns) return;
     persistRevoke(ns, p.gitRoot, { path: this.cfg.statePath });
+    this.sessionUuid = newUuid();
     this.lastRegisteredKey = undefined;
   }
 
@@ -98,6 +114,11 @@ export class ProjectContext {
   async ensureSession(): Promise<string> {
     const desired = await this.approvedProjectKey();
     if (this.lastRegisteredKey !== desired) {
+      // 바운드→미귀속 전이(승인 철회·remote 변경 등, revoke 미경유 포함): 기존 세션 바인딩을 비울 수 없으므로
+      // 새 sessionUuid 로 로테이션해 미귀속 세션을 새로 쓴다(①).
+      if (desired == null && typeof this.lastRegisteredKey === 'string') {
+        this.sessionUuid = newUuid();
+      }
       try {
         await this.client.registerSession(
           {

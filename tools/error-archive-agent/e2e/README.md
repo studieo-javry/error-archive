@@ -87,7 +87,7 @@ E2E_BASE_URL=http://localhost:8000 E2E_AGENT_TOKEN=eaa_… \
 ```
 
 - 측정 대상: 넛지 ON·버그(봉인 성공률), 넛지 ON·노이즈(오생성률), (선택) 베이스라인 OFF·버그.
-- 커넥터 자체 빌드(`dist/`)와 설치용 Skill 을 그대로 쓰므로 **릴리스 전 실동작 회귀**로 적합.
+- 커넥터 자체 빌드(`dist/`)를 그대로 쓰므로 **릴리스 전 실동작 회귀**로 적합. 기본은 **Skill 미설치**(install-hooks 기본 동작과 동일) — 상세 절차 Skill 효과까지 보려면 `ARC_WITH_SKILL=1`.
 - ⚠️ 모델 행동 측정이라 **결정론적 CI 게이트가 아니다**(비용·비결정성). 성공률 추세 추적용. 임시 repo·config 는
   `$TMPDIR` 아래 생성 후 자동 정리된다. `claude` CLI·node·git·python3 필요.
 

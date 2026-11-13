@@ -134,3 +134,31 @@ if pb:
     b=sum(1 for r in pb if int(r['capture_start'])>0)
     print('베이스라인 OFF · 버그 자발 호출: %d/%d'%(b,len(pb)))
 PY
+
+# (선택) 자발 성공률/오생성률을 Prometheus Pushgateway 로 밀어 Grafana 에서 서버 메트릭과 함께 본다.
+# 서버가 관측 못 하는 "자동 트리거 성공률" 을 관측 가능하게 하는 유일한 경로. PUSHGATEWAY_URL 미설정이면 생략.
+if [[ -n "${PUSHGATEWAY_URL:-}" ]]; then
+  command -v curl >/dev/null || { echo "[arc-e2e] curl 없음 — push 생략"; exit 0; }
+  JOB="${PUSH_JOB:-arc_autorecord_e2e}"
+  python3 - "$RESULTS" <<'PY' | curl -sf --data-binary @- "${PUSHGATEWAY_URL%/}/metrics/job/${JOB}" \
+      && echo "[arc-e2e] Pushgateway 전송 완료(job=${JOB})" || echo "[arc-e2e] Pushgateway 전송 실패(무시)"
+import csv,sys
+rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+def g(cond,task): return [r for r in rows if r['condition']==cond and r['task']==task]
+nb=g('nudge','bug'); pb=g('plain','bug'); noise=[r for r in rows if r['task']=='noise']
+out=[]
+def m(name,hlp,val):
+    out.append('# HELP %s %s'%(name,hlp)); out.append('# TYPE %s gauge'%name); out.append('%s %s'%(name,val))
+if nb:
+    sealed=sum(1 for r in nb if r['outcome']=='SEALED')
+    m('arc_autorecord_success_rate','nudge-on bug self-sealed rate (0..1)', sealed/len(nb))
+    m('arc_autorecord_bug_trials','nudge-on bug trial count', len(nb))
+if noise:
+    over=sum(1 for r in noise if int(r['capture_start'])>0)
+    m('arc_autorecord_overgen_rate','nudge-on noise over-generation rate (0..1)', over/len(noise))
+if pb:
+    b=sum(1 for r in pb if r['outcome']=='SEALED')
+    m('arc_autorecord_baseline_rate','baseline(nudge-off) bug self-sealed rate (0..1)', b/len(pb))
+sys.stdout.write('\n'.join(out)+'\n')
+PY
+fi

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import type { ApiClient } from '../src/apiClient.js';
 import type { ResolvedProject } from '../src/project.js';
 import { ProjectContext } from '../src/projectContext.js';
+import type { ResolvedSessionContext } from '../src/sessionContext.js';
 
 const PROJECT: ResolvedProject = {
   gitRoot: '/dev/checkout', remote: 'github.com/org/checkout', projectKey: 'github.com/org/checkout', trust: 'config',
@@ -103,5 +104,99 @@ test('등록 실패 → sessionUuid 반환·stale 미상속(다음 호출 재시
     await c.ensureSession(); // lastRegisteredKey 미갱신 → 재시도
     assert.equal(calls.length, 1);
     assert.equal(calls[0]!.projectKey, 'github.com/org/checkout');
+  } finally { cleanup(); }
+});
+
+// ── G: Hook 세션 문맥 배선 ──────────────────────────────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 경로별 가짜 프로젝트(gitRoot=경로). */
+function projFor(path: string): ResolvedProject {
+  return { gitRoot: path, remote: `github.com/x${path}`, projectKey: `key:${path}`, trust: 'hook' };
+}
+
+/** readHookContext·resolve 를 주입해 hook cwd→프로젝트 매핑을 테스트. */
+function makeHookCtx(
+  client: ApiClient,
+  holder: { current: { cwd: string; sessionId: string | null } | null },
+): { c: ProjectContext; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-hookctx-'));
+  const c = new ProjectContext(client, {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    readHookContext: (): ResolvedSessionContext | null =>
+      holder.current ? { cwd: holder.current.cwd, sessionId: holder.current.sessionId, ambiguous: false } : null,
+    resolve: (opts) => {
+      const path = opts.explicitPath ?? opts.hookPath ?? opts.configRoot;
+      return path ? projFor(path) : null; // cwd 폴백은 프로젝트 없음
+    },
+  });
+  return { c, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('hook cwd 로 프로젝트 해석 → 승인 시 projectKey 상속', async () => {
+  const calls: RegCall[] = [];
+  const holder = { current: { cwd: '/dev/hooked', sessionId: 'hs' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    const p = c.detect();
+    assert.equal(p?.projectKey, 'key:/dev/hooked'); // hook cwd 가 해석됨
+    await c.approve(p!);
+    await c.ensureSession();
+    assert.equal(calls.at(-1)!.projectKey, 'key:/dev/hooked');
+  } finally { cleanup(); }
+});
+
+test('hook cwd 변경(프로젝트 전환) → 캐시 무효화·재해석', async () => {
+  const calls: RegCall[] = [];
+  const holder = { current: { cwd: '/dev/h1', sessionId: 'hs' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    const p1 = c.detect();
+    await c.approve(p1!);
+    await c.ensureSession();
+    assert.equal(calls.at(-1)!.projectKey, 'key:/dev/h1');
+    // 작업 폴더 전환 → 다른(미승인) 프로젝트.
+    holder.current = { cwd: '/dev/h2', sessionId: 'hs' };
+    assert.equal(c.detect()?.projectKey, 'key:/dev/h2'); // 재해석됨
+    await c.ensureSession();
+    assert.equal(calls.at(-1)!.projectKey, null); // 미승인 프로젝트 → 미귀속
+  } finally { cleanup(); }
+});
+
+test('session_id → sessionUuid 결정적 파생(같은 세션=같은 uuid)', async () => {
+  const callsA: RegCall[] = [];
+  const callsB: RegCall[] = [];
+  const hA = { current: { cwd: '/dev/a', sessionId: 'session-xyz' } as { cwd: string; sessionId: string | null } | null };
+  const hB = { current: { cwd: '/dev/b', sessionId: 'session-xyz' } as { cwd: string; sessionId: string | null } | null };
+  const a = makeHookCtx(makeClient(callsA), hA);
+  const b = makeHookCtx(makeClient(callsB), hB);
+  try {
+    const sA = await a.c.ensureSession();
+    const sB = await b.c.ensureSession();
+    assert.match(sA, UUID_RE);
+    assert.equal(sA, sB); // 같은 hook session_id → 같은 sessionUuid(이벤트와 정합)
+    assert.equal(callsA.at(-1)!.sessionUuid, sA);
+  } finally { a.cleanup(); b.cleanup(); }
+});
+
+test('다른 session_id → 다른 sessionUuid', async () => {
+  const h1 = { current: { cwd: '/dev/a', sessionId: 's-1' } as { cwd: string; sessionId: string | null } | null };
+  const h2 = { current: { cwd: '/dev/a', sessionId: 's-2' } as { cwd: string; sessionId: string | null } | null };
+  const c1 = makeHookCtx(makeClient([]), h1);
+  const c2 = makeHookCtx(makeClient([]), h2);
+  try {
+    assert.notEqual(await c1.c.ensureSession(), await c2.c.ensureSession());
+  } finally { c1.cleanup(); c2.cleanup(); }
+});
+
+test('미승인 hook cwd → projectKey 미전송(승인 게이트 유지)', async () => {
+  const calls: RegCall[] = [];
+  const holder = { current: { cwd: '/dev/hooked', sessionId: 'hs' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    await c.ensureSession(); // 승인 없이
+    assert.equal(calls.at(-1)!.projectKey, null);
   } finally { cleanup(); }
 });

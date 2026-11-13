@@ -21,6 +21,8 @@ interface AgentCaptureRepositoryPort {
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
     /** 연결(install)이 생성한 특정 상태 초안 목록. 최근 갱신순. 진행 중(OPEN) Capture 재사용 후보 조회용. */
     fun listByConnectionAndStatus(connectionId: UUID, status: CaptureStatus): List<AgentCapture>
+    /** 소유자의 since 이후 생성 초안을 상태별로 집계(자동기록 계측 — 오생성/채택 퍼널). 상태→건수. */
+    fun countByOwnerSinceByStatus(ownerUserId: Long, since: Instant): Map<CaptureStatus, Long>
     /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
     fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
 }

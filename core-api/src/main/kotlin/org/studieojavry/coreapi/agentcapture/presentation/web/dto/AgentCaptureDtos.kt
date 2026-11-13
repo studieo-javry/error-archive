@@ -216,6 +216,23 @@ data class ReviewQueueResponse(
     val items: List<CaptureResponse>,
 )
 
+@Schema(
+    description = "자동기록 계측 — 최근 창(windowDays) 내 생성 초안의 상태 퍼널. " +
+        "discardRate=폐기/검토완료(오생성 지표), adoptionRate=반영/검토완료. reviewed=0 이면 두 비율은 null.",
+)
+data class CaptureMetricsResponse(
+    val windowDays: Int,
+    val since: java.time.Instant,
+    val created: Long,
+    val open: Long,
+    val readyForReview: Long,
+    val imported: Long,
+    val discarded: Long,
+    val reviewed: Long,
+    val discardRate: Double?,
+    val adoptionRate: Double?,
+)
+
 @Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).")
 data class CaptureHistoryResponse(
     val items: List<CaptureHistoryItemResponse>,

@@ -91,6 +91,14 @@ class AgentCaptureRepositoryAdapter(
     ): List<AgentCapture> =
         jpa.findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(connectionId, status).map { it.toDomain() }
 
+    override fun countByOwnerSinceByStatus(
+        ownerUserId: Long,
+        since: java.time.Instant,
+    ): Map<org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus, Long> =
+        jpa.countByStatusSince(ownerUserId, since).associate { row ->
+            (row[0] as org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus) to (row[1] as Long)
+        }
+
     override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 

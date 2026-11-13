@@ -179,6 +179,32 @@ data class CaptureView(
     val artifacts: List<CaptureArtifact>,
 )
 
+/**
+ * 진행 중(OPEN) Capture 후보 조회 — AI 가 같은 버그면 기존 captureUuid 를 재사용하고 다른 문제면
+ * 새로 생성하도록(한 버그=한 Capture, 중복 난립 방지) 판단 재료를 준다. 현재 연결(install)이 만든
+ * OPEN 만 보이고, sessionUuid 를 주면 그 세션(현재 연결 소유)에 링크된 Capture 로 좁힌다.
+ * READY_FOR_REVIEW·IMPORTED·DISCARDED 는 에이전트 쓰기 불가 상태라 후보에서 제외된다.
+ */
+@Service
+class ListOpenCapturesUseCase(
+    private val captures: AgentCaptureRepositoryPort,
+    private val sessions: CaptureSessionRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun invoke(connectionId: UUID, sessionUuid: UUID?): List<AgentCapture> {
+        val open = captures.listByConnectionAndStatus(
+            connectionId,
+            org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus.OPEN,
+        )
+        if (sessionUuid == null) return open
+        // 세션 범위로 좁히기: 현재 연결에서 등록한 세션만 유효(교차연결 누출 방지) → 링크된 Capture 만.
+        val session = sessions.findByUuid(sessionUuid)?.takeIf { it.connectionId == connectionId }
+            ?: return emptyList()
+        val linked = sessions.linkedCaptureIds(session.id!!)
+        return open.filter { it.id in linked }
+    }
+}
+
 /** OPEN 초안 기본 정보 교체(title/project/content 전체 교체). expectedRevision 검사. */
 @Service
 class PatchCaptureUseCase(

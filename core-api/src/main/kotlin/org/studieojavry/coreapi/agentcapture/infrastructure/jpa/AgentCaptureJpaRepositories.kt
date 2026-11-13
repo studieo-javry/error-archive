@@ -28,6 +28,11 @@ interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
         status: CaptureStatus,
     ): List<AgentCaptureEntity>
 
+    fun findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(
+        originatingConnectionId: UUID,
+        status: CaptureStatus,
+    ): List<AgentCaptureEntity>
+
     /**
      * 변이(쓰기·봉인) 연산 전용 — capture 행을 PESSIMISTIC_WRITE(SELECT … FOR UPDATE)로 잠가
      * complete 와 add-attempt/solution/edit 를 capture 단위로 직렬화한다. add-attempt 는 capture
@@ -74,6 +79,9 @@ interface CaptureSessionJpaRepository : JpaRepository<CaptureSessionEntity, Long
 
 interface CaptureSessionLinkJpaRepository : JpaRepository<CaptureSessionLinkEntity, Long> {
     fun existsBySessionIdAndCaptureId(sessionId: Long, captureId: Long): Boolean
+
+    @Query("select l.captureId from CaptureSessionLinkEntity l where l.sessionId = :sessionId")
+    fun captureIdsBySessionId(@Param("sessionId") sessionId: Long): List<Long>
 }
 
 interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEntity, Long> {

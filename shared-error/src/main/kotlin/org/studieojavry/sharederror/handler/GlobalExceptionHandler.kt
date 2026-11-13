@@ -13,6 +13,7 @@ import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -113,6 +114,26 @@ open class GlobalExceptionHandler(
             status = HttpStatus.BAD_REQUEST,
             detail = "Required parameter '${ex.parameterName}' is missing",
             code = "MISSING_PARAMETER",
+            traceId = traceId,
+            retryable = false,
+            instance = req.requestURI,
+        )
+    }
+
+    /**
+     * 필수 요청 헤더 누락(예: `Idempotency-Key`) — 400 (500 아님). 위 MISSING_PARAMETER 와 동일 이유:
+     * 클라이언트 실수이지 서버 장애가 아니므로 4xx 로 매핑해 gateway 서킷브레이커 오염을 막는다.
+     * (미처리 시 Throwable fallback→500 → 변경 계열 agent 엔드포인트가 헤더 없는 요청에 500 을 반환.)
+     */
+    @ExceptionHandler(MissingRequestHeaderException::class)
+    open fun handleMissingHeader(ex: MissingRequestHeaderException, req: HttpServletRequest, res: HttpServletResponse): ProblemDetail {
+        val traceId = traceIdAccessor.currentOrNew()
+        log.warn { "[traceId=$traceId] [endpoint=${req.method} ${req.requestURI}] [code=MISSING_HEADER] header '${ex.headerName}' missing" }
+        res.setHeader("X-Trace-Id", traceId)
+        return ProblemDetailBuilder.build(
+            status = HttpStatus.BAD_REQUEST,
+            detail = "Required header '${ex.headerName}' is missing",
+            code = "MISSING_HEADER",
             traceId = traceId,
             retryable = false,
             instance = req.requestURI,

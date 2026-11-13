@@ -1,10 +1,12 @@
 package org.studieojavry.coreapi.agentcapture.infrastructure.jpa
 
 import jakarta.persistence.LockModeType
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.AgentCaptureEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureArtifactEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureAttemptEntity
@@ -92,6 +94,17 @@ interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> 
 
 interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
     fun findByConnectionIdAndClientEventId(connectionId: UUID, clientEventId: String): CaptureEventEntity?
+
+    @Query(
+        "SELECT e FROM CaptureEventEntity e WHERE e.ownerUserId = :owner AND e.status = :status " +
+            "AND (:sessionId IS NULL OR e.sessionId = :sessionId) ORDER BY e.observedAt DESC, e.id DESC",
+    )
+    fun findByOwnerAndStatus(
+        @Param("owner") owner: Long,
+        @Param("status") status: CaptureEventStatus,
+        @Param("sessionId") sessionId: String?,
+        pageable: Pageable,
+    ): List<CaptureEventEntity>
 }
 
 interface ProjectBindingJpaRepository : JpaRepository<ProjectBindingEntity, Long> {

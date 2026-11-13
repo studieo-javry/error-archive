@@ -101,3 +101,20 @@ data class IngestEventItem(
 enum class EventResultType { ACCEPTED, DUPLICATE, REJECTED }
 
 data class EventOutcome(val clientEventId: String, val result: EventResultType, val reason: String? = null)
+
+/**
+ * 본인 소유 이벤트를 상태별 조회(B) — AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보.
+ * 기본 status=UNCLASSIFIED, 선택 sessionId 필터. 연결은 하지 않는다(판단·연결은 호출측 AI + 링크 API).
+ */
+@Service
+class ListAgentEventsUseCase(
+    private val events: CaptureEventRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun invoke(ownerUserId: Long, status: CaptureEventStatus, sessionId: String?, limit: Int): List<CaptureEvent> =
+        events.findByOwnerAndStatus(ownerUserId, status, sessionId, limit.coerceIn(1, MAX_LIMIT))
+
+    private companion object {
+        const val MAX_LIMIT = 100
+    }
+}

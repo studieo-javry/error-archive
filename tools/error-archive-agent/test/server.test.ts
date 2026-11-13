@@ -39,6 +39,7 @@ function fakeClient(overrides: Partial<ApiClient> = {}) {
     completeCapture: async () => { throw new Error('unused'); },
     searchCases: async () => { throw new Error('unused'); },
     getCase: async () => { throw new Error('unused'); },
+    ingestEvents: async () => { throw new Error('unused'); },
     ...overrides,
   };
   return { client: base, calls };

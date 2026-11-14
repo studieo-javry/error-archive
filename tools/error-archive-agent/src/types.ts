@@ -153,6 +153,8 @@ export interface CaptureResponse {
   revision: number;
   title: string | null;
   project: string | null;
+  /** 귀속된 ProjectBinding id(세션 상속/명시 지정). 미귀속이면 null. */
+  projectBindingId: number | null;
   content: CaptureContent;
   createdAt: string;
   updatedAt: string;

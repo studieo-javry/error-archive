@@ -1772,6 +1772,13 @@
               "null"
             ]
           },
+          "projectBindingId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "content": {
             "$ref": "#/components/schemas/CaptureContent"
           },

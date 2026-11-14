@@ -388,6 +388,52 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
+    fun `전 구간 - 검토 응답이 상속 projectBindingId 를 노출하고 확인(import)하면 Case 에 귀속`() {
+        // 피드백(#181 P0): 검토 API 응답에 projectBindingId 가 있어야 FE 가 "자동 제안된 프로젝트 확인" 흐름을
+        // 구현할 수 있다. 세션 → Capture(상속) → 검토 응답(큐·상세에 projectBindingId 노출) → Import(확인=상속 유지)
+        // → ErrorCase 귀속까지 전 구간 검증.
+        val confirmUser = 8121L
+        val conn = UUID.randomUUID()
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = confirmUser, projectKey = "confirm-chain", createdAt = now(), updatedAt = now()),
+        )
+        val sessionUuid = UUID.randomUUID()
+        registerSession.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = confirmUser, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-confirm",
+                projectBindingId = binding.id,
+            ),
+        )
+        val capUuid = UUID.randomUUID()
+        createCapture.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCommand(
+                captureUuid = capUuid, ownerUserId = confirmUser, connectionId = conn,
+                title = "inherited-confirm", project = null, content = CaptureContent.EMPTY, sessionUuid = sessionUuid,
+            ),
+        )
+        val sealed = captures.findByUuid(capUuid)!!
+        sealed.complete(now())
+        captures.save(sealed)
+        val rev = captures.findByUuid(capUuid)!!.revision
+
+        // 검토 큐 응답이 상속 projectBindingId 를 노출(FE 가 '자동 제안된 프로젝트' 를 보여줄 수 있어야).
+        mvc.perform(get("/api/v1/captures").with(asUser(confirmUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$capUuid')].projectBindingId").value(binding.id!!.toInt()))
+        // 상세 응답도 노출.
+        mvc.perform(get("/api/v1/captures/$capUuid").with(asUser(confirmUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capture.projectBindingId").value(binding.id!!.toInt()))
+
+        // 확인(import, clear/정정 없음) → 상속 그대로 Case 에 귀속.
+        doImport(capUuid, confirmUser, "chain-confirm", """{"reviewedRevision":$rev}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(capUuid)!!.importedCaseId!!
+        assertEquals(binding.id, errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
     fun `타인 소유 projectBindingId 는 404`() {
         val (uuid, _) = seedCapture(userId, seal = true)
         val foreign = projectBindings.save(

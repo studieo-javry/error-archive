@@ -113,6 +113,8 @@ data class CaptureResponse(
     val revision: Int,
     val title: String?,
     val project: String?,
+    /** 귀속된 ProjectBinding id(세션 상속/명시 지정, 미귀속이면 null). 검토 화면의 '자동 제안된 프로젝트 확인·정정' 용 — 이름은 GET /api/v1/me/project-bindings 로 매핑. */
+    val projectBindingId: Long?,
     val content: CaptureContent,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -125,6 +127,7 @@ data class CaptureResponse(
             revision = c.revision,
             title = c.title,
             project = c.project,
+            projectBindingId = c.projectBindingId,
             content = c.content,
             createdAt = c.createdAt,
             updatedAt = c.updatedAt,

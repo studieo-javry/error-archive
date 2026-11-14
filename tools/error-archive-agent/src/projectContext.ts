@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import type { ApiClient } from './apiClient.js';
 import { newIdempotencyKey, newUuid } from './idempotency.js';
 import { resolveProject, type ResolveOptions, type ResolvedProject } from './project.js';
+import { clearConsent, setConsent } from './consentIndex.js';
 import { approve as persistApprove, getApproved, namespaceOf, revoke as persistRevoke } from './projectState.js';
 import { readContext, type ResolvedSessionContext } from './sessionContext.js';
 
@@ -23,6 +24,13 @@ export interface ProjectContextConfig {
   sessionId?: string;
   /** 승인 상태 파일 경로 override(테스트용). */
   statePath?: string;
+  /**
+   * 토큰 네임스페이스(accountNamespace(baseUrl, token)) — 오프라인 동의 인덱스 미러용. 설정되면 approve/revoke
+   * 가 이 네임스페이스로 동의 인덱스를 함께 갱신해 Hook·Sender 가 네트워크 없이 수집 승인 여부를 읽는다.
+   */
+  consentNamespace?: string;
+  /** 동의 인덱스 파일 경로 override(테스트용). */
+  consentPath?: string;
   /** cwd override(테스트용). */
   cwd?: string;
   /** 프로젝트 해석 주입(테스트용 — 기본은 git 기반 resolveProject). */
@@ -121,6 +129,15 @@ export class ProjectContext {
   async approve(p: ResolvedProject): Promise<void> {
     const ns = await this.namespace();
     if (!ns) throw new Error('계정(네임스페이스) 식별 실패 — 토큰/서버 설정을 확인하세요.');
+    // 토큰-ns 동의 인덱스를 **먼저** 기록(오프라인 Hook/Sender 의 수집 판정 기준 = source of truth).
+    // 여기서 실패하면 approve 가 던져 userId-ns 승인도 안 써진다(둘 중 토큰-ns 만 비는 상황 방지).
+    if (this.cfg.consentNamespace) {
+      setConsent(
+        this.cfg.consentNamespace,
+        { projectKey: p.projectKey, gitRoot: p.gitRoot, status: 'APPROVED', remoteAtApproval: p.remote },
+        { path: this.cfg.consentPath },
+      );
+    }
     persistApprove(ns, p.gitRoot, { projectKey: p.projectKey, remote: p.remote }, { path: this.cfg.statePath });
     // 명시 경로로 승인했어도 이후 ensureSession(무인자 detect)이 같은 프로젝트를 쓰도록 문맥 고정(②).
     this.cachedResolve = p;
@@ -133,12 +150,14 @@ export class ProjectContext {
    * 없으므로(계약상 no-op), 기존 바운드 세션을 버리고 새 미귀속 세션을 쓴다. 기존 Capture 는 소급 변경 안 함.
    */
   async revoke(p: ResolvedProject): Promise<void> {
-    const ns = await this.namespace();
-    if (!ns) return;
-    persistRevoke(ns, p.gitRoot, { path: this.cfg.statePath });
+    // 토큰-ns 동의 인덱스를 **먼저** 제거 → 오프라인 Hook/Sender 가 즉시 수집 중단(whoami 불필요).
+    if (this.cfg.consentNamespace) clearConsent(this.cfg.consentNamespace, p.gitRoot, { path: this.cfg.consentPath });
     this.sessionUuid = newUuid();
     this.rotated = true; // session_id 재채택 금지(미귀속 decouple 유지)
     this.lastRegisteredKey = undefined;
+    // userId-ns 원본 승인 삭제(온라인일 때). whoami 실패해도 위에서 수집은 이미 끊겼다.
+    const ns = await this.namespace();
+    if (ns) persistRevoke(ns, p.gitRoot, { path: this.cfg.statePath });
   }
 
   /**

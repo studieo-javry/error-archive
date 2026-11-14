@@ -429,10 +429,12 @@ export function createServer(
       title: '프로젝트 연결(승인)',
       description:
         '현재 작업 폴더(git)를 Error Archive 프로젝트로 연결한다. **사용자 승인**이 필요하며, 승인 후 이 세션의 ' +
-        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제한다.',
+        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제, ' +
+        "snooze=true 로 이 세션에서 최초 연결 안내를 보류('나중에')한다.",
       inputSchema: {
         path: z.string().optional().describe('git 작업 폴더 경로(생략 시 설정 projectRoot·현재 경로로 자동 식별)'),
         disconnect: z.boolean().optional().describe('true 면 연결 해제'),
+        snooze: z.boolean().optional().describe("true 면 이 세션에서 최초 연결 안내 보류('나중에' — 승인 아님, 수집 안 함)"),
       },
     },
     (args) =>
@@ -446,6 +448,10 @@ export function createServer(
         if (args.disconnect) {
           await project.revoke(resolved);
           return ok({ ...base, connected: false, message: '연결 해제됨.' });
+        }
+        if (args.snooze) {
+          await project.snooze(resolved);
+          return ok({ ...base, connected: false, snoozed: true, message: "이 세션에선 다시 안내하지 않습니다('나중에'). 수집·귀속은 아직 비활성." });
         }
         if (await project.isApproved(resolved)) {
           return ok({ ...base, connected: true, message: '이미 연결됨.' });
@@ -461,7 +467,9 @@ export function createServer(
             message: '이 클라이언트는 인라인 승인을 지원하지 않습니다. 터미널에서 `npx -y @error-archive/agent connect-project` 를 실행해 승인하세요.',
           });
         }
-        return ok({ ...base, connected: false, message: '승인되지 않았습니다(사용자 취소/거절).' });
+        // 사용자 거절 → 영속 DECLINED(다음 세션에도 자동 안내 안 함, 명시 재연결로만 해제).
+        await project.decline(resolved);
+        return ok({ ...base, connected: false, declined: true, message: '거절로 기록했습니다. 다시 연결하려면 connect_project 를 명시 실행하세요.' });
       }),
   );
 

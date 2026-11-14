@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { ApiClient } from '../src/apiClient.js';
-import { isCollectionApproved } from '../src/consentIndex.js';
+import { isCollectionApproved, isSnoozedForSession, readConsent } from '../src/consentIndex.js';
 import type { ResolvedProject } from '../src/project.js';
 import { ProjectContext } from '../src/projectContext.js';
 import type { ResolvedSessionContext } from '../src/sessionContext.js';
@@ -253,6 +253,36 @@ test('approve → 토큰-ns 동의 인덱스에 APPROVED 미러, revoke → 제�
     await c.revoke(PROJECT);
     // 해제 후: 즉시 제거 → 수집 금지.
     assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('snooze → SNOOZED(세션키), decline → DECLINED (토큰-ns 인덱스)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-sd-'));
+  const consentPath = join(dir, 'consent.json');
+  const NS = 'tok-sd';
+  const c = new ProjectContext(makeClient([]), {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    sessionId: 'sess-xyz',
+    consentNamespace: NS,
+    consentPath,
+    resolve: () => PROJECT,
+  });
+  try {
+    await c.snooze(PROJECT);
+    assert.equal(isSnoozedForSession(NS, PROJECT.gitRoot, 'sess-xyz', { path: consentPath }), true);
+    assert.equal(isSnoozedForSession(NS, PROJECT.gitRoot, 'other', { path: consentPath }), false);
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false); // 보류는 수집 아님
+
+    await c.decline(PROJECT);
+    assert.equal(readConsent(NS, PROJECT.gitRoot, { path: consentPath })?.status, 'DECLINED');
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+
+    // 명시 재연결(approve)은 DECLINED 를 덮어 APPROVED.
+    await c.approve(PROJECT);
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

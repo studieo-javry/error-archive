@@ -20,8 +20,10 @@ import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
 import { accountNamespace, EventQueue } from './eventQueue.js';
 import { flushQueue } from './eventSender.js';
+import { buildFirstConnectNotice } from './firstConnect.js';
 import { collectionEnabled, isSensitive, normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
+import { resolveProject } from './project.js';
 import { ProjectContext } from './projectContext.js';
 import { createServer } from './server.js';
 import { recordContext } from './sessionContext.js';
@@ -205,6 +207,20 @@ async function runHook(): Promise<number> {
       recordContext(ns, { sessionId: input.session_id, cwd: input.cwd });
     } catch (err) {
       process.stderr.write(`[hook] 문맥 기록 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+    // (1.5) SessionStart: 미연결 프로젝트면 **최초 연결 안내**(systemMessage+additionalContext). 네트워크 없이
+    //       토큰-ns 동의 인덱스만 읽어 판정 — 승인/이 세션 보류/거절이면 무안내(Phase 2). 적재는 안 한다.
+    if (input.hook_event_name === 'SessionStart') {
+      try {
+        const p = resolveProject({ cwd: input.cwd });
+        if (p) {
+          const notice = buildFirstConnectNotice(p, ns, input.session_id);
+          if (notice) process.stdout.write(JSON.stringify(notice));
+        }
+      } catch {
+        /* 안내 실패해도 Claude Code 흐름을 막지 않는다 */
+      }
+      return 0;
     }
     // (2) UserPromptSubmit: 프롬프트 원문은 적재·전송하지 않고(개인정보 최소화), 자동기록 정책만 전달.
     if (input.hook_event_name === 'UserPromptSubmit') {

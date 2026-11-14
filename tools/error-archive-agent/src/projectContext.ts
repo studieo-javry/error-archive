@@ -161,6 +161,31 @@ export class ProjectContext {
   }
 
   /**
+   * "나중에" — 이 Claude Code 세션에서만 최초 안내를 보류(SNOOZED). 토큰-ns 인덱스에 세션 키로 기록.
+   * 승인(userId-ns)과 무관하며 수집은 여전히 안 한다(미승인 유지). 새 세션/`/clear` 후에는 다시 안내.
+   */
+  async snooze(p: ResolvedProject): Promise<void> {
+    if (!this.cfg.consentNamespace) return;
+    setConsent(
+      this.cfg.consentNamespace,
+      { projectKey: p.projectKey, gitRoot: p.gitRoot, status: 'SNOOZED', remoteAtApproval: p.remote, snoozeSessionId: this.cfg.sessionId ?? null },
+      { path: this.cfg.consentPath },
+    );
+  }
+
+  /**
+   * 거절 — 영속 DECLINED. 다음 세션에도 자동 안내·수집 안 함. 명시 approve()(connect_project/CLI)로만 재연결.
+   */
+  async decline(p: ResolvedProject): Promise<void> {
+    if (!this.cfg.consentNamespace) return;
+    setConsent(
+      this.cfg.consentNamespace,
+      { projectKey: p.projectKey, gitRoot: p.gitRoot, status: 'DECLINED', remoteAtApproval: p.remote },
+      { path: this.cfg.consentPath },
+    );
+  }
+
+  /**
    * Capture 에 사용할 sessionUuid 를 돌려준다. 승인 프로젝트가 바뀌었으면 세션을 (재)등록한다.
    * 등록 실패는 삼킨다(서버가 미등록 세션 무시 → Capture 미귀속).
    */

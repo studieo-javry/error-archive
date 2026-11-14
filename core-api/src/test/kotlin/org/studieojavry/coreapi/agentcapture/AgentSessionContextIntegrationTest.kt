@@ -119,7 +119,8 @@ class AgentSessionContextIntegrationTest {
 
     @Test
     fun `capture 에 타인 소유 projectBindingId 명시 → 404`() {
-        val othersBinding = newBinding(7777L, "theirs")
+        // 공유 DB·롤백 없음 → 위 세션 테스트와 다른 (owner,key) 로 유니크 충돌(uq_project_binding_owner_key) 회피.
+        val othersBinding = newBinding(7777L, "theirs-capture")
         assertThrows<ProjectBindingNotFoundException> {
             createCapture.invoke(createCmd(sessionUuid = null, projectBindingId = othersBinding))
         }

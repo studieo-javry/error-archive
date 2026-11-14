@@ -96,6 +96,21 @@ export function createServer(
     },
     (args) =>
       guard(async () => {
+        // (Phase3) 승인 전 무수집 — 식별된 프로젝트가 아직 미승인이면 자동 Capture 생성을 차단하고 연결을 유도한다.
+        // (프로젝트 미식별이면 귀속 대상이 없으므로 차단하지 않고 미귀속으로 생성. 명시 sessionUuid 지정 시는 건너뜀.)
+        if (project && !args.sessionUuid) {
+          const resolved = project.detect();
+          if (resolved && !(await project.isApproved(resolved))) {
+            return ok({
+              created: false,
+              needsApproval: true,
+              projectKey: resolved.projectKey,
+              message:
+                `'${resolved.projectKey}' 프로젝트가 아직 연결(승인)되지 않아 자동 기록을 시작할 수 없습니다. ` +
+                'connect_project 로 먼저 연결하거나, 사용자가 원치 않으면 connect_project(snooze/disconnect) 하세요.',
+            });
+          }
+        }
         const captureUuid = newUuid();
         // 세션 문맥 자동 전달: 명시 sessionUuid 가 없으면 승인된 프로젝트 세션을 자동 주입(미승인이면 미귀속).
         const sessionUuid = args.sessionUuid ?? (project ? await project.ensureSession() : undefined);

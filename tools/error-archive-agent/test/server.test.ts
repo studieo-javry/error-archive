@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { ApiClient } from '../src/apiClient.js';
 import { ApiError } from '../src/apiClient.js';
 import { idempotencyKeyFor } from '../src/idempotency.js';
+import { ProjectContext } from '../src/projectContext.js';
 import { createServer } from '../src/server.js';
 import type { CaptureContent, CaptureResponse, CreateCaptureRequest, UpdateAttemptRequest, UpdateSolutionRequest } from '../src/types.js';
 
@@ -256,4 +260,38 @@ test('capture_link_events: 선택 이벤트만 링크 호출', async () => {
   await mcp.callTool({ name: 'capture_link_events', arguments: { captureUuid: AUUID, clientEventIds: ['E1', 'E2'] } });
   assert.equal(captured!.uuid, AUUID);
   assert.deepEqual(captured!.ids, ['E1', 'E2']);
+});
+
+test('capture_start(Phase3): 미승인 프로젝트면 생성 차단, 승인 후 생성됨', async () => {
+  const { client: api, calls } = fakeClient();
+  const dir = mkdtempSync(join(tmpdir(), 'ea-srv-consent-'));
+  const resolved = { gitRoot: '/dev/x', remote: 'github.com/o/x', projectKey: 'github.com/o/x', trust: 'config' as const };
+  const pc = new ProjectContext(api, {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: 'cns',
+    consentPath: join(dir, 'c.json'),
+    resolve: () => resolved,
+  });
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createServer(api, pc);
+  await server.connect(serverT);
+  const mcp = new Client({ name: 'test', version: '0' });
+  await mcp.connect(clientT);
+  try {
+    // 미승인 → 생성 차단(needsApproval), createCapture 미호출.
+    const blocked = JSON.parse(textOf((await mcp.callTool({ name: 'capture_start', arguments: { title: 't' } })) as never));
+    assert.equal(blocked.created, false);
+    assert.equal(blocked.needsApproval, true);
+    assert.equal(calls.createCapture, undefined, '미승인이면 createCapture 호출 안 함');
+
+    // 승인 후 → 생성됨(captureUuid 반환).
+    await pc.approve(resolved);
+    const made = JSON.parse(textOf((await mcp.callTool({ name: 'capture_start', arguments: { title: 't' } })) as never));
+    assert.ok(made.captureUuid, '승인 후엔 captureUuid 반환');
+    assert.ok(calls.createCapture, '승인 후엔 createCapture 호출');
+  } finally {
+    await mcp.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { ApiClient } from '../src/apiClient.js';
+import { isCollectionApproved } from '../src/consentIndex.js';
 import type { ResolvedProject } from '../src/project.js';
 import { ProjectContext } from '../src/projectContext.js';
 import type { ResolvedSessionContext } from '../src/sessionContext.js';
@@ -290,4 +291,29 @@ test('(부) 로테이션(해제) 상태에선 clientSessionId=파생 UUID(원본
     assert.equal(last.clientSessionId, last.sessionUuid); // 원본 아닌 파생 UUID(decouple)
     assert.notEqual(last.clientSessionId, 'raw-sid');
   } finally { cleanup(); }
+});
+
+test('approve → 토큰-ns 동의 인덱스에 APPROVED 미러, revoke → 제거', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-consent-ctx-'));
+  const consentPath = join(dir, 'consent.json');
+  const NS = 'tok-ctx';
+  const c = new ProjectContext(makeClient([]), {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: NS,
+    consentPath,
+    resolve: () => PROJECT,
+  });
+  try {
+    // 승인 전: 인덱스에 없음 → 미승인(수집 금지).
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+    await c.approve(PROJECT);
+    // 승인 후: 오프라인 Hook/Sender 가 읽을 토큰-ns 인덱스에 APPROVED 미러됨.
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), true);
+    await c.revoke(PROJECT);
+    // 해제 후: 즉시 제거 → 수집 금지.
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

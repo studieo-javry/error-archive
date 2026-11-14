@@ -87,6 +87,7 @@ async function runServer(): Promise<void> {
     // Hook 이 기록한 실제 cwd·session_id 를 읽어 문맥 복원(G). MCP 서버 프로세스의 process.cwd() 는
     // Claude Code 작업 폴더가 아닐 수 있으므로 hook cwd 를 더 신뢰한다.
     hookNamespace: ns,
+    consentNamespace: ns, // approve/revoke 가 오프라인 동의 인덱스(토큰-ns)를 함께 갱신
   });
   // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
   const queue = new EventQueue(ns);
@@ -125,6 +126,7 @@ async function runConnectProject(): Promise<number> {
     baseUrl: config.baseUrl,
     projectRoot: config.projectRoot,
     sessionId: config.sessionId,
+    consentNamespace: accountNamespace(config.baseUrl, config.token), // CLI 승인/해제도 오프라인 동의 인덱스 갱신
   });
   const resolved = project.detect(process.argv[3]); // 선택: 경로 인자
   if (!resolved) {

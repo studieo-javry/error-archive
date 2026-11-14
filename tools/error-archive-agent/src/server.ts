@@ -290,7 +290,8 @@ export function createServer(
     {
       title: '근거 첨부',
       description:
-        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
+        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 시각적 재현 근거(깨진 UI·렌더 결과 스크린샷, 읽은 이미지)도 1급 근거이니 문제가 시각 상태와 관련되면 그 파일 경로로 첨부하라. ' +
+        '반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
       inputSchema: {
         captureUuid: z.string().uuid(),
         filePath: z.string().describe('업로드할 로컬 파일의 절대/상대 경로'),

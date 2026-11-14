@@ -36,6 +36,9 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
    `capture_link_events` 로 이 Capture 에 연결한다.
 4. **조사·시도 기록** — 시도마다 `capture_add_attempt`(result = SUCCEEDED/FAILED/INCONCLUSIVE, 무엇을 했고
    무엇을 알았는지). 실패한 시도도 남긴다(나중의 교훈).
+   - **시각 재현 근거**(깨진 UI·렌더 결과 스크린샷, 읽은 이미지)도 1급 근거다. 문제가 시각 상태와 관련되면
+     `capture_attach_evidence` 로 그 파일 경로를 첨부하고 반환된 clientArtifactId 를 해당 시도의 evidenceRefs 에 잇는다.
+     세션 중 찍은 스크린샷·읽은 이미지는 디스크에 보존되어 봉인 전까지 경로가 유효하다.
 5. **사용자 결정 보존** — 사용자가 수정 방향을 직접 골랐다면, 그 선택과 **이유**를 같은 Capture 에 기록한다.
    "사용자가 B안을 선택했다" 는 사실을 AI 의 해결책으로 둔갑시키지 말 것(판단의 출처를 유지).
 6. **해결 기록** — 해결에 기여한 시도를 가리키는 `capture_add_solution`(검증 명령·결과 포함).

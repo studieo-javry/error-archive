@@ -42,6 +42,20 @@ async function runDoctor(): Promise<number> {
   process.stderr.write(`base URL : ${config.baseUrl}\n`);
   process.stderr.write(`token    : ${maskToken(config.token)}\n`);
 
+  // 세션 식별 진단(#182) — 내 세션 id 를 알면 다중 동시 세션에서 '내 문맥'만 조회해 오귀속을 막는다.
+  // 모르면(없음) 모호 시 미귀속으로 떨어진다. CLAUDE_CODE_SESSION_ID 는 Claude Code 가 자동 주입(2단계 전제).
+  const envExplicit = process.env.ERROR_ARCHIVE_SESSION_ID?.trim();
+  const envClaude = process.env.CLAUDE_CODE_SESSION_ID?.trim();
+  const sessionSource = !config.sessionId
+    ? '없음 — 다중 세션 모호 시 미귀속'
+    : envExplicit && envExplicit === config.sessionId
+      ? 'ERROR_ARCHIVE_SESSION_ID(명시)'
+      : envClaude && envClaude === config.sessionId
+        ? 'CLAUDE_CODE_SESSION_ID(Claude Code 자동)'
+        : '설정 파일';
+  process.stderr.write(`session  : ${config.sessionId ?? '(없음)'} · 출처=${sessionSource}\n`);
+  process.stderr.write(`  CLAUDE_CODE_SESSION_ID : ${envClaude ? '감지됨' : '없음(이 프로세스 환경에 미주입)'}\n`);
+
   const install = resolveClientInfo();
   process.stderr.write(`install  : ${install.installLabel ?? '(label 생략)'} · ${install.kind} ${install.version ?? ''}\n`);
   const client = createApiClient(config, undefined, install);

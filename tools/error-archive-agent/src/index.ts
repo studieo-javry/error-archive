@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
+import { isCollectionApproved } from './consentIndex.js';
 import { accountNamespace, EventQueue } from './eventQueue.js';
 import { flushQueue } from './eventSender.js';
 import { buildFirstConnectNotice } from './firstConnect.js';
@@ -95,7 +96,7 @@ async function runServer(): Promise<void> {
   const queue = new EventQueue(ns);
   const flushEvents = async () => {
     try {
-      await flushQueue(client, queue);
+      await flushQueue(client, queue, { consentNamespace: ns }); // 전송 직전 승인 재검사(해제 후 잔여 전송 금지)
     } catch (err) {
       process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
     }
@@ -235,8 +236,14 @@ async function runHook(): Promise<number> {
     if (!shouldCollect(input)) return 0;
     if (!collectionEnabled()) return 0; // 귀속 승인과 분리된 수집 토글 — 문맥은 기록, 적재만 중지
     if (isSensitive(input)) return 0; // .env·키·크리덴셜 등을 건드리는 이벤트는 수집 안 함(마스킹과 별개 2차 방어)
+    // (Phase3) 승인 기반 수집 게이트 — 미연결(미승인) 프로젝트의 이벤트는 적재하지 않는다(fail-closed, 오프라인).
+    const proj = resolveProject({ cwd: input.cwd });
+    if (!proj) return 0; // 프로젝트 미식별 → 무수집
+    if (!isCollectionApproved(ns, proj.gitRoot, proj.remote)) return 0; // 미승인/보류/거절/remote 변경 → 무수집
     const queue = new EventQueue(ns);
-    queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
+    const event = normalizeHookEvent(input, queue.nextLocalSequence());
+    // _local: 전송 안 함. Sender flush 때 승인 재검사(해제 후 잔여 전송 금지)용.
+    queue.enqueue({ ...event, _local: { gitRoot: proj.gitRoot, remote: proj.remote, projectKey: proj.projectKey } });
   } catch (err) {
     process.stderr.write(`[hook] 적재 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
   }
@@ -247,9 +254,10 @@ async function runHook(): Promise<number> {
 async function runFlush(): Promise<number> {
   const config = loadConfig();
   const client = createApiClient(config, undefined, resolveClientInfo());
-  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
-  const r = await flushQueue(client, queue);
-  process.stderr.write(`[events] sent=${r.sent} rejected=${r.rejected} pending=${r.pending}\n`);
+  const ns = accountNamespace(config.baseUrl, config.token);
+  const queue = new EventQueue(ns);
+  const r = await flushQueue(client, queue, { consentNamespace: ns });
+  process.stderr.write(`[events] sent=${r.sent} rejected=${r.rejected} dropped=${r.dropped} pending=${r.pending}\n`);
   return 0;
 }
 

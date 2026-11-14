@@ -283,6 +283,15 @@ export interface EventItemRequest {
   toolCallId?: string | null;
 }
 
+/**
+ * 로컬 큐에 저장되는 이벤트 — 전송 payload(EventItemRequest) + **커넥터 로컬 메타**(_local).
+ * _local 은 Sender flush 시 승인 재검사(해제 후 잔여 전송 금지)에 쓰고, **전송 전 반드시 strip**한다
+ * (gitRoot 는 로컬 경로라 서버로 보내지 않는다).
+ */
+export interface QueuedEvent extends EventItemRequest {
+  _local?: { gitRoot: string; remote: string | null; projectKey: string };
+}
+
 export interface EventBatchRequest {
   events: EventItemRequest[];
 }

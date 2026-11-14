@@ -192,9 +192,11 @@ class ListOpenCapturesUseCase(
 ) {
     @Transactional(readOnly = true)
     fun invoke(connectionId: UUID, sessionUuid: UUID?): List<AgentCapture> {
+        // 재사용 후보라 소량(진행 중 초안)이지만, 봉인되지 않은 초안이 연결 전역에 누적될 수 있어 상한으로 막는다.
         val open = captures.listByConnectionAndStatus(
             connectionId,
             org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus.OPEN,
+            MAX_OPEN,
         )
         if (sessionUuid == null) return open
         // 세션 범위로 좁히기: 현재 연결에서 등록한 세션만 유효(교차연결 누출 방지) → 링크된 Capture 만.
@@ -202,6 +204,11 @@ class ListOpenCapturesUseCase(
             ?: return emptyList()
         val linked = sessions.linkedCaptureIds(session.id!!)
         return open.filter { it.id in linked }
+    }
+
+    private companion object {
+        /** 진행 중(OPEN) 재사용 후보 상한. 한 세션의 미봉인 초안은 소수라 충분하며, 미봉인 누적을 막는다. */
+        const val MAX_OPEN = 100
     }
 }
 

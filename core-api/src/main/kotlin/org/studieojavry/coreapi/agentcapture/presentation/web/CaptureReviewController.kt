@@ -66,15 +66,29 @@ class CaptureReviewController(
 ) {
 
     @Operation(
-        summary = "검토 큐 조회",
-        description = "봉인된(READY_FOR_REVIEW) 본인 초안 목록(최근 갱신순). 반영/폐기 대기열.",
+        summary = "검토 큐 조회 (cursor 페이지)",
+        description = """
+            봉인된(READY_FOR_REVIEW) 본인 초안 목록(최근 갱신순). 반영/폐기 대기열.
+            keyset 페이징: `cursor` 생략 = 첫 페이지, 응답의 `nextCursor` 를 다음 `cursor` 로. `hasNext=false` 면 끝.
+            `limit` 기본 20, 상한 100. 정렬 `updatedAt DESC, id DESC`.
+        """,
     )
     @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
     @GetMapping
     fun reviewQueue(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
-    ): ReviewQueueResponse =
-        ReviewQueueResponse(items = listForReview.invoke(userId).map(CaptureResponse::from))
+        @Parameter(description = "다음 페이지 cursor(이전 응답의 nextCursor)")
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)")
+        @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): ReviewQueueResponse {
+        val page = listForReview.invoke(userId, cursor, limit)
+        return ReviewQueueResponse(
+            items = page.items.map(CaptureResponse::from),
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
+        )
+    }
 
     @Operation(
         summary = "자동기록 계측(퍼널)",
@@ -201,9 +215,13 @@ class CaptureReviewController(
         )
 
     @Operation(
-        summary = "검토 완료 이력 조회",
-        description = "종단 상태(IMPORTED·DISCARDED) 본인 초안 목록(최근 갱신순). status 로 한 상태만 필터(없으면 둘 다). " +
-            "IMPORTED 항목은 caseId 로 반영된 Case 를 가리킨다.",
+        summary = "검토 완료 이력 조회 (cursor 페이지)",
+        description = """
+            종단 상태(IMPORTED·DISCARDED) 본인 초안 목록(최근 갱신순). status 로 한 상태만 필터(없으면 둘 다).
+            IMPORTED 항목은 caseId 로 반영된 Case 를 가리킨다.
+            keyset 페이징: `cursor` 생략 = 첫 페이지, 응답의 `nextCursor` 를 다음 `cursor` 로. `hasNext=false` 면 끝.
+            `limit` 기본 20, 상한 100. 정렬 `updatedAt DESC, id DESC`.
+        """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "성공"),
@@ -214,10 +232,18 @@ class CaptureReviewController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "IMPORTED 또는 DISCARDED (생략 시 둘 다)")
         @RequestParam(required = false) status: CaptureStatus?,
-    ): CaptureHistoryResponse =
-        CaptureHistoryResponse(
-            items = listHistory.invoke(userId, status).map(CaptureHistoryItemResponse::from),
+        @Parameter(description = "다음 페이지 cursor(이전 응답의 nextCursor)")
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)")
+        @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): CaptureHistoryResponse {
+        val page = listHistory.invoke(userId, status, cursor, limit)
+        return CaptureHistoryResponse(
+            items = page.items.map(CaptureHistoryItemResponse::from),
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
         )
+    }
 
     @Operation(
         summary = "폐기 복원(restore)",

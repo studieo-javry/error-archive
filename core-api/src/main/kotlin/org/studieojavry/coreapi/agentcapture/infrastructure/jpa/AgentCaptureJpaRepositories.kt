@@ -31,6 +31,41 @@ interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
     fun findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(
         originatingConnectionId: UUID,
         status: CaptureStatus,
+        pageable: Pageable,
+    ): List<AgentCaptureEntity>
+
+    /**
+     * 소유자의 여러 상태 초안 첫 페이지. 정렬 `updatedAt DESC, id DESC`.
+     * ix_agent_capture_owner_status_updated 로 LIMIT 만큼만 스캔(검토 이력 무한 누적 방어).
+     */
+    @Query(
+        "select c from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.status in :statuses " +
+            "order by c.updatedAt desc, c.id desc",
+    )
+    fun firstPageByOwnerAndStatuses(
+        @Param("owner") owner: Long,
+        @Param("statuses") statuses: Collection<CaptureStatus>,
+        pageable: Pageable,
+    ): List<AgentCaptureEntity>
+
+    /**
+     * 다음 페이지(keyset) — (updatedAt,id) 튜플이 cursor 보다 "작은"(= 더 과거/뒤) 행만. 같은 정렬.
+     * cursor 파라미터는 null 이 아니다(널 바인딩 시 Postgres 타입 추론 실패를 피하려 첫 페이지와 분리).
+     */
+    @Query(
+        "select c from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.status in :statuses " +
+            "and (c.updatedAt < :cursorUpdatedAt " +
+            "     or (c.updatedAt = :cursorUpdatedAt and c.id < :cursorId)) " +
+            "order by c.updatedAt desc, c.id desc",
+    )
+    fun pageAfterByOwnerAndStatuses(
+        @Param("owner") owner: Long,
+        @Param("statuses") statuses: Collection<CaptureStatus>,
+        @Param("cursorUpdatedAt") cursorUpdatedAt: java.time.Instant,
+        @Param("cursorId") cursorId: Long,
+        pageable: Pageable,
     ): List<AgentCaptureEntity>
 
     @Query(

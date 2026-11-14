@@ -14,6 +14,8 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Base64
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -44,6 +46,29 @@ class GithubSecurityPrimitivesTest {
         val codec = GithubInstallStateCodec(props, clockAt(1_000))
         assertEquals(GithubInstallStateCodec.State(7, 42), codec.verify(codec.issue(7, 42)))
         assertNull(codec.verify(codec.issue(7, null)).workspaceId)
+    }
+
+    @Test
+    fun `state - remember 동의가 왕복에 보존된다(기본 false)`() {
+        val codec = GithubInstallStateCodec(props, clockAt(1_000))
+        assertEquals(true, codec.verify(codec.issue(7, 42, remember = true)).remember)
+        assertEquals(false, codec.verify(codec.issue(7, 42)).remember)
+        assertEquals(false, codec.verify(codec.issue(7, 42, remember = false)).remember)
+    }
+
+    @Test
+    fun `state - remember 없던 옛 5-필드 state 도 받는다(remember=false)`() {
+        val codec = GithubInstallStateCodec(props, clockAt(1_000))
+        // 배포 직전 발급된 레거시 형식: v1|uid|ws|exp|nonce (remember 필드 없음). 같은 키로 서명해 유효하게 만든다.
+        val enc = Base64.getUrlEncoder().withoutPadding()
+        val body = enc.encodeToString("v1|7|42|${1_000 + 300}|nonce".toByteArray())
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("state-secret".toByteArray(), "HmacSHA256")) }
+        val legacy = body + "." + enc.encodeToString(mac.doFinal(body.toByteArray()))
+
+        val s = codec.verify(legacy)
+        assertEquals(7, s.userId)
+        assertEquals(42, s.workspaceId)
+        assertEquals(false, s.remember)
     }
 
     @Test

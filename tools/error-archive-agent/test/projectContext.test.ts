@@ -119,14 +119,18 @@ function projFor(path: string): ResolvedProject {
 /** readHookContext·resolve 를 주입해 hook cwd→프로젝트 매핑을 테스트. */
 function makeHookCtx(
   client: ApiClient,
-  holder: { current: { cwd: string; sessionId: string | null } | null },
+  holder: { current: { cwd: string; sessionId: string | null; ambiguous?: boolean } | null },
+  extra: { projectRoot?: string } = {},
 ): { c: ProjectContext; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'ea-hookctx-'));
   const c = new ProjectContext(client, {
     baseUrl: 'https://api',
     statePath: join(dir, 'p.json'),
+    projectRoot: extra.projectRoot,
     readHookContext: (): ResolvedSessionContext | null =>
-      holder.current ? { cwd: holder.current.cwd, sessionId: holder.current.sessionId, ambiguous: false } : null,
+      holder.current
+        ? { cwd: holder.current.cwd, sessionId: holder.current.sessionId, ambiguous: holder.current.ambiguous ?? false }
+        : null,
     resolve: (opts) => {
       const path = opts.explicitPath ?? opts.hookPath ?? opts.configRoot;
       return path ? projFor(path) : null; // cwd 폴백은 프로젝트 없음
@@ -162,6 +166,33 @@ test('hook cwd 변경(프로젝트 전환) → 캐시 무효화·재해석', asy
     assert.equal(c.detect()?.projectKey, 'key:/dev/h2'); // 재해석됨
     await c.ensureSession();
     assert.equal(calls.at(-1)!.projectKey, null); // 미승인 프로젝트 → 미귀속
+  } finally { cleanup(); }
+});
+
+test('모호한 문맥(다중 세션·내 세션 불명)이면 프로젝트 자동 귀속 보류(미귀속)', async () => {
+  const calls: RegCall[] = [];
+  // 최신은 B 지만 ambiguous=true — 최신(B)을 내 세션이라 넘겨짚어 B 프로젝트로 귀속하면 안 된다.
+  const holder = {
+    current: { cwd: '/dev/b-newest', sessionId: 'B-456', ambiguous: true } as
+      { cwd: string; sessionId: string | null; ambiguous?: boolean } | null,
+  };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    assert.equal(c.detect(), null); // 추측 금지 → 미해결(미귀속)
+    await c.ensureSession();
+    assert.equal(calls.at(-1)!.projectKey, null); // 잘못된 B 가 아니라 미귀속으로 등록
+  } finally { cleanup(); }
+});
+
+test('모호해도 명시 projectRoot 가 있으면 그 프로젝트를 사용한다', async () => {
+  const calls: RegCall[] = [];
+  const holder = {
+    current: { cwd: '/dev/b-newest', sessionId: 'B-456', ambiguous: true } as
+      { cwd: string; sessionId: string | null; ambiguous?: boolean } | null,
+  };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder, { projectRoot: '/dev/explicit' });
+  try {
+    assert.equal(c.detect()?.projectKey, 'key:/dev/explicit'); // 모호한 hook cwd 대신 명시 설정 사용
   } finally { cleanup(); }
 });
 

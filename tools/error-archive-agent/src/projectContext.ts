@@ -78,10 +78,15 @@ export class ProjectContext {
    */
   detect(explicitPath?: string): ResolvedProject | null {
     if (explicitPath) return this.resolveAt(explicitPath, undefined);
-    const hookCwd = this.readHook()?.cwd;
+    const hook = this.readHook();
+    // 모호(다중 세션 + 내 세션 id 불명)면 hook cwd 를 신뢰하지 않는다 — 최신 세션을 내 것이라 넘겨짚어
+    // 엉뚱한 프로젝트로 귀속하느니, 명시 projectRoot 가 없으면 미해결(null)로 둔다(미귀속 = 안전).
+    // preferSessionId(CLAUDE_CODE_SESSION_ID 포함)가 있으면 readContext 가 ambiguous=false 라 정상 경로.
+    const ambiguous = hook?.ambiguous === true;
+    const hookCwd = ambiguous ? undefined : hook?.cwd;
     if (this.cachedResolve === undefined || hookCwd !== this.lastHookCwd) {
       this.lastHookCwd = hookCwd;
-      this.cachedResolve = this.resolveAt(undefined, hookCwd);
+      this.cachedResolve = ambiguous && !this.cfg.projectRoot ? null : this.resolveAt(undefined, hookCwd);
     }
     return this.cachedResolve;
   }
@@ -145,7 +150,9 @@ export class ProjectContext {
     // 이벤트(sessionId 로 태그)와 Capture(sessionUuid)가 같은 세션에서 나와 B 연결이 상관 가능해진다.
     // 로테이션(해제) 상태에서는 재채택하지 않는다(미귀속 decouple 유지).
     if (!this.rotated) {
-      const hookSid = this.readHook()?.sessionId ?? undefined;
+      // 모호한 문맥의 sessionId 는 채택하지 않는다(엉뚱한 세션 UUID 로 바뀌어 남의 세션에 Capture 가 붙는 것 방지).
+      const hook = this.readHook();
+      const hookSid = hook && !hook.ambiguous ? (hook.sessionId ?? undefined) : undefined;
       const sidSource = hookSid ?? this.cfg.sessionId;
       if (sidSource) {
         const derived = deriveUuid(sidSource);

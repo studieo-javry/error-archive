@@ -22,7 +22,9 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AssignCaseProj
  * 기존 Case 의 ProjectBinding 사후 귀속/해제 — 웹 세션 사용자(본인 소유)만. 에이전트 토큰 아님.
  *
  * #162 는 import 시점에만 신규 Case 를 귀속시켰다. 이 엔드포인트로 **이미 만들어진 Case** 를
- * 프로젝트에 명시 연결해, 에이전트 case:read(find_cases/get_case)가 과거 관련 Case 를 끌어올 수 있다.
+ * 프로젝트에 명시 연결/해제한다. 에이전트 case:read(find_cases/get_case)는 바인딩과 무관하게
+ * 본인 소유 Case 를 조회하지만(#161 재설계 — projectBindingId 는 선택적 좁히기 필터일 뿐),
+ * **프로젝트별로 좁혀(find_cases?projectBindingId=X) 끌어오려면** Case 가 그 바인딩에 귀속돼 있어야 한다.
  */
 @Tag(name = "project-binding", description = "기존 Case 를 ProjectBinding 에 귀속/해제 — 세션 사용자 전용.")
 @RestController
@@ -51,7 +53,8 @@ class CaseProjectBindingController(
 
     @Operation(
         summary = "Case 의 ProjectBinding 귀속 해제",
-        description = "미귀속으로 되돌림(에이전트 case:read 대상에서 제외). 멱등 — 이미 미귀속이어도 204.",
+        description = "미귀속(project_binding_id=null)으로 되돌림 — 프로젝트별 조회(projectBindingId 필터)에서 빠진다. " +
+            "case:read 전체 조회 대상에선 그대로 유지(바인딩 무관). 멱등 — 이미 미귀속이어도 204.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "해제됨", content = [Content()]),

@@ -61,9 +61,10 @@ class ListProjectBindingsUseCase(
 /**
  * 이미 만들어진 Case 를 ProjectBinding 에 사후 귀속/해제 — 웹 세션 사용자(본인 소유)만.
  *
- * #162 는 import(검토 반영) 시점에만 신규 Case 를 귀속시켰다. 바인딩 도입 전에 만든 Case,
- * 또는 바인딩 없이 반영한 Case(project_binding_id = null)는 에이전트 case:read(IS NOT NULL 필터)에
- * 영영 안 보였다 → 사용자가 과거 Case 를 프로젝트에 명시 연결할 수 있게 한다.
+ * #162 는 import(검토 반영) 시점에만 신규 Case 를 귀속시켰다. 에이전트 case:read 는 바인딩과 무관하게
+ * 본인 소유 Case 를 조회하지만(#161 재설계 — projectBindingId 는 `:bindingId IS NULL OR …` 선택적 필터),
+ * **프로젝트별로 좁혀 끌어오려면**(find_cases?projectBindingId=X) Case 가 그 바인딩에 귀속돼 있어야 한다.
+ * 바인딩 도입 전 Case·바인딩 없이 반영한 Case 를 사용자가 사후에 프로젝트로 연결/해제하는 경로.
  *
  * 존재 노출 회피: 대상 Case 가 없거나 타인 소유면 404(CaseNotOwned), 바인딩이 없거나 타인 소유면
  * 404(ProjectBindingNotFound). 둘 다 본인 소유여야 귀속 가능(이름/repo 동일만으로 확대 금지 원칙).
@@ -82,7 +83,7 @@ class AssignCaseProjectBindingUseCase(
         errorCases.updateProjectBinding(caseId, projectBindingId)
     }
 
-    /** 기존 Case 의 귀속 해제(미귀속으로 — 에이전트 case:read 대상에서 제외). */
+    /** 기존 Case 의 귀속 해제(미귀속으로 — 프로젝트별 projectBindingId 필터에서 빠짐. case:read 전체 대상엔 유지). */
     @Transactional
     fun unbind(userId: Long, caseId: Long) {
         requireOwnedCase(userId, caseId)

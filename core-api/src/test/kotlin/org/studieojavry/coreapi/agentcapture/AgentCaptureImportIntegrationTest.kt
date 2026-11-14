@@ -552,6 +552,27 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
+    fun `폐기 복원 - 봉인 전(OPEN) 초안은 OPEN 으로 복귀하고 큐·이력 어디에도 안 보인다`() {
+        // 봉인 우회 방지: 미봉인 초안을 discard→restore 하면 READY 가 아니라 폐기 직전 단계(OPEN)로 되돌아간다.
+        // OPEN 은 검토 큐(READY만)·이력(terminal만)에 안 보이고, 에이전트가 이어서 봉인할 수 있는 상태.
+        val openUser = 8130L
+        val (uuid, _) = seedCapture(openUser, seal = false)
+        mvc.perform(post("/api/v1/captures/$uuid/discard").with(asUser(openUser))).andExpect(status().isOk)
+
+        mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(openUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("OPEN")) // READY 아님 — complete 근거검증 우회 방지
+        assertEquals(CaptureStatus.OPEN, captures.findByUuid(uuid)!!.status)
+
+        // 검토 큐(READY만) 에 없다.
+        mvc.perform(get("/api/v1/captures").with(asUser(openUser)))
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$uuid')]").doesNotExist())
+        // 이력(terminal만) 에도 없다.
+        mvc.perform(get("/api/v1/captures/history").with(asUser(openUser)))
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$uuid')]").doesNotExist())
+    }
+
+    @Test
     fun `근거 개별 제외(B) - 선택 Attempt 라도 미선택 근거는 반영되지 않는다`() {
         // a1 이 art1·art2 두 근거를 참조하지만, 사용자는 art1 만 선택(art2 제외).
         val uuid = UUID.randomUUID()

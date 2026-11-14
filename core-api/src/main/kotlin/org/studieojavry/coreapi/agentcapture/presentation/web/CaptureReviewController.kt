@@ -247,11 +247,16 @@ class CaptureReviewController(
 
     @Operation(
         summary = "폐기 복원(restore)",
-        description = "폐기(DISCARDED)한 초안을 검토 큐로 되돌린다(→READY_FOR_REVIEW). 내용은 그대로 복원. " +
-            "본인 소유만(아니면 404), DISCARDED 아닌 상태는 409.",
+        description = """
+            폐기(DISCARDED)한 초안을 **폐기 직전 단계로** 되돌린다. 내용(Attempt·Solution·근거)은 그대로 복원.
+            봉인(complete) 이력이 있으면 READY_FOR_REVIEW(검토 큐로 복귀), 아직 봉인 전이었으면 OPEN 으로 되돌아간다
+            (미봉인 초안을 바로 READY 로 올리면 complete 의 근거 완료 검증을 우회하므로). OPEN 으로 복원되면 검토 큐·검토
+            이력 어디에도 보이지 않고 에이전트가 이어서 봉인할 수 있는 상태가 된다. 복원된 실제 상태는 응답 status 로 확인.
+            본인 소유만(아니면 404), DISCARDED 아닌 상태는 409.
+        """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "복원됨(READY_FOR_REVIEW)"),
+        ApiResponse(responseCode = "200", description = "복원됨(폐기 직전 상태 = READY_FOR_REVIEW 또는 OPEN — 응답 status 참조)"),
         ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
         ApiResponse(responseCode = "409", description = "DISCARDED 아님(복원 불가)", content = [Content()]),
     )

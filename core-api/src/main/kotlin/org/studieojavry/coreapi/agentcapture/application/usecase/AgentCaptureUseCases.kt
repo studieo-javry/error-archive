@@ -22,6 +22,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundExcepti
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
+import org.studieojavry.coreapi.agentcapture.domain.model.SessionConnectionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
@@ -50,6 +51,13 @@ class RegisterCaptureSessionUseCase(
         val bindingId = resolveBinding(cmd)
         val existing = sessions.findByUuid(cmd.sessionUuid)
         if (existing != null) {
+            // 연결 경계 — 남의 연결 세션을 재사용·변경(문맥 탈취)하지 못하게 거부. sessionUuid 는 UNIQUE 라
+            // 여기서 두 연결이 같은 uuid 를 다툰다(특히 CC 세션 id 파생 결정적 uuid). CreateCapture 의
+            // connection 검증과 동일 경계이나, 더 앞선 등록 단계에서 막는다. resolveBinding 보다 뒤라도
+            // 바인딩 생성(findOrCreate)은 요청자 본인 소유라 교차 영향 없음(남의 세션은 절대 건드리지 않음).
+            if (existing.connectionId != cmd.connectionId) {
+                throw SessionConnectionConflictException(cmd.sessionUuid)
+            }
             return if (bindingId != null && existing.projectBindingId != bindingId) {
                 sessions.save(existing.withProjectBinding(bindingId))
             } else {

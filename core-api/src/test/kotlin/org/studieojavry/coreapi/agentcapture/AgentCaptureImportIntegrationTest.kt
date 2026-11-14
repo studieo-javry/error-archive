@@ -129,6 +129,8 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
     @Autowired private lateinit var storage: AttachmentStoragePort
     @Autowired private lateinit var importCapture: org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
+    @Autowired private lateinit var registerSession: org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
+    @Autowired private lateinit var createCapture: org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureUseCase
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -341,6 +343,47 @@ class AgentCaptureImportIntegrationTest {
             """{"reviewedRevision":1,"selectedAttemptIds":["a1","a2"],"selectedSolutionIds":["s1"],"projectBindingId":${binding.id},"clearProjectBinding":true}""",
         ).andExpect(status().isCreated)
         val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertNull(errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
+    fun `전 구간 - 세션 상속 Capture 를 clearProjectBinding=true 로 import 하면 Case 미귀속`() {
+        // 실제 세션 → Capture(상속) → Import 전 구간 회귀: 세션에서 받은 프로젝트를 Capture 가 상속한 상태에서도
+        // clearProjectBinding 이 상속분(capture.projectBindingId)을 이겨 Case 가 미귀속(null)으로 반영되는지.
+        val chainUser = 8120L
+        val conn = UUID.randomUUID()
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = chainUser, projectKey = "inherited-chain", createdAt = now(), updatedAt = now()),
+        )
+        // 1) 세션이 projectBinding 을 받고
+        val sessionUuid = UUID.randomUUID()
+        registerSession.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = chainUser, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-chain",
+                projectBindingId = binding.id,
+            ),
+        )
+        // 2) Capture 가 세션에서 상속(명시 projectBindingId 없이) — 상속 자체를 먼저 확인.
+        val capUuid = UUID.randomUUID()
+        val created = createCapture.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCommand(
+                captureUuid = capUuid, ownerUserId = chainUser, connectionId = conn,
+                title = "inherited", project = null, content = CaptureContent.EMPTY, sessionUuid = sessionUuid,
+            ),
+        )
+        assertEquals(binding.id, created.projectBindingId)
+
+        // 3) 봉인(READY_FOR_REVIEW).
+        val sealed = captures.findByUuid(capUuid)!!
+        sealed.complete(now())
+        captures.save(sealed)
+        val rev = captures.findByUuid(capUuid)!!.revision
+
+        // 4) clearProjectBinding=true(요청에 projectBindingId 미지정) → 상속분이 있어도 Case 미귀속.
+        doImport(capUuid, chainUser, "chain-clear", """{"reviewedRevision":$rev,"clearProjectBinding":true}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(capUuid)!!.importedCaseId!!
         assertNull(errorCases.findById(caseId)!!.projectBindingId)
     }
 

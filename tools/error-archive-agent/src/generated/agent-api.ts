@@ -494,6 +494,8 @@ export interface components {
             revision: number;
             title?: string | null;
             project?: string | null;
+            /** Format: int64 */
+            projectBindingId?: number | null;
             content: components["schemas"]["CaptureContent"];
             /** Format: date-time */
             createdAt: string;

@@ -18,6 +18,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
+import org.studieojavry.coreapi.agentcapture.domain.model.SessionConnectionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.StoragePolicy
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -141,5 +142,70 @@ class AgentSessionContextIntegrationTest {
         // 현재 연결(this.conn)로 그 세션 uuid 를 써서 capture 생성 → 상속 안 됨
         val capture = createCapture.invoke(createCmd(sessionUuid))
         assertNull(capture.projectBindingId)
+    }
+
+    @Test
+    fun `다른 연결이 같은 sessionUuid 로 등록하면 거부하고 기존 세션을 변경하지 않는다`() {
+        // #185: CC 세션 id 파생 결정적 UUID 때문에 여러 Agent 연결이 같은 sessionUuid 를 보낼 수 있다.
+        // 남의 연결 세션을 재사용·변경(문맥 탈취)하지 못하게 등록 단계에서 거부해야 한다.
+        val sessionUuid = UUID.randomUUID()
+        val connA = UUID.randomUUID()
+        val connB = UUID.randomUUID()
+        val bindingA = newBinding(userId, "conn-a-session-proj")
+        // A 가 바인딩과 함께 먼저 등록
+        val a = registerSession.invoke(
+            RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = userId, connectionId = connA,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-a",
+                projectBindingId = bindingA,
+            ),
+        )
+        assertEquals(connA, a.connectionId)
+        assertEquals(bindingA, a.projectBindingId)
+
+        // B 가 같은 sessionUuid 로(다른 연결) 등록·문맥 변경 시도 → 거부.
+        val bindingB = newBinding(userId, "conn-b-session-proj")
+        assertThrows<SessionConnectionConflictException> {
+            registerSession.invoke(
+                RegisterSessionCommand(
+                    sessionUuid = sessionUuid, ownerUserId = userId, connectionId = connB,
+                    clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-b",
+                    projectBindingId = bindingB,
+                ),
+            )
+        }
+
+        // A 의 세션은 연결·바인딩 모두 불변(B 가 건드리지 못함). A 가 변경 없이 재등록하면 현재 DB 상태를 돌려준다.
+        val still = registerSession.invoke(
+            RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = userId, connectionId = connA,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-a",
+            ),
+        )
+        assertEquals(connA, still.connectionId)
+        assertEquals(bindingA, still.projectBindingId)
+    }
+
+    @Test
+    fun `같은 연결 재등록은 바인딩을 갱신한다(정상 동작 보존)`() {
+        // 연결 경계 가드가 같은 연결의 정상적인 재등록·바인딩 last-wins 를 깨지 않는지.
+        val sessionUuid = UUID.randomUUID()
+        val b1 = newBinding(userId, "same-conn-proj-1")
+        val b2 = newBinding(userId, "same-conn-proj-2")
+        registerSession.invoke(
+            RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = userId, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-same",
+                projectBindingId = b1,
+            ),
+        )
+        val updated = registerSession.invoke(
+            RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = userId, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-same",
+                projectBindingId = b2,
+            ),
+        )
+        assertEquals(b2, updated.projectBindingId)
     }
 }

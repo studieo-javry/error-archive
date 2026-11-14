@@ -85,11 +85,34 @@ class AgentCaptureRepositoryAdapter(
     ): List<AgentCapture> =
         jpa.findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(ownerUserId, status).map { it.toDomain() }
 
+    override fun pageByOwnerAndStatuses(
+        ownerUserId: Long,
+        statuses: Collection<org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus>,
+        cursorUpdatedAt: java.time.Instant?,
+        cursorId: Long?,
+        limit: Int,
+    ): List<AgentCapture> {
+        if (statuses.isEmpty()) return emptyList()
+        val page = org.springframework.data.domain.PageRequest.of(0, limit)
+        // cursor 유무로 쿼리 분리 — null Instant 바인딩(Postgres 타입 추론 실패) 회피.
+        val rows = if (cursorUpdatedAt != null && cursorId != null) {
+            jpa.pageAfterByOwnerAndStatuses(ownerUserId, statuses, cursorUpdatedAt, cursorId, page)
+        } else {
+            jpa.firstPageByOwnerAndStatuses(ownerUserId, statuses, page)
+        }
+        return rows.map { it.toDomain() }
+    }
+
     override fun listByConnectionAndStatus(
         connectionId: UUID,
         status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
+        limit: Int,
     ): List<AgentCapture> =
-        jpa.findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(connectionId, status).map { it.toDomain() }
+        jpa.findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(
+            connectionId,
+            status,
+            org.springframework.data.domain.PageRequest.of(0, limit),
+        ).map { it.toDomain() }
 
     override fun countByOwnerSinceByStatus(
         ownerUserId: Long,

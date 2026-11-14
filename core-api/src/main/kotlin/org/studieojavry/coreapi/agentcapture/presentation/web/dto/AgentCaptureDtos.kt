@@ -211,9 +211,12 @@ data class OpenCaptureListResponse(
 
 // ── 검토 반영(PR4) ────────────────────────────────────────────────────────────
 
-@Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록.")
+@Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록(cursor 페이지). nextCursor 를 다음 cursor 로, hasNext=false 면 끝.")
 data class ReviewQueueResponse(
     val items: List<CaptureResponse>,
+    @Schema(description = "다음 페이지 cursor. hasNext=false 면 null.")
+    val nextCursor: String? = null,
+    val hasNext: Boolean = false,
 )
 
 @Schema(
@@ -233,9 +236,12 @@ data class CaptureMetricsResponse(
     val adoptionRate: Double?,
 )
 
-@Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).")
+@Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순, cursor 페이지). nextCursor 를 다음 cursor 로, hasNext=false 면 끝.")
 data class CaptureHistoryResponse(
     val items: List<CaptureHistoryItemResponse>,
+    @Schema(description = "다음 페이지 cursor. hasNext=false 면 null.")
+    val nextCursor: String? = null,
+    val hasNext: Boolean = false,
 )
 
 @Schema(description = "이력 항목. IMPORTED 면 caseId 로 반영된 Case 를 가리킨다(DISCARDED 면 null).")

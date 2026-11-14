@@ -546,14 +546,21 @@ data class DiscardCaptureCommand(
     val reviewerUserId: Long,
 )
 
-/** 검토 큐 조회 — 소유자의 봉인된(READY_FOR_REVIEW) 초안 목록(최근 갱신순). */
+/**
+ * 검토 큐 조회 — 소유자의 봉인된(READY_FOR_REVIEW) 초안을 keyset(cursor)로 한 페이지.
+ * 정렬 `updatedAt DESC, id DESC`. cursor 생략 = 첫 페이지, 응답의 nextCursor 를 다음 cursor 로.
+ */
 @Service
 class ListCapturesForReviewUseCase(
     private val captures: AgentCaptureRepositoryPort,
 ) {
     @Transactional(readOnly = true)
-    fun invoke(ownerUserId: Long): List<AgentCapture> =
-        captures.listByOwnerAndStatus(ownerUserId, CaptureStatus.READY_FOR_REVIEW)
+    fun invoke(ownerUserId: Long, cursor: String?, size: Int): CapturePage =
+        CaptureCursor.page(cursor, size) { cur, limit ->
+            captures.pageByOwnerAndStatuses(
+                ownerUserId, listOf(CaptureStatus.READY_FOR_REVIEW), cur?.first, cur?.second, limit,
+            )
+        }
 }
 
 /**
@@ -606,20 +613,66 @@ data class CaptureMetrics(
 )
 
 /**
- * 검토 완료 이력 조회 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).
+ * 검토 완료 이력 조회 — 종단 상태(IMPORTED·DISCARDED) 초안을 keyset(cursor)로 한 페이지.
  * status 지정 시 그 상태만, 없으면 둘 다. 종단 상태가 아닌 값 요청은 거부(400).
+ * 정렬 `updatedAt DESC, id DESC`. 단조 증가하는 이력을 cursor + LIMIT 으로 페이지네이션한다.
  */
 @Service
 class ListCaptureHistoryUseCase(
     private val captures: AgentCaptureRepositoryPort,
 ) {
     @Transactional(readOnly = true)
-    fun invoke(ownerUserId: Long, status: CaptureStatus?): List<AgentCapture> {
+    fun invoke(ownerUserId: Long, status: CaptureStatus?, cursor: String?, size: Int): CapturePage {
         require(status == null || status.isTerminal) { "history status must be IMPORTED or DISCARDED" }
         val statuses = status?.let { listOf(it) } ?: listOf(CaptureStatus.IMPORTED, CaptureStatus.DISCARDED)
-        return statuses
-            .flatMap { captures.listByOwnerAndStatus(ownerUserId, it) }
-            .sortedByDescending { it.updatedAt }
+        return CaptureCursor.page(cursor, size) { cur, limit ->
+            captures.pageByOwnerAndStatuses(ownerUserId, statuses, cur?.first, cur?.second, limit)
+        }
+    }
+}
+
+/** keyset cursor 페이지 결과 — items(요청 size 이하) + 다음 페이지 cursor/hasNext. */
+data class CapturePage(
+    val items: List<AgentCapture>,
+    val nextCursor: String?,
+    val hasNext: Boolean,
+)
+
+/**
+ * 자동기록 초안 목록의 keyset cursor 코덱/페이저. cursor = base64url("updatedAt|id").
+ * ListErrorCasesUseCase 와 같은 패턴(size+1 조회로 hasNext 판정). 잘못된 cursor 는 무시(처음부터).
+ */
+object CaptureCursor {
+    private const val MAX_SIZE = 100
+    private const val DEFAULT_SIZE = 20
+
+    /** fetch(cursor, limit) = 정렬된 결과를 limit 만큼. size 는 1..100 클램프, 기본 20. */
+    fun page(
+        cursor: String?,
+        size: Int,
+        fetch: (Pair<Instant, Long>?, Int) -> List<AgentCapture>,
+    ): CapturePage {
+        val limit = size.takeIf { it > 0 }?.coerceIn(1, MAX_SIZE) ?: DEFAULT_SIZE
+        val rows = fetch(decode(cursor), limit + 1)
+        val hasNext = rows.size > limit
+        val items = if (hasNext) rows.take(limit) else rows
+        val nextCursor = items.lastOrNull()
+            ?.takeIf { hasNext }
+            ?.let { encode(it.updatedAt, it.id!!) }
+        return CapturePage(items = items, nextCursor = nextCursor, hasNext = hasNext)
+    }
+
+    private fun encode(updatedAt: Instant, id: Long): String =
+        java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("$updatedAt|$id".toByteArray(Charsets.UTF_8))
+
+    private fun decode(cursor: String?): Pair<Instant, Long>? {
+        if (cursor.isNullOrBlank()) return null
+        return runCatching {
+            val raw = String(java.util.Base64.getUrlDecoder().decode(cursor), Charsets.UTF_8)
+            val sep = raw.lastIndexOf('|')
+            Instant.parse(raw.substring(0, sep)) to raw.substring(sep + 1).toLong()
+        }.getOrNull()
     }
 }
 

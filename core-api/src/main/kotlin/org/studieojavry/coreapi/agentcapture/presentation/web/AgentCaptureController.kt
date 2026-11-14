@@ -181,6 +181,7 @@ class AgentCaptureController(
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "성공(빈 목록 가능)"),
     )
+    // 재사용 후보라 소량이지만, 미봉인 초안이 연결 전역에 누적될 수 있어 use case 에서 최근순 최대 100건으로 상한.
     @GetMapping("/captures")
     fun listOpen(
         principal: AgentPrincipal,

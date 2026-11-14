@@ -429,6 +429,65 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
+    fun `검토 큐 keyset 페이지네이션 - limit·cursor 로 전부 중복없이 순회(updatedAt DESC, id DESC)`() {
+        val pageUser = 8110L
+        // 3건 봉인(READY_FOR_REVIEW). 시드 순서대로 updatedAt 증가 → 최신순 = 역순.
+        val u1 = seedCapture(pageUser, seal = true).first
+        val u2 = seedCapture(pageUser, seal = true).first
+        val u3 = seedCapture(pageUser, seal = true).first
+
+        // 1페이지(limit=2): 최신 2건[u3,u2], hasNext=true, nextCursor 존재.
+        val r1 = mvc.perform(get("/api/v1/captures").param("limit", "2").with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.items[0].captureUuid").value(u3.toString()))
+            .andExpect(jsonPath("$.items[1].captureUuid").value(u2.toString()))
+            .andExpect(jsonPath("$.hasNext").value(true))
+            .andExpect(jsonPath("$.nextCursor").isNotEmpty)
+            .andReturn()
+        val cursor = com.jayway.jsonpath.JsonPath.read<String>(r1.response.contentAsString, "$.nextCursor")
+
+        // 2페이지(cursor): 남은 1건[u1], hasNext=false, nextCursor=null. 1페이지와 겹치지 않음.
+        mvc.perform(get("/api/v1/captures").param("limit", "2").param("cursor", cursor).with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].captureUuid").value(u1.toString()))
+            .andExpect(jsonPath("$.hasNext").value(false))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist())
+
+        // 잘못된 cursor 는 무시하고 첫 페이지부터(3건 다 보이되 limit 로 상한).
+        mvc.perform(get("/api/v1/captures").param("limit", "50").param("cursor", "!!garbage!!").with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(3))
+    }
+
+    @Test
+    fun `검토 이력 keyset 페이지네이션 - IMPORTED·DISCARDED 혼합을 cursor 로 순회`() {
+        val hpUser = 8111L
+        // 3건 종단화(IMPORTED 1 + DISCARDED 2) → 최신순 혼합 스트림.
+        val imp = seedCapture(hpUser, seal = true).first
+        doImport(imp, hpUser, "hp-imp").andExpect(status().isCreated)
+        val d1 = seedCapture(hpUser, seal = true).first
+        mvc.perform(post("/api/v1/captures/$d1/discard").with(asUser(hpUser))).andExpect(status().isOk)
+        val d2 = seedCapture(hpUser, seal = true).first
+        mvc.perform(post("/api/v1/captures/$d2/discard").with(asUser(hpUser))).andExpect(status().isOk)
+
+        // 1페이지(limit=2): 최신 2건, hasNext=true.
+        val r1 = mvc.perform(get("/api/v1/captures/history").param("limit", "2").with(asUser(hpUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.hasNext").value(true))
+            .andReturn()
+        val cursor = com.jayway.jsonpath.JsonPath.read<String>(r1.response.contentAsString, "$.nextCursor")
+
+        // 2페이지: 남은 1건, 끝.
+        mvc.perform(get("/api/v1/captures/history").param("limit", "2").param("cursor", cursor).with(asUser(hpUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.hasNext").value(false))
+    }
+
+    @Test
     fun `폐기 복원 - DISCARDED 를 READY 로 되돌리고 검토 큐에 다시 포함`() {
         val restoreUser = 8102L
         val (uuid, _) = seedCapture(restoreUser, seal = true)

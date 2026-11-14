@@ -22,6 +22,7 @@ import type {
   AttemptResponse,
   CaptureDetailResponse,
   CaptureResponse,
+  OpenCaptureListResponse,
   CompleteCaptureRequest,
   CreateCaptureRequest,
   EventBatchRequest,
@@ -86,6 +87,8 @@ export interface ApiClient {
   registerSession(req: RegisterSessionRequest, idempotencyKey?: string): Promise<SessionResponse>;
   createCapture(req: CreateCaptureRequest, idempotencyKey?: string): Promise<CaptureResponse>;
   getCapture(captureUuid: string): Promise<CaptureDetailResponse>;
+  /** 진행 중(OPEN) Capture 후보 조회 — 같은 버그면 재사용, 다르면 새로. sessionUuid 로 현재 세션으로 좁히기(선택). */
+  listOpenCaptures(sessionUuid?: string): Promise<OpenCaptureListResponse>;
   patchCapture(captureUuid: string, req: PatchCaptureRequest): Promise<CaptureResponse>;
   addAttempt(captureUuid: string, req: AddAttemptRequest, idempotencyKey?: string): Promise<AttemptResponse>;
   updateAttempt(captureUuid: string, clientAttemptId: string, req: UpdateAttemptRequest): Promise<AttemptResponse>;
@@ -185,6 +188,13 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     getCapture: (uuid) =>
       request<CaptureDetailResponse>({ method: 'GET', path: `/api/v1/agent/captures/${uuid}` }),
+
+    listOpenCaptures: (sessionUuid) => {
+      const qs = new URLSearchParams();
+      if (sessionUuid != null && sessionUuid !== '') qs.set('sessionUuid', sessionUuid);
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request<OpenCaptureListResponse>({ method: 'GET', path: `/api/v1/agent/captures${suffix}` });
+    },
 
     patchCapture: (uuid, req) =>
       request<CaptureResponse>({ method: 'PATCH', path: `/api/v1/agent/captures/${uuid}`, body: req }),

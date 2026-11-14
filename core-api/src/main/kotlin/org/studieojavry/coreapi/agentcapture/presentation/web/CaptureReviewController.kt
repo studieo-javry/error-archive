@@ -27,6 +27,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.SolutionEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.StepEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureHistoryUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.CaptureMetricsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureUseCase
@@ -38,6 +39,7 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistory
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureHistoryResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureMetricsResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ReviewQueueResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SolutionResponse
 import java.util.UUID
@@ -59,19 +61,57 @@ class CaptureReviewController(
     private val importCapture: ImportCaptureUseCase,
     private val discardCapture: DiscardCaptureUseCase,
     private val restoreCapture: RestoreCaptureUseCase,
+    private val captureMetrics: CaptureMetricsUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
     @Operation(
-        summary = "검토 큐 조회",
-        description = "봉인된(READY_FOR_REVIEW) 본인 초안 목록(최근 갱신순). 반영/폐기 대기열.",
+        summary = "검토 큐 조회 (cursor 페이지)",
+        description = """
+            봉인된(READY_FOR_REVIEW) 본인 초안 목록(최근 갱신순). 반영/폐기 대기열.
+            keyset 페이징: `cursor` 생략 = 첫 페이지, 응답의 `nextCursor` 를 다음 `cursor` 로. `hasNext=false` 면 끝.
+            `limit` 기본 20, 상한 100. 정렬 `updatedAt DESC, id DESC`.
+        """,
     )
     @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
     @GetMapping
     fun reviewQueue(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
-    ): ReviewQueueResponse =
-        ReviewQueueResponse(items = listForReview.invoke(userId).map(CaptureResponse::from))
+        @Parameter(description = "다음 페이지 cursor(이전 응답의 nextCursor)")
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)")
+        @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): ReviewQueueResponse {
+        val page = listForReview.invoke(userId, cursor, limit)
+        return ReviewQueueResponse(
+            items = page.items.map(CaptureResponse::from),
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
+        )
+    }
+
+    @Operation(
+        summary = "자동기록 계측(퍼널)",
+        description = """
+            최근 windowDays(기본 30, 1~365) 내 생성된 본인 초안의 상태 퍼널. 자동기록의 품질 모니터링용.
+            discardRate=폐기/검토완료(오생성 지표), adoptionRate=반영/검토완료. 검토완료(reviewed)=0 이면 두 비율은 null.
+            성공률(자동 트리거 자체)은 모델 행동이라 서버가 관측하지 않는다(E2E 하네스로 측정).
+        """,
+    )
+    @ApiResponses(ApiResponse(responseCode = "200", description = "성공"))
+    @GetMapping("/metrics")
+    fun metrics(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @Parameter(description = "집계 창(일). 기본 30, 1~365 로 클램프.")
+        @RequestParam(required = false, defaultValue = "30") windowDays: Int,
+    ): CaptureMetricsResponse {
+        val m = captureMetrics.invoke(userId, windowDays)
+        return CaptureMetricsResponse(
+            windowDays = m.windowDays, since = m.since, created = m.created, open = m.open,
+            readyForReview = m.readyForReview, imported = m.imported, discarded = m.discarded,
+            reviewed = m.reviewed, discardRate = m.discardRate, adoptionRate = m.adoptionRate,
+        )
+    }
 
     @Operation(
         summary = "초안 상세",
@@ -175,9 +215,13 @@ class CaptureReviewController(
         )
 
     @Operation(
-        summary = "검토 완료 이력 조회",
-        description = "종단 상태(IMPORTED·DISCARDED) 본인 초안 목록(최근 갱신순). status 로 한 상태만 필터(없으면 둘 다). " +
-            "IMPORTED 항목은 caseId 로 반영된 Case 를 가리킨다.",
+        summary = "검토 완료 이력 조회 (cursor 페이지)",
+        description = """
+            종단 상태(IMPORTED·DISCARDED) 본인 초안 목록(최근 갱신순). status 로 한 상태만 필터(없으면 둘 다).
+            IMPORTED 항목은 caseId 로 반영된 Case 를 가리킨다.
+            keyset 페이징: `cursor` 생략 = 첫 페이지, 응답의 `nextCursor` 를 다음 `cursor` 로. `hasNext=false` 면 끝.
+            `limit` 기본 20, 상한 100. 정렬 `updatedAt DESC, id DESC`.
+        """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "성공"),
@@ -188,18 +232,31 @@ class CaptureReviewController(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "IMPORTED 또는 DISCARDED (생략 시 둘 다)")
         @RequestParam(required = false) status: CaptureStatus?,
-    ): CaptureHistoryResponse =
-        CaptureHistoryResponse(
-            items = listHistory.invoke(userId, status).map(CaptureHistoryItemResponse::from),
+        @Parameter(description = "다음 페이지 cursor(이전 응답의 nextCursor)")
+        @RequestParam(required = false) cursor: String?,
+        @Parameter(description = "페이지 크기(기본 20, 최대 100)")
+        @RequestParam(required = false, defaultValue = "20") limit: Int,
+    ): CaptureHistoryResponse {
+        val page = listHistory.invoke(userId, status, cursor, limit)
+        return CaptureHistoryResponse(
+            items = page.items.map(CaptureHistoryItemResponse::from),
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
         )
+    }
 
     @Operation(
         summary = "폐기 복원(restore)",
-        description = "폐기(DISCARDED)한 초안을 검토 큐로 되돌린다(→READY_FOR_REVIEW). 내용은 그대로 복원. " +
-            "본인 소유만(아니면 404), DISCARDED 아닌 상태는 409.",
+        description = """
+            폐기(DISCARDED)한 초안을 **폐기 직전 단계로** 되돌린다. 내용(Attempt·Solution·근거)은 그대로 복원.
+            봉인(complete) 이력이 있으면 READY_FOR_REVIEW(검토 큐로 복귀), 아직 봉인 전이었으면 OPEN 으로 되돌아간다
+            (미봉인 초안을 바로 READY 로 올리면 complete 의 근거 완료 검증을 우회하므로). OPEN 으로 복원되면 검토 큐·검토
+            이력 어디에도 보이지 않고 에이전트가 이어서 봉인할 수 있는 상태가 된다. 복원된 실제 상태는 응답 status 로 확인.
+            본인 소유만(아니면 404), DISCARDED 아닌 상태는 409.
+        """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "복원됨(READY_FOR_REVIEW)"),
+        ApiResponse(responseCode = "200", description = "복원됨(폐기 직전 상태 = READY_FOR_REVIEW 또는 OPEN — 응답 status 참조)"),
         ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
         ApiResponse(responseCode = "409", description = "DISCARDED 아님(복원 불가)", content = [Content()]),
     )

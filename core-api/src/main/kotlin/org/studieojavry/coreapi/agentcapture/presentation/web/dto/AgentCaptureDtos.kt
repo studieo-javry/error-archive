@@ -113,6 +113,8 @@ data class CaptureResponse(
     val revision: Int,
     val title: String?,
     val project: String?,
+    /** 귀속된 ProjectBinding id(세션 상속/명시 지정, 미귀속이면 null). 검토 화면의 '자동 제안된 프로젝트 확인·정정' 용 — 이름은 GET /api/v1/me/project-bindings 로 매핑. */
+    val projectBindingId: Long?,
     val content: CaptureContent,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -125,6 +127,7 @@ data class CaptureResponse(
             revision = c.revision,
             title = c.title,
             project = c.project,
+            projectBindingId = c.projectBindingId,
             content = c.content,
             createdAt = c.createdAt,
             updatedAt = c.updatedAt,
@@ -204,16 +207,44 @@ data class CaptureDetailResponse(
     val artifacts: List<ArtifactResponse>,
 )
 
-// ── 검토 반영(PR4) ────────────────────────────────────────────────────────────
-
-@Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록.")
-data class ReviewQueueResponse(
+@Schema(description = "진행 중(OPEN) Capture 후보 목록 — 같은 버그 재사용·다른 버그 분리 판단용.")
+data class OpenCaptureListResponse(
     val items: List<CaptureResponse>,
 )
 
-@Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순).")
+// ── 검토 반영(PR4) ────────────────────────────────────────────────────────────
+
+@Schema(description = "검토 큐 — 봉인된(READY_FOR_REVIEW) 초안 요약 목록(cursor 페이지). nextCursor 를 다음 cursor 로, hasNext=false 면 끝.")
+data class ReviewQueueResponse(
+    val items: List<CaptureResponse>,
+    @Schema(description = "다음 페이지 cursor. hasNext=false 면 null.")
+    val nextCursor: String? = null,
+    val hasNext: Boolean = false,
+)
+
+@Schema(
+    description = "자동기록 계측 — 최근 창(windowDays) 내 생성 초안의 상태 퍼널. " +
+        "discardRate=폐기/검토완료(오생성 지표), adoptionRate=반영/검토완료. reviewed=0 이면 두 비율은 null.",
+)
+data class CaptureMetricsResponse(
+    val windowDays: Int,
+    val since: java.time.Instant,
+    val created: Long,
+    val open: Long,
+    val readyForReview: Long,
+    val imported: Long,
+    val discarded: Long,
+    val reviewed: Long,
+    val discardRate: Double?,
+    val adoptionRate: Double?,
+)
+
+@Schema(description = "검토 완료 이력 — 종단 상태(IMPORTED·DISCARDED) 초안 목록(최근 갱신순, cursor 페이지). nextCursor 를 다음 cursor 로, hasNext=false 면 끝.")
 data class CaptureHistoryResponse(
     val items: List<CaptureHistoryItemResponse>,
+    @Schema(description = "다음 페이지 cursor. hasNext=false 면 null.")
+    val nextCursor: String? = null,
+    val hasNext: Boolean = false,
 )
 
 @Schema(description = "이력 항목. IMPORTED 면 caseId 로 반영된 Case 를 가리킨다(DISCARDED 면 null).")

@@ -114,6 +114,15 @@ class CaseNotOwnedException(val caseId: Long) :
     RuntimeException("case $caseId not found")
 
 /**
+ * 세션 등록 시 같은 sessionUuid 가 **다른 연결**에 이미 존재 → 409 SESSION_CONNECTION_CONFLICT.
+ * sessionUuid 는 UNIQUE 이고 연결 경계로 격리된다(CreateCapture 의 connection 검증과 동일 경계). #185 처럼
+ * Claude Code 세션 id 에서 결정적 UUID 를 파생하면 여러 연결이 같은 uuid 를 보낼 수 있으므로, 남의 연결 세션을
+ * 재사용·변경(문맥 탈취)하지 못하게 거부한다.
+ */
+class SessionConnectionConflictException(val sessionUuid: UUID) :
+    RuntimeException("session $sessionUuid belongs to another connection")
+
+/**
  * 이미 반영된(IMPORTED) 초안에 대한 충돌 → 409 CAPTURE_ALREADY_IMPORTED.
  *  - 폐기 시도(caseId 불필요), 또는
  *  - **다른 반영 내용으로 재반영** 시도(이미 생성된 caseId 를 권한 범위 안에서 안내).

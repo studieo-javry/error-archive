@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { ApiClient } from '../src/apiClient.js';
+import { isCollectionApproved, isSnoozedForSession, readConsent } from '../src/consentIndex.js';
 import type { ResolvedProject } from '../src/project.js';
 import { ProjectContext } from '../src/projectContext.js';
 import type { ResolvedSessionContext } from '../src/sessionContext.js';
@@ -119,14 +120,18 @@ function projFor(path: string): ResolvedProject {
 /** readHookContext·resolve 를 주입해 hook cwd→프로젝트 매핑을 테스트. */
 function makeHookCtx(
   client: ApiClient,
-  holder: { current: { cwd: string; sessionId: string | null } | null },
+  holder: { current: { cwd: string; sessionId: string | null; ambiguous?: boolean } | null },
+  extra: { projectRoot?: string } = {},
 ): { c: ProjectContext; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'ea-hookctx-'));
   const c = new ProjectContext(client, {
     baseUrl: 'https://api',
     statePath: join(dir, 'p.json'),
+    projectRoot: extra.projectRoot,
     readHookContext: (): ResolvedSessionContext | null =>
-      holder.current ? { cwd: holder.current.cwd, sessionId: holder.current.sessionId, ambiguous: false } : null,
+      holder.current
+        ? { cwd: holder.current.cwd, sessionId: holder.current.sessionId, ambiguous: holder.current.ambiguous ?? false }
+        : null,
     resolve: (opts) => {
       const path = opts.explicitPath ?? opts.hookPath ?? opts.configRoot;
       return path ? projFor(path) : null; // cwd 폴백은 프로젝트 없음
@@ -165,6 +170,33 @@ test('hook cwd 변경(프로젝트 전환) → 캐시 무효화·재해석', asy
   } finally { cleanup(); }
 });
 
+test('모호한 문맥(다중 세션·내 세션 불명)이면 프로젝트 자동 귀속 보류(미귀속)', async () => {
+  const calls: RegCall[] = [];
+  // 최신은 B 지만 ambiguous=true — 최신(B)을 내 세션이라 넘겨짚어 B 프로젝트로 귀속하면 안 된다.
+  const holder = {
+    current: { cwd: '/dev/b-newest', sessionId: 'B-456', ambiguous: true } as
+      { cwd: string; sessionId: string | null; ambiguous?: boolean } | null,
+  };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    assert.equal(c.detect(), null); // 추측 금지 → 미해결(미귀속)
+    await c.ensureSession();
+    assert.equal(calls.at(-1)!.projectKey, null); // 잘못된 B 가 아니라 미귀속으로 등록
+  } finally { cleanup(); }
+});
+
+test('모호해도 명시 projectRoot 가 있으면 그 프로젝트를 사용한다', async () => {
+  const calls: RegCall[] = [];
+  const holder = {
+    current: { cwd: '/dev/b-newest', sessionId: 'B-456', ambiguous: true } as
+      { cwd: string; sessionId: string | null; ambiguous?: boolean } | null,
+  };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder, { projectRoot: '/dev/explicit' });
+  try {
+    assert.equal(c.detect()?.projectKey, 'key:/dev/explicit'); // 모호한 hook cwd 대신 명시 설정 사용
+  } finally { cleanup(); }
+});
+
 test('session_id → sessionUuid 결정적 파생(같은 세션=같은 uuid)', async () => {
   const callsA: RegCall[] = [];
   const callsB: RegCall[] = [];
@@ -199,4 +231,59 @@ test('미승인 hook cwd → projectKey 미전송(승인 게이트 유지)', asy
     await c.ensureSession(); // 승인 없이
     assert.equal(calls.at(-1)!.projectKey, null);
   } finally { cleanup(); }
+});
+
+test('approve → 토큰-ns 동의 인덱스에 APPROVED 미러, revoke → 제거', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-consent-ctx-'));
+  const consentPath = join(dir, 'consent.json');
+  const NS = 'tok-ctx';
+  const c = new ProjectContext(makeClient([]), {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: NS,
+    consentPath,
+    resolve: () => PROJECT,
+  });
+  try {
+    // 승인 전: 인덱스에 없음 → 미승인(수집 금지).
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+    await c.approve(PROJECT);
+    // 승인 후: 오프라인 Hook/Sender 가 읽을 토큰-ns 인덱스에 APPROVED 미러됨.
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), true);
+    await c.revoke(PROJECT);
+    // 해제 후: 즉시 제거 → 수집 금지.
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('snooze → SNOOZED(세션키), decline → DECLINED (토큰-ns 인덱스)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-sd-'));
+  const consentPath = join(dir, 'consent.json');
+  const NS = 'tok-sd';
+  const c = new ProjectContext(makeClient([]), {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    sessionId: 'sess-xyz',
+    consentNamespace: NS,
+    consentPath,
+    resolve: () => PROJECT,
+  });
+  try {
+    await c.snooze(PROJECT);
+    assert.equal(isSnoozedForSession(NS, PROJECT.gitRoot, 'sess-xyz', { path: consentPath }), true);
+    assert.equal(isSnoozedForSession(NS, PROJECT.gitRoot, 'other', { path: consentPath }), false);
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false); // 보류는 수집 아님
+
+    await c.decline(PROJECT);
+    assert.equal(readConsent(NS, PROJECT.gitRoot, { path: consentPath })?.status, 'DECLINED');
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), false);
+
+    // 명시 재연결(approve)은 DECLINED 를 덮어 APPROVED.
+    await c.approve(PROJECT);
+    assert.equal(isCollectionApproved(NS, PROJECT.gitRoot, PROJECT.remote, { path: consentPath }), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

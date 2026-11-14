@@ -129,6 +129,8 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
     @Autowired private lateinit var storage: AttachmentStoragePort
     @Autowired private lateinit var importCapture: org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
+    @Autowired private lateinit var registerSession: org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
+    @Autowired private lateinit var createCapture: org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureUseCase
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -345,6 +347,93 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
+    fun `전 구간 - 세션 상속 Capture 를 clearProjectBinding=true 로 import 하면 Case 미귀속`() {
+        // 실제 세션 → Capture(상속) → Import 전 구간 회귀: 세션에서 받은 프로젝트를 Capture 가 상속한 상태에서도
+        // clearProjectBinding 이 상속분(capture.projectBindingId)을 이겨 Case 가 미귀속(null)으로 반영되는지.
+        val chainUser = 8120L
+        val conn = UUID.randomUUID()
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = chainUser, projectKey = "inherited-chain", createdAt = now(), updatedAt = now()),
+        )
+        // 1) 세션이 projectBinding 을 받고
+        val sessionUuid = UUID.randomUUID()
+        registerSession.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = chainUser, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-chain",
+                projectBindingId = binding.id,
+            ),
+        )
+        // 2) Capture 가 세션에서 상속(명시 projectBindingId 없이) — 상속 자체를 먼저 확인.
+        val capUuid = UUID.randomUUID()
+        val created = createCapture.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCommand(
+                captureUuid = capUuid, ownerUserId = chainUser, connectionId = conn,
+                title = "inherited", project = null, content = CaptureContent.EMPTY, sessionUuid = sessionUuid,
+            ),
+        )
+        assertEquals(binding.id, created.projectBindingId)
+
+        // 3) 봉인(READY_FOR_REVIEW).
+        val sealed = captures.findByUuid(capUuid)!!
+        sealed.complete(now())
+        captures.save(sealed)
+        val rev = captures.findByUuid(capUuid)!!.revision
+
+        // 4) clearProjectBinding=true(요청에 projectBindingId 미지정) → 상속분이 있어도 Case 미귀속.
+        doImport(capUuid, chainUser, "chain-clear", """{"reviewedRevision":$rev,"clearProjectBinding":true}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(capUuid)!!.importedCaseId!!
+        assertNull(errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
+    fun `전 구간 - 검토 응답이 상속 projectBindingId 를 노출하고 확인(import)하면 Case 에 귀속`() {
+        // 피드백(#181 P0): 검토 API 응답에 projectBindingId 가 있어야 FE 가 "자동 제안된 프로젝트 확인" 흐름을
+        // 구현할 수 있다. 세션 → Capture(상속) → 검토 응답(큐·상세에 projectBindingId 노출) → Import(확인=상속 유지)
+        // → ErrorCase 귀속까지 전 구간 검증.
+        val confirmUser = 8121L
+        val conn = UUID.randomUUID()
+        val binding = projectBindings.save(
+            ProjectBinding(ownerUserId = confirmUser, projectKey = "confirm-chain", createdAt = now(), updatedAt = now()),
+        )
+        val sessionUuid = UUID.randomUUID()
+        registerSession.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand(
+                sessionUuid = sessionUuid, ownerUserId = confirmUser, connectionId = conn,
+                clientKind = "claude-code", clientVersion = "1", clientSessionId = "cs-confirm",
+                projectBindingId = binding.id,
+            ),
+        )
+        val capUuid = UUID.randomUUID()
+        createCapture.invoke(
+            org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCommand(
+                captureUuid = capUuid, ownerUserId = confirmUser, connectionId = conn,
+                title = "inherited-confirm", project = null, content = CaptureContent.EMPTY, sessionUuid = sessionUuid,
+            ),
+        )
+        val sealed = captures.findByUuid(capUuid)!!
+        sealed.complete(now())
+        captures.save(sealed)
+        val rev = captures.findByUuid(capUuid)!!.revision
+
+        // 검토 큐 응답이 상속 projectBindingId 를 노출(FE 가 '자동 제안된 프로젝트' 를 보여줄 수 있어야).
+        mvc.perform(get("/api/v1/captures").with(asUser(confirmUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$capUuid')].projectBindingId").value(binding.id!!.toInt()))
+        // 상세 응답도 노출.
+        mvc.perform(get("/api/v1/captures/$capUuid").with(asUser(confirmUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capture.projectBindingId").value(binding.id!!.toInt()))
+
+        // 확인(import, clear/정정 없음) → 상속 그대로 Case 에 귀속.
+        doImport(capUuid, confirmUser, "chain-confirm", """{"reviewedRevision":$rev}""")
+            .andExpect(status().isCreated)
+        val caseId = captures.findByUuid(capUuid)!!.importedCaseId!!
+        assertEquals(binding.id, errorCases.findById(caseId)!!.projectBindingId)
+    }
+
+    @Test
     fun `타인 소유 projectBindingId 는 404`() {
         val (uuid, _) = seedCapture(userId, seal = true)
         val foreign = projectBindings.save(
@@ -429,6 +518,65 @@ class AgentCaptureImportIntegrationTest {
     }
 
     @Test
+    fun `검토 큐 keyset 페이지네이션 - limit·cursor 로 전부 중복없이 순회(updatedAt DESC, id DESC)`() {
+        val pageUser = 8110L
+        // 3건 봉인(READY_FOR_REVIEW). 시드 순서대로 updatedAt 증가 → 최신순 = 역순.
+        val u1 = seedCapture(pageUser, seal = true).first
+        val u2 = seedCapture(pageUser, seal = true).first
+        val u3 = seedCapture(pageUser, seal = true).first
+
+        // 1페이지(limit=2): 최신 2건[u3,u2], hasNext=true, nextCursor 존재.
+        val r1 = mvc.perform(get("/api/v1/captures").param("limit", "2").with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.items[0].captureUuid").value(u3.toString()))
+            .andExpect(jsonPath("$.items[1].captureUuid").value(u2.toString()))
+            .andExpect(jsonPath("$.hasNext").value(true))
+            .andExpect(jsonPath("$.nextCursor").isNotEmpty)
+            .andReturn()
+        val cursor = com.jayway.jsonpath.JsonPath.read<String>(r1.response.contentAsString, "$.nextCursor")
+
+        // 2페이지(cursor): 남은 1건[u1], hasNext=false, nextCursor=null. 1페이지와 겹치지 않음.
+        mvc.perform(get("/api/v1/captures").param("limit", "2").param("cursor", cursor).with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].captureUuid").value(u1.toString()))
+            .andExpect(jsonPath("$.hasNext").value(false))
+            .andExpect(jsonPath("$.nextCursor").doesNotExist())
+
+        // 잘못된 cursor 는 무시하고 첫 페이지부터(3건 다 보이되 limit 로 상한).
+        mvc.perform(get("/api/v1/captures").param("limit", "50").param("cursor", "!!garbage!!").with(asUser(pageUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(3))
+    }
+
+    @Test
+    fun `검토 이력 keyset 페이지네이션 - IMPORTED·DISCARDED 혼합을 cursor 로 순회`() {
+        val hpUser = 8111L
+        // 3건 종단화(IMPORTED 1 + DISCARDED 2) → 최신순 혼합 스트림.
+        val imp = seedCapture(hpUser, seal = true).first
+        doImport(imp, hpUser, "hp-imp").andExpect(status().isCreated)
+        val d1 = seedCapture(hpUser, seal = true).first
+        mvc.perform(post("/api/v1/captures/$d1/discard").with(asUser(hpUser))).andExpect(status().isOk)
+        val d2 = seedCapture(hpUser, seal = true).first
+        mvc.perform(post("/api/v1/captures/$d2/discard").with(asUser(hpUser))).andExpect(status().isOk)
+
+        // 1페이지(limit=2): 최신 2건, hasNext=true.
+        val r1 = mvc.perform(get("/api/v1/captures/history").param("limit", "2").with(asUser(hpUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.hasNext").value(true))
+            .andReturn()
+        val cursor = com.jayway.jsonpath.JsonPath.read<String>(r1.response.contentAsString, "$.nextCursor")
+
+        // 2페이지: 남은 1건, 끝.
+        mvc.perform(get("/api/v1/captures/history").param("limit", "2").param("cursor", cursor).with(asUser(hpUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.hasNext").value(false))
+    }
+
+    @Test
     fun `폐기 복원 - DISCARDED 를 READY 로 되돌리고 검토 큐에 다시 포함`() {
         val restoreUser = 8102L
         val (uuid, _) = seedCapture(restoreUser, seal = true)
@@ -447,6 +595,27 @@ class AgentCaptureImportIntegrationTest {
         mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(restoreUser)))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("CAPTURE_NOT_RESTORABLE"))
+    }
+
+    @Test
+    fun `폐기 복원 - 봉인 전(OPEN) 초안은 OPEN 으로 복귀하고 큐·이력 어디에도 안 보인다`() {
+        // 봉인 우회 방지: 미봉인 초안을 discard→restore 하면 READY 가 아니라 폐기 직전 단계(OPEN)로 되돌아간다.
+        // OPEN 은 검토 큐(READY만)·이력(terminal만)에 안 보이고, 에이전트가 이어서 봉인할 수 있는 상태.
+        val openUser = 8130L
+        val (uuid, _) = seedCapture(openUser, seal = false)
+        mvc.perform(post("/api/v1/captures/$uuid/discard").with(asUser(openUser))).andExpect(status().isOk)
+
+        mvc.perform(post("/api/v1/captures/$uuid/restore").with(asUser(openUser)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("OPEN")) // READY 아님 — complete 근거검증 우회 방지
+        assertEquals(CaptureStatus.OPEN, captures.findByUuid(uuid)!!.status)
+
+        // 검토 큐(READY만) 에 없다.
+        mvc.perform(get("/api/v1/captures").with(asUser(openUser)))
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$uuid')]").doesNotExist())
+        // 이력(terminal만) 에도 없다.
+        mvc.perform(get("/api/v1/captures/history").with(asUser(openUser)))
+            .andExpect(jsonPath("$.items[?(@.captureUuid=='$uuid')]").doesNotExist())
     }
 
     @Test

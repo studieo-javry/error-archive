@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { EventItemRequest } from './types.js';
+import type { QueuedEvent } from './types.js';
 
 export function defaultQueueDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.ERROR_ARCHIVE_QUEUE_DIR ?? join(homedir(), '.config', 'error-archive-agent', 'queue');
@@ -47,19 +47,19 @@ export class EventQueue {
     return n;
   }
 
-  enqueue(event: EventItemRequest): void {
+  enqueue(event: QueuedEvent): void {
     mkdirSync(dirname(this.file), { recursive: true });
     appendFileSync(this.file, `${JSON.stringify(event)}\n`);
   }
 
   /** pending 전체(파싱 불가 라인은 건너뜀). */
-  readAll(): EventItemRequest[] {
+  readAll(): QueuedEvent[] {
     if (!existsSync(this.file)) return [];
-    const out: EventItemRequest[] = [];
+    const out: QueuedEvent[] = [];
     for (const line of readFileSync(this.file, 'utf8').split('\n')) {
       if (!line.trim()) continue;
       try {
-        out.push(JSON.parse(line) as EventItemRequest);
+        out.push(JSON.parse(line) as QueuedEvent);
       } catch {
         /* 손상 라인 무시 */
       }
@@ -72,7 +72,7 @@ export class EventQueue {
   }
 
   /** 처리 완료 id 제거 + rejected 는 dead-letter 로 이동. 락 하에 원자 재작성(동시 append 유실 방지). */
-  remove(doneIds: Set<string>, rejected: EventItemRequest[] = []): void {
+  remove(doneIds: Set<string>, rejected: QueuedEvent[] = []): void {
     this.withLock(() => {
       const remaining = this.readAll().filter((e) => !doneIds.has(e.clientEventId));
       if (rejected.length > 0) {

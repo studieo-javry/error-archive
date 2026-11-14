@@ -23,6 +23,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.IdempotencyConflictExc
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCaseNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBindingNotFoundException
 import org.studieojavry.coreapi.agentcapture.domain.model.RevisionConflictException
+import org.studieojavry.coreapi.agentcapture.domain.model.SessionConnectionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelectedAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
@@ -71,6 +72,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(IdempotencyConflictException::class)
     fun idempotency(ex: IdempotencyConflictException): ProblemDetail =
         problem(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT", ex.message)
+
+    @ExceptionHandler(SessionConnectionConflictException::class)
+    fun sessionConnectionConflict(ex: SessionConnectionConflictException): ProblemDetail =
+        problem(HttpStatus.CONFLICT, "SESSION_CONNECTION_CONFLICT", ex.message)
 
     @ExceptionHandler(ConcurrentRequestException::class)
     fun concurrent(ex: ConcurrentRequestException): ProblemDetail =

@@ -116,7 +116,10 @@ export function loadConfig(options: LoadOptions = {}): AgentConfig {
   }
 
   const projectRoot = env.ERROR_ARCHIVE_PROJECT_ROOT ?? file.projectRoot;
-  const sessionId = env.ERROR_ARCHIVE_SESSION_ID ?? file.sessionId;
+  // 세션 식별 우선순위: 명시 override(ERROR_ARCHIVE_SESSION_ID·설정파일) > Claude Code 가 stdio MCP
+  // 서버에 자동 주입하는 CLAUDE_CODE_SESSION_ID(스폰 세션에 고정, hook 의 session_id 와 일치).
+  // 이 값이 있으면 ProjectContext 가 "내 세션" 문맥만 조회해 다중 동시 세션에서 오귀속을 막는다.
+  const sessionId = env.ERROR_ARCHIVE_SESSION_ID ?? file.sessionId ?? env.CLAUDE_CODE_SESSION_ID;
 
   return {
     baseUrl: validateBaseUrl(baseUrlRaw),

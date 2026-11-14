@@ -67,12 +67,15 @@ export class ProjectContext {
   /**
    * 현재 개발 세션의 **원본** Claude Code session_id(Hook 기록 우선, 없으면 config). 없으면 undefined.
    *
-   * 이벤트 조회 스코프 전용: Hook 이벤트는 **원본 session_id** 로 태깅돼 서버에 저장되므로(hook.ts),
-   * 파생 UUID(`sessionUuid`)가 아니라 이 원본값으로 좁혀야 매칭된다. 해제(rotated) 여부와 무관하게
-   * 원본 세션은 그대로이므로(이벤트 태깅은 프로젝트 바인딩과 독립) 로테이션을 반영하지 않는다.
+   * 이벤트 조회 스코프 + 세션 UUID 파생 + clientSessionId 보관의 **단일 소스**:
+   *  - Hook 이벤트는 **원본 session_id** 로 태깅되므로(hook.ts) 파생 UUID 가 아닌 이 원본값으로 좁혀야 매칭.
+   *  - **모호한 문맥(ambiguous: 동시 다중 세션)이면 hook sessionId 를 신뢰하지 않는다**(엉뚱한 세션으로
+   *    추정해 남의 세션에 Capture 가 붙거나 엉뚱한 이벤트를 조회하는 것 방지 — #187). config.sessionId 는 폴백.
    */
   currentSessionId(): string | undefined {
-    return this.readHook()?.sessionId ?? this.cfg.sessionId ?? undefined;
+    const hook = this.readHook();
+    const hookSid = hook && !hook.ambiguous ? (hook.sessionId ?? undefined) : undefined;
+    return hookSid ?? this.cfg.sessionId ?? undefined;
   }
 
   private resolveAt(explicitPath: string | undefined, hookCwd: string | undefined): ResolvedProject | null {
@@ -89,10 +92,15 @@ export class ProjectContext {
    */
   detect(explicitPath?: string): ResolvedProject | null {
     if (explicitPath) return this.resolveAt(explicitPath, undefined);
-    const hookCwd = this.readHook()?.cwd;
+    const hook = this.readHook();
+    // 모호(다중 세션 + 내 세션 id 불명)면 hook cwd 를 신뢰하지 않는다 — 최신 세션을 내 것이라 넘겨짚어
+    // 엉뚱한 프로젝트로 귀속하느니, 명시 projectRoot 가 없으면 미해결(null)로 둔다(미귀속 = 안전).
+    // preferSessionId(CLAUDE_CODE_SESSION_ID 포함)가 있으면 readContext 가 ambiguous=false 라 정상 경로.
+    const ambiguous = hook?.ambiguous === true;
+    const hookCwd = ambiguous ? undefined : hook?.cwd;
     if (this.cachedResolve === undefined || hookCwd !== this.lastHookCwd) {
       this.lastHookCwd = hookCwd;
-      this.cachedResolve = this.resolveAt(undefined, hookCwd);
+      this.cachedResolve = ambiguous && !this.cfg.projectRoot ? null : this.resolveAt(undefined, hookCwd);
     }
     return this.cachedResolve;
   }
@@ -152,11 +160,12 @@ export class ProjectContext {
    * 등록 실패는 삼킨다(서버가 미등록 세션 무시 → Capture 미귀속).
    */
   async ensureSession(): Promise<string> {
-    // 세션 정체성(D2): hook session_id 우선, 없으면 config.sessionId 에서 sessionUuid 파생.
-    // 이벤트(sessionId 로 태그)와 Capture(sessionUuid)가 같은 세션에서 나와 B 연결이 상관 가능해진다.
-    // 로테이션(해제) 상태에서는 재채택하지 않는다(미귀속 decouple 유지).
-    const rawSessionId = this.currentSessionId(); // 원본 세션 id(Hook 우선) — 파일 1회 읽기
-    if (!this.rotated && rawSessionId) {
+    // 세션 정체성(D2): hook session_id(모호하지 않을 때) 우선, 없으면 config.sessionId 에서 sessionUuid 파생.
+    // currentSessionId() 가 ambiguity 가드를 포함 — 모호한 문맥의 sessionId 는 채택하지 않는다(엉뚱한
+    // 세션 UUID 로 바뀌어 남의 세션에 Capture 가 붙는 것 방지, #187). 이벤트(원본 sessionId)와 Capture
+    // (sessionUuid)가 같은 세션에서 나와 상관 가능해진다. 로테이션(해제) 상태에서는 재채택하지 않는다.
+    const rawSessionId = this.rotated ? undefined : this.currentSessionId();
+    if (rawSessionId) {
       const derived = deriveUuid(rawSessionId);
       if (derived !== this.sessionUuid) this.sessionUuid = derived;
     }

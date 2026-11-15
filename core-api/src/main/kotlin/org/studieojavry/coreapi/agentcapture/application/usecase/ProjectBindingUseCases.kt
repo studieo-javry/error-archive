@@ -95,3 +95,26 @@ class AssignCaseProjectBindingUseCase(
         if (ownerId == null || ownerId != userId) throw CaseNotOwnedException(caseId)
     }
 }
+
+/**
+ * Case 의 **현재** ProjectBinding 조회 — 웹 세션 사용자(본인 소유)만.
+ *
+ * bind/unbind 는 변경만 제공했고 현재 귀속을 읽을 길이 없어(FE 가 "지금 어느 프로젝트인지" 표시 불가),
+ * 사후 재분류 UI 가 맹목적 set/clear 였다. 이 조회로 현재 값을 보여주고 정정할 수 있게 한다.
+ *
+ * 미귀속(project_binding_id=null)이면 null 반환(정상 — 바인딩은 필수 아님). 대상 Case 가 없거나
+ * 타인 소유면 404(CaseNotOwned, 존재 노출 회피). 귀속된 바인딩이 어떤 이유로 사라졌으면 null.
+ */
+@Service
+class GetCaseProjectBindingUseCase(
+    private val errorCases: ErrorCaseRepositoryPort,
+    private val bindings: ProjectBindingRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun current(userId: Long, caseId: Long): ProjectBinding? {
+        val case = errorCases.findById(caseId)
+        if (case == null || case.ownerUserId != userId) throw CaseNotOwnedException(caseId)
+        val bindingId = case.projectBindingId ?: return null
+        return bindings.findById(bindingId)
+    }
+}

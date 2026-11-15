@@ -10,13 +10,16 @@ import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.studieojavry.coreapi.agentcapture.application.usecase.AssignCaseProjectBindingUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaseProjectBindingUseCase
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AssignCaseProjectBindingRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaseProjectBindingResponse
 
 /**
  * 기존 Case 의 ProjectBinding 사후 귀속/해제 — 웹 세션 사용자(본인 소유)만. 에이전트 토큰 아님.
@@ -31,7 +34,24 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AssignCaseProj
 @RequestMapping("/api/v1/me/cases/{caseId}/project-binding")
 class CaseProjectBindingController(
     private val assign: AssignCaseProjectBindingUseCase,
+    private val getCurrent: GetCaseProjectBindingUseCase,
 ) {
+
+    @Operation(
+        summary = "Case 의 현재 ProjectBinding 조회",
+        description = "본인 소유 Case 의 현재 귀속 프로젝트를 반환한다(미귀속이면 projectBinding=null). " +
+            "사후 재분류 UI 가 현재 값을 표시·정정하는 데 쓴다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공(미귀속이면 projectBinding=null)"),
+        ApiResponse(responseCode = "404", description = "CASE_NOT_FOUND(없음/타인 소유)", content = [Content()]),
+    )
+    @GetMapping
+    fun current(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @PathVariable caseId: Long,
+    ): CaseProjectBindingResponse =
+        CaseProjectBindingResponse.from(getCurrent.current(userId, caseId))
 
     @Operation(
         summary = "Case 를 ProjectBinding 에 귀속",

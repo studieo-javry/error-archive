@@ -142,6 +142,7 @@ class CaptureReviewController(
                         SolutionEdit(it.value.title, it.value.description, it.value.verification, it.value.clearVerification)
                     },
                     note = request.note,
+                    projectBindingId = request.projectBindingId,
                 )
             )
             ImportCaptureResponse(captureUuid = captureUuid, caseId = r.caseId, alreadyImported = r.alreadyImported)

@@ -4,8 +4,10 @@ import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.Instant
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.AgentCaptureEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureArtifactEntity
@@ -149,6 +151,48 @@ interface CaptureImportJpaRepository : JpaRepository<CaptureImportEntity, Long> 
 
 interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
     fun findByConnectionIdAndClientEventId(connectionId: UUID, clientEventId: String): CaptureEventEntity?
+
+    /**
+     * 충돌 없는 멱등 삽입 — UNIQUE(connection_id, client_event_id) 충돌 시 DO NOTHING(예외 없음).
+     * jsonb 는 text 바인딩 후 CAST, connection_id 는 uuid 로 CAST. id 는 IDENTITY DEFAULT 로 생성.
+     * @return 삽입 행 수(1=삽입, 0=충돌).
+     */
+    @Modifying
+    @Query(
+        value = """
+            INSERT INTO capture_event
+              (connection_id, owner_user_id, project_binding_id, client_event_id, client_kind, client_version,
+               session_id, stream_id, tool_call_id, event_type, local_sequence, observed_at, received_at,
+               redacted_payload, truncated, evidence_refs, payload_hash, capture_id, status)
+            VALUES
+              (CAST(:connectionId AS uuid), :ownerUserId, :projectBindingId, :clientEventId, :clientKind, :clientVersion,
+               :sessionId, :streamId, :toolCallId, :eventType, :localSequence, :observedAt, :receivedAt,
+               CAST(:redactedPayload AS jsonb), :truncated, CAST(:evidenceRefs AS jsonb), :payloadHash, :captureId, :status)
+            ON CONFLICT (connection_id, client_event_id) DO NOTHING
+        """,
+        nativeQuery = true,
+    )
+    fun insertIfAbsent(
+        @Param("connectionId") connectionId: String,
+        @Param("ownerUserId") ownerUserId: Long,
+        @Param("projectBindingId") projectBindingId: Long?,
+        @Param("clientEventId") clientEventId: String,
+        @Param("clientKind") clientKind: String?,
+        @Param("clientVersion") clientVersion: String?,
+        @Param("sessionId") sessionId: String?,
+        @Param("streamId") streamId: String?,
+        @Param("toolCallId") toolCallId: String?,
+        @Param("eventType") eventType: String,
+        @Param("localSequence") localSequence: Long,
+        @Param("observedAt") observedAt: Instant,
+        @Param("receivedAt") receivedAt: Instant,
+        @Param("redactedPayload") redactedPayload: String,
+        @Param("truncated") truncated: Boolean,
+        @Param("evidenceRefs") evidenceRefs: String,
+        @Param("payloadHash") payloadHash: String,
+        @Param("captureId") captureId: Long?,
+        @Param("status") status: String,
+    ): Int
 
     @Query(
         "SELECT e FROM CaptureEventEntity e WHERE e.ownerUserId = :owner AND e.status = :status " +

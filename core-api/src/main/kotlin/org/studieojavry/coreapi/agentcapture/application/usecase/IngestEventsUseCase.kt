@@ -1,6 +1,5 @@
 package org.studieojavry.coreapi.agentcapture.application.usecase
 
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
@@ -16,7 +15,8 @@ import java.util.UUID
  *
  * 이벤트별 결과: ACCEPTED(영속 저장) / DUPLICATE(같은 clientEventId·같은 payload 재전송) /
  * REJECTED(같은 clientEventId·다른 payload 충돌, payload 과대 등). ACCEPTED 는 적재일 뿐 Step 구조화 아님.
- * (connectionId, clientEventId) UNIQUE 로 멱등 — 동시 중복 삽입 경합은 DUPLICATE 로 수렴.
+ * (connectionId, clientEventId) UNIQUE 로 멱등. 삽입은 INSERT … ON CONFLICT DO NOTHING(insertIfAbsent)로
+ * 하여 동시 중복 삽입 경합에서도 예외/트랜잭션 오염 없이 DUPLICATE 로 수렴한다(#180 권고).
  */
 @Service
 class IngestEventsUseCase(
@@ -35,42 +35,40 @@ class IngestEventsUseCase(
         }
         val hash = sha256(item.redactedPayloadJson)
 
-        events.findByConnectionAndClientId(connectionId, item.clientEventId)?.let { existing ->
-            return if (existing.payloadHash == hash) {
-                EventOutcome(item.clientEventId, EventResultType.DUPLICATE)
-            } else {
-                EventOutcome(item.clientEventId, EventResultType.REJECTED, "clientEventId conflict (different payload)")
-            }
-        }
+        // 충돌 없는 멱등 삽입(ON CONFLICT DO NOTHING) — 동시 중복 삽입에도 예외를 던지지 않아
+        // 트랜잭션이 abort/rollback-only 로 오염되지 않는다(같은 배치의 다른 항목·commit 보존). #180 권고 반영.
+        val inserted = events.insertIfAbsent(
+            CaptureEvent(
+                connectionId = connectionId,
+                ownerUserId = ownerUserId,
+                projectBindingId = item.projectBindingId,
+                clientEventId = item.clientEventId,
+                clientKind = item.clientKind,
+                clientVersion = item.clientVersion,
+                sessionId = item.sessionId,
+                streamId = item.streamId,
+                toolCallId = item.toolCallId,
+                eventType = item.eventType,
+                localSequence = item.localSequence,
+                observedAt = item.observedAt,
+                receivedAt = now,
+                redactedPayload = item.redactedPayloadJson,
+                truncated = item.truncated,
+                evidenceRefs = item.evidenceRefs,
+                payloadHash = hash,
+                captureId = null,
+                status = CaptureEventStatus.UNCLASSIFIED,
+            ),
+        )
+        if (inserted) return EventOutcome(item.clientEventId, EventResultType.ACCEPTED)
 
-        return try {
-            events.save(
-                CaptureEvent(
-                    connectionId = connectionId,
-                    ownerUserId = ownerUserId,
-                    projectBindingId = item.projectBindingId,
-                    clientEventId = item.clientEventId,
-                    clientKind = item.clientKind,
-                    clientVersion = item.clientVersion,
-                    sessionId = item.sessionId,
-                    streamId = item.streamId,
-                    toolCallId = item.toolCallId,
-                    eventType = item.eventType,
-                    localSequence = item.localSequence,
-                    observedAt = item.observedAt,
-                    receivedAt = now,
-                    redactedPayload = item.redactedPayloadJson,
-                    truncated = item.truncated,
-                    evidenceRefs = item.evidenceRefs,
-                    payloadHash = hash,
-                    captureId = null,
-                    status = CaptureEventStatus.UNCLASSIFIED,
-                ),
-            )
-            EventOutcome(item.clientEventId, EventResultType.ACCEPTED)
-        } catch (ex: DataIntegrityViolationException) {
-            // 동시 삽입 경합(UNIQUE 위반) → 재전송처럼 멱등 수렴.
+        // 충돌(이미 존재) → 재조회로 분류. 같은 payload=DUPLICATE, 다른 payload=REJECTED.
+        // 동시 경합으로 승자 행이 아직 안 보이면(미커밋) 안전 기본값 DUPLICATE(멱등 — 재전송처럼 수렴).
+        val existing = events.findByConnectionAndClientId(connectionId, item.clientEventId)
+        return if (existing == null || existing.payloadHash == hash) {
             EventOutcome(item.clientEventId, EventResultType.DUPLICATE)
+        } else {
+            EventOutcome(item.clientEventId, EventResultType.REJECTED, "clientEventId conflict (different payload)")
         }
     }
 

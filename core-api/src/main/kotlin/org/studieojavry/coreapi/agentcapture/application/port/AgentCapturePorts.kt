@@ -54,6 +54,13 @@ interface CaptureEventRepositoryPort {
     fun save(event: CaptureEvent): CaptureEvent
 
     /**
+     * 충돌 없는 멱등 삽입 — (connection_id, client_event_id) UNIQUE 에 INSERT … ON CONFLICT DO NOTHING.
+     * 동시 중복 삽입에서도 **예외를 던지지 않아** 트랜잭션을 오염시키지 않는다(같은 배치의 다른 항목·commit 보존).
+     * @return 실제로 삽입했으면 true, 이미 있어(충돌) 삽입하지 않았으면 false.
+     */
+    fun insertIfAbsent(event: CaptureEvent): Boolean
+
+    /**
      * 본인 소유 이벤트를 상태별 조회(선택적 sessionId 필터). AI 가 어떤 이벤트를 Capture 에 연결할지
      * 판단하기 위한 후보 조회(B). observedAt DESC. 인덱스 ix_capture_event_owner_status 활용.
      */

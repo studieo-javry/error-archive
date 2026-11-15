@@ -431,6 +431,29 @@ class CaptureEventRepositoryAdapter(
         return jpa.save(entity).toDomain()
     }
 
+    override fun insertIfAbsent(event: CaptureEvent): Boolean =
+        jpa.insertIfAbsent(
+            connectionId = event.connectionId.toString(),
+            ownerUserId = event.ownerUserId,
+            projectBindingId = event.projectBindingId,
+            clientEventId = event.clientEventId,
+            clientKind = event.clientKind,
+            clientVersion = event.clientVersion,
+            sessionId = event.sessionId,
+            streamId = event.streamId,
+            toolCallId = event.toolCallId,
+            eventType = event.eventType,
+            localSequence = event.localSequence,
+            observedAt = event.observedAt,
+            receivedAt = event.receivedAt,
+            redactedPayload = event.redactedPayload,
+            truncated = event.truncated,
+            evidenceRefs = objectMapper.writeValueAsString(event.evidenceRefs),
+            payloadHash = event.payloadHash,
+            captureId = event.captureId,
+            status = event.status.name,
+        ) == 1
+
     // evidenceRefs 는 영속 전용(read-back 소비처 없어 빈 리스트로 둔다).
     private fun CaptureEventEntity.toDomain(): CaptureEvent = CaptureEvent(
         id = id,

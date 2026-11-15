@@ -18,6 +18,10 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.usecase.EventResultType
+import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventItem
+import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventsUseCase
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -65,6 +69,8 @@ class AgentCaptureConcurrencyIntegrationTest {
 
     @Autowired private lateinit var context: WebApplicationContext
     @Autowired private lateinit var om: ObjectMapper
+    @Autowired private lateinit var ingestEvents: IngestEventsUseCase
+    @Autowired private lateinit var eventsPort: CaptureEventRepositoryPort
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -249,5 +255,56 @@ class AgentCaptureConcurrencyIntegrationTest {
             assertEquals("CAPTURE_SEALED", attempt.code)
             assertTrue(!hasA1, "409 면 봉인 후 attempt 가 추가되지 않아야 한다")
         }
+    }
+
+    /**
+     * #180 FINDING 수정 검증 — 같은 (connectionId, clientEventId) 이벤트를 두 배치가 동시에 적재해도
+     * ON CONFLICT DO NOTHING 덕분에 **예외/트랜잭션 오염 없이** 정확히 한 행만 남고 DUPLICATE 로 수렴한다.
+     * (예전엔 같은 @Transactional 안에서 UNIQUE 위반을 catch → tx 가 rollback-only 로 오염돼 배치가 깨졌다.)
+     */
+    @Test
+    fun `동시 이벤트 적재 경합 - 배치 깨지지 않고 한 행만, DUPLICATE 로 수렴`() {
+        val conn = UUID.randomUUID()
+        val owner = 7050L
+        val item = IngestEventItem(
+            clientEventId = "E-race",
+            eventType = "PostToolUse",
+            localSequence = 1,
+            observedAt = java.time.Instant.now(),
+            redactedPayloadJson = """{"cmd":"gradle test","exit":1}""",
+            sessionId = "s-race",
+        )
+
+        val pool = Executors.newFixedThreadPool(2)
+        val gate = CountDownLatch(1)
+        val futures = (1..2).map {
+            pool.submit(Callable { gate.await(); runCatching { ingestEvents.invoke(conn, owner, listOf(item)) } })
+        }
+        gate.countDown()
+        val results = futures.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        // 어느 배치도 예외로 깨지지 않는다(핵심: tx 오염/UnexpectedRollback 없음).
+        assertTrue(results.all { it.isSuccess }, "동시 적재 중 배치가 예외로 깨지면 안 됨: $results")
+        val outcomes = results.mapNotNull { it.getOrNull() }.flatten()
+        assertEquals(2, outcomes.size)
+        assertTrue(outcomes.all { it.result == EventResultType.ACCEPTED || it.result == EventResultType.DUPLICATE },
+            "REJECTED/크래시 없이 ACCEPTED|DUPLICATE 로만 수렴해야 함: $outcomes")
+        assertEquals(1, outcomes.count { it.result == EventResultType.ACCEPTED }, "정확히 한 번만 삽입(ACCEPTED)")
+        // DB 에 정확히 한 행(UNIQUE) — 재조회로 존재 확인.
+        assertTrue(eventsPort.findByConnectionAndClientId(conn, "E-race") != null, "이벤트가 정확히 한 행 남아야 함")
+    }
+
+    @Test
+    fun `같은 clientEventId 다른 payload 는 REJECTED(순차 회귀)`() {
+        val conn = UUID.randomUUID()
+        val owner = 7051L
+        fun item(payload: String) = IngestEventItem(
+            clientEventId = "E-dup", eventType = "PostToolUse", localSequence = 1,
+            observedAt = java.time.Instant.now(), redactedPayloadJson = payload,
+        )
+        assertEquals(EventResultType.ACCEPTED, ingestEvents.invoke(conn, owner, listOf(item("""{"a":1}"""))).single().result)
+        assertEquals(EventResultType.DUPLICATE, ingestEvents.invoke(conn, owner, listOf(item("""{"a":1}"""))).single().result)
+        assertEquals(EventResultType.REJECTED, ingestEvents.invoke(conn, owner, listOf(item("""{"a":2}"""))).single().result)
     }
 }

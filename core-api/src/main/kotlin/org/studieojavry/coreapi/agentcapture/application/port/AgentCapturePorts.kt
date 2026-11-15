@@ -3,6 +3,7 @@ package org.studieojavry.coreapi.agentcapture.application.port
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -24,6 +25,12 @@ interface AgentCaptureRepositoryPort {
 interface CaptureImportRepositoryPort {
     fun save(record: CaptureImport): CaptureImport
     fun findByCaptureId(captureId: Long): CaptureImport?
+}
+
+/** Hook 자동수집 이벤트 인박스(P1). (connectionId, clientEventId) 로 멱등. */
+interface CaptureEventRepositoryPort {
+    fun findByConnectionAndClientId(connectionId: UUID, clientEventId: String): CaptureEvent?
+    fun save(event: CaptureEvent): CaptureEvent
 }
 
 interface CaptureAttemptRepositoryPort {

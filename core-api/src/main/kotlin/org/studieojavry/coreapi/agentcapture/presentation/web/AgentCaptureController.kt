@@ -32,6 +32,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureCo
 import org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.IdempotencyService
+import org.studieojavry.coreapi.agentcapture.application.usecase.LinkEventsToCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.PatchCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.PatchCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
@@ -50,6 +51,8 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureDetailR
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CompleteCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CreateCaptureRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.PatchCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.RegisterSessionRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SessionResponse
@@ -75,6 +78,7 @@ class AgentCaptureController(
     private val updateSolution: UpdateSolutionUseCase,
     private val completeCapture: CompleteCaptureUseCase,
     private val uploadArtifact: UploadCaptureArtifactUseCase,
+    private val linkEvents: LinkEventsToCaptureUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
@@ -466,6 +470,32 @@ class AgentCaptureController(
             CaptureResponse.from(completeCapture.invoke(captureUuid, principal.userId, expectedRevision))
         }
         return ResponseEntity.status(result.status).body(result.body)
+    }
+
+    @Operation(
+        summary = "이벤트 → 초안 연결",
+        description = "미분류 Hook 이벤트(clientEventId)를 OPEN 초안에 연결한다. 봉인/반영 초안엔 연결 불가(409). " +
+            "없거나 다른 초안에 묶인 이벤트는 가로채지 않고 skipped 로 반환.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "연결 결과(linked/skipped)"),
+        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "봉인/반영된 초안", content = [Content()]),
+    )
+    @PostMapping("/captures/{captureUuid}/events")
+    fun linkEvents(
+        principal: AgentPrincipal,
+        @PathVariable captureUuid: UUID,
+        @Valid @RequestBody request: LinkEventsRequest,
+    ): LinkEventsResponse {
+        principal.requireScope(AgentScopes.CAPTURE_WRITE)
+        val result = linkEvents.invoke(
+            captureUuid = captureUuid,
+            ownerUserId = principal.userId,
+            connectionId = UUID.fromString(principal.connectionId),
+            clientEventIds = request.clientEventIds,
+        )
+        return LinkEventsResponse(linked = result.linked, skipped = result.skipped)
     }
 
     companion object {

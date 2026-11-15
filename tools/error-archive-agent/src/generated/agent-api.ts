@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/events/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 이벤트 배치 적재
+         * @description 최대 100건·본문 ≤1 MiB·이벤트당 payload ≤64 KiB. ACCEPTED 는 적재일 뿐 Step 구조화가 아니다.
+         */
+        post: operations["batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/captures": {
         parameters: {
             query?: never;
@@ -55,6 +75,26 @@ export interface paths {
          * @description content.clientAttemptIds 는 같은 Capture 의 Attempt 여야 한다.
          */
         post: operations["addSolution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/captures/{captureUuid}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 이벤트 → 초안 연결
+         * @description 미분류 Hook 이벤트(clientEventId)를 OPEN 초안에 연결한다. 봉인/반영 초안엔 연결 불가(409). 없거나 다른 초안에 묶인 이벤트는 가로채지 않고 skipped 로 반환.
+         */
+        post: operations["linkEvents"];
         delete?: never;
         options?: never;
         head?: never;
@@ -267,6 +307,73 @@ export interface components {
             /** Format: date-time */
             startedAt: string;
         };
+        /** @description Hook 자동수집 이벤트 배치(최대 100건, 본문 ≤1 MiB). */
+        EventBatchRequest: {
+            events: components["schemas"]["EventItemRequest"][];
+        };
+        /** @description 정규화한 CaptureEvent 1건. */
+        EventItemRequest: {
+            /** @description 최초 로컬 저장 시 1회 생성, 재전송에서 유지. (connectionId,clientEventId) 로 멱등. */
+            clientEventId: string;
+            eventType: string;
+            /** Format: int64 */
+            localSequence: number;
+            /**
+             * Format: date-time
+             * @description 클라이언트 관측 시각(ISO-8601). 서버 수신 시각과 구분 저장.
+             */
+            observedAt: string;
+            /** @description 마스킹된 payload(≤64 KiB). 더 큰 근거는 첨부로. */
+            redactedPayload: components["schemas"]["JsonNode"];
+            /** Format: int64 */
+            projectBindingId?: number | null;
+            clientKind?: string | null;
+            clientVersion?: string | null;
+            sessionId?: string | null;
+            streamId?: string | null;
+            toolCallId?: string | null;
+            truncated: boolean;
+            evidenceRefs: string[];
+        };
+        JsonNode: {
+            null?: boolean;
+            empty?: boolean;
+            array?: boolean;
+            number?: boolean;
+            container?: boolean;
+            valueNode?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            pojo?: boolean;
+            integralNumber?: boolean;
+            floatingPointNumber?: boolean;
+            short?: boolean;
+            int?: boolean;
+            long?: boolean;
+            double?: boolean;
+            bigDecimal?: boolean;
+            bigInteger?: boolean;
+            /** @deprecated */
+            textual?: boolean;
+            boolean?: boolean;
+            binary?: boolean;
+            object?: boolean;
+            float?: boolean;
+            missingNode?: boolean;
+            string?: boolean;
+            embeddedValue?: boolean;
+        };
+        /** @description 배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
+        EventBatchResponse: {
+            results: components["schemas"]["EventResultResponse"][];
+        };
+        /** @description 이벤트별 적재 결과. */
+        EventResultResponse: {
+            clientEventId: string;
+            /** @description ACCEPTED(저장) | DUPLICATE(재전송) | REJECTED(충돌·과대 등) */
+            result: string;
+            reason?: string | null;
+        };
         CaptureContent: {
             symptom?: string | null;
             observedFacts: string[];
@@ -346,6 +453,15 @@ export interface components {
             content: components["schemas"]["SolutionContent"];
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @description 미분류 이벤트를 OPEN Capture 에 연결하는 요청. */
+        LinkEventsRequest: {
+            clientEventIds: string[];
+        };
+        /** @description 연결 결과. linked=연결됨(멱등 포함), skipped=없음/타 Capture 소속이라 가로채지 않음. */
+        LinkEventsResponse: {
+            linked: string[];
+            skipped: string[];
         };
         /** @description 봉인 요청(expectedRevision 로 낙관 검사). */
         CompleteCaptureRequest: {
@@ -483,6 +599,50 @@ export interface operations {
             };
         };
     };
+    batch: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description 이벤트별 ACCEPTED/DUPLICATE/REJECTED */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["EventBatchResponse"];
+                };
+            };
+            /** @description 빈 배치/100건 초과/본문 1 MiB 초과 등 배치 외형 오류 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["EventBatchResponse"];
+                };
+            };
+            /** @description capture:write 스코프 없음 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["EventBatchResponse"];
+                };
+            };
+        };
+    };
     create: {
         parameters: {
             query: {
@@ -583,6 +743,48 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["AgentErrorResponse"];
                 };
+            };
+        };
+    };
+    linkEvents: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+            };
+            header?: never;
+            path: {
+                captureUuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkEventsRequest"];
+            };
+        };
+        responses: {
+            /** @description 연결 결과(linked/skipped) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["LinkEventsResponse"];
+                };
+            };
+            /** @description 없음/타인 소유 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 봉인/반영된 초안 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

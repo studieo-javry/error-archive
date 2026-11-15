@@ -15,6 +15,7 @@ import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
 import java.time.Instant
 import java.util.UUID
@@ -302,4 +303,75 @@ class CaptureImportEntity(
 
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant,
+)
+
+/** Hook 자동수집 이벤트 인박스(capture_event, V24). redacted_payload·evidence_refs 는 jsonb. */
+@Entity
+@Table(
+    name = "capture_event",
+    uniqueConstraints = [UniqueConstraint(name = "uq_capture_event_client_id", columnNames = ["connection_id", "client_event_id"])],
+)
+class CaptureEventEntity(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    var id: Long? = null,
+
+    @Column(name = "connection_id", nullable = false)
+    var connectionId: UUID,
+
+    @Column(name = "owner_user_id", nullable = false)
+    var ownerUserId: Long,
+
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
+
+    @Column(name = "client_event_id", nullable = false, length = 200)
+    var clientEventId: String,
+
+    @Column(name = "client_kind", length = 60)
+    var clientKind: String? = null,
+
+    @Column(name = "client_version", length = 60)
+    var clientVersion: String? = null,
+
+    @Column(name = "session_id", length = 200)
+    var sessionId: String? = null,
+
+    @Column(name = "stream_id", length = 200)
+    var streamId: String? = null,
+
+    @Column(name = "tool_call_id", length = 200)
+    var toolCallId: String? = null,
+
+    @Column(name = "event_type", nullable = false, length = 60)
+    var eventType: String,
+
+    @Column(name = "local_sequence", nullable = false)
+    var localSequence: Long,
+
+    @Column(name = "observed_at", nullable = false)
+    var observedAt: Instant,
+
+    @Column(name = "received_at", nullable = false)
+    var receivedAt: Instant,
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "redacted_payload", columnDefinition = "jsonb", nullable = false)
+    var redactedPayload: String,
+
+    @Column(name = "truncated", nullable = false)
+    var truncated: Boolean = false,
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "evidence_refs", columnDefinition = "jsonb", nullable = false)
+    var evidenceRefs: String,
+
+    @Column(name = "payload_hash", nullable = false, length = 64)
+    var payloadHash: String,
+
+    @Column(name = "capture_id")
+    var captureId: Long? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: CaptureEventStatus,
 )

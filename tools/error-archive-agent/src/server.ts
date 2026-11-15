@@ -83,6 +83,8 @@ export function createServer(client: ApiClient): McpServer {
         title: z.string().optional(),
         project: z.string().optional(),
         sessionUuid: z.string().uuid().optional().describe('이 초안을 이을 세션(선택)'),
+        projectBindingId: z.number().int().positive().optional()
+          .describe('이 초안을 귀속시킬 프로젝트(ProjectBinding) id. 미지정 시 세션 프로젝트를 상속한다.'),
         ...CONTENT_SHAPE,
       },
     },
@@ -96,6 +98,7 @@ export function createServer(client: ApiClient): McpServer {
             project: args.project,
             content: buildCaptureContent(args),
             sessionUuid: args.sessionUuid,
+            projectBindingId: args.projectBindingId,
           },
           idempotencyKeyFor('capture.create', captureUuid),
         );

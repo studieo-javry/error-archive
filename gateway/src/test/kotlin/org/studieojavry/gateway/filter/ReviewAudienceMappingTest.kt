@@ -21,6 +21,12 @@ class ReviewAudienceMappingTest {
     }
 
     @Test
+    fun `프로젝트 바인딩 관리·기존 Case 귀속 경로는 core-api aud 로 매핑된다`() {
+        assertEquals(HeaderInjectionFilter.AUDIENCE_CORE_API, filter.resolveAudience("/api/v1/me/project-bindings"))
+        assertEquals(HeaderInjectionFilter.AUDIENCE_CORE_API, filter.resolveAudience("/api/v1/me/cases/123/project-binding"))
+    }
+
+    @Test
     fun `기존 매핑은 그대로 — core 기존 경로·iam 폴백 sanity`() {
         assertEquals(HeaderInjectionFilter.AUDIENCE_CORE_API, filter.resolveAudience("/api/v1/error-cases/1"))
         // 에이전트 커넥터 발급 경로는 iam 소속(여기선 세션 사용자 검토 API 와 구분).

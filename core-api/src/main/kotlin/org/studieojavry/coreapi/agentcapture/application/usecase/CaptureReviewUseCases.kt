@@ -106,10 +106,22 @@ class ImportCaptureUseCase(
         // 검토 시점 revision 일치 확인(봉인 후 편집이 끼면 409 REVISION_CONFLICT).
         capture.requireRevision(cmd.reviewedRevision)
 
-        // 귀속할 ProjectBinding 은 본인 소유여야 함(없거나 타인 소유면 404 — 존재 노출 회피).
-        cmd.projectBindingId?.let { bid ->
-            val binding = projectBindings.findById(bid)
-            if (binding == null || binding.ownerUserId != cmd.reviewerUserId) throw ProjectBindingNotFoundException(bid)
+        // 귀속할 ProjectBinding — 세 상태를 구분(확인·정정·해제; PR-Y):
+        //  - clearProjectBinding=true → **명시 해제**(null). capture 상속값이 있어도 프로젝트 없이 반영.
+        //  - projectBindingId 지정 → **정정**. 본인 소유여야 함(없거나 타인 → 404, 존재 노출 회피).
+        //  - 둘 다 없음 → **확인(상속)**. capture 상속값 사용, 단 무효(삭제됨/타인)면 미귀속(404 아님).
+        val effectiveProjectBindingId: Long? = when {
+            cmd.clearProjectBinding -> null
+            cmd.projectBindingId != null -> {
+                val bid = cmd.projectBindingId
+                val binding = projectBindings.findById(bid)
+                if (binding == null || binding.ownerUserId != cmd.reviewerUserId) throw ProjectBindingNotFoundException(bid)
+                bid
+            }
+            else -> capture.projectBindingId?.let { bid ->
+                val binding = projectBindings.findById(bid)
+                if (binding != null && binding.ownerUserId == cmd.reviewerUserId) bid else null
+            }
         }
 
         val now = Instant.now(clock)
@@ -171,7 +183,7 @@ class ImportCaptureUseCase(
                 source = ContentSource.AGENT_IMPORT,
                 reviewedByUserId = reviewer,
                 sourceCaptureId = captureId,
-                projectBindingId = cmd.projectBindingId,
+                projectBindingId = effectiveProjectBindingId,
             )
         )
         val caseId = case.id!!
@@ -351,6 +363,7 @@ class ImportCaptureUseCase(
             "stepEdits" to cmd.stepEdits.toSortedMap(),
             "solutionEdits" to cmd.solutionEdits.toSortedMap(),
             "projectBindingId" to cmd.projectBindingId,
+            "clearProjectBinding" to cmd.clearProjectBinding,
         )
         val json = objectMapper.writeValueAsString(normalized)
         return MessageDigest.getInstance("SHA-256").digest(json.toByteArray())
@@ -485,8 +498,10 @@ data class ImportCaptureCommand(
     /** 검토 중 수정: Solution(=선택 후보)별 제목·설명 override. key=clientSolutionId(선택 후보만 허용). */
     val solutionEdits: Map<String, SolutionEdit> = emptyMap(),
     val note: String? = null,
-    /** 생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). 미지정 시 미귀속. */
+    /** 생성될 Case 를 귀속시킬 ProjectBinding id(본인 소유). 미지정 시 capture 상속값(= 확인). 정정 시 지정. */
     val projectBindingId: Long? = null,
+    /** 명시적 프로젝트 해제 — true 면 capture 상속값이 있어도 미귀속(null)으로 반영. projectBindingId 보다 우선. */
+    val clearProjectBinding: Boolean = false,
 )
 
 /** 검토 중 Step 수정. null 필드는 캡처 원본 유지. status 는 캡처 Attempt 결과서 파생된 기본 상태 정정용. */

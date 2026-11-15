@@ -111,7 +111,8 @@ class AgentSessionContextIntegrationTest {
 
     @Test
     fun `타인 소유 projectBindingId 로 세션 등록 → 404`() {
-        val othersBinding = newBinding(7777L, "theirs")
+        // 메서드 간 DB 를 롤백하지 않으므로(uq_project_binding_owner_key) 테스트별 고유 projectKey 사용.
+        val othersBinding = newBinding(7777L, "theirs-session")
         assertThrows<ProjectBindingNotFoundException> {
             registerSession.invoke(registerCmd(UUID.randomUUID(), projectBindingId = othersBinding))
         }
@@ -119,7 +120,7 @@ class AgentSessionContextIntegrationTest {
 
     @Test
     fun `capture 에 타인 소유 projectBindingId 명시 → 404`() {
-        val othersBinding = newBinding(7777L, "theirs")
+        val othersBinding = newBinding(7777L, "theirs-capture")
         assertThrows<ProjectBindingNotFoundException> {
             createCapture.invoke(createCmd(sessionUuid = null, projectBindingId = othersBinding))
         }

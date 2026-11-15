@@ -16,6 +16,10 @@ import { join } from 'node:path';
 export interface AgentConfig {
   baseUrl: string;
   token: string;
+  /** 사용자가 설정한 프로젝트 루트(선택) — 프로젝트 자동 식별의 명시 경로. */
+  projectRoot?: string;
+  /** 클라이언트 세션 id(선택) — 세션 식별에 사용(없으면 프로세스 UUID). */
+  sessionId?: string;
 }
 
 /** 연결 토큰 접두사(iam 발급 규칙과 동일). */
@@ -61,6 +65,8 @@ function readConfigFile(path: string, readFile: (p: string) => string): Partial<
     return {
       baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : undefined,
       token: typeof parsed.token === 'string' ? parsed.token : undefined,
+      projectRoot: typeof parsed.projectRoot === 'string' ? parsed.projectRoot : undefined,
+      sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : undefined,
     };
   } catch {
     throw new ConfigError(`설정 파일 JSON 파싱 실패: ${path}`);
@@ -109,8 +115,13 @@ export function loadConfig(options: LoadOptions = {}): AgentConfig {
     throw new ConfigError('ERROR_ARCHIVE_AGENT_TOKEN 이 설정되지 않았습니다(환경변수 또는 설정 파일).');
   }
 
+  const projectRoot = env.ERROR_ARCHIVE_PROJECT_ROOT ?? file.projectRoot;
+  const sessionId = env.ERROR_ARCHIVE_SESSION_ID ?? file.sessionId;
+
   return {
     baseUrl: validateBaseUrl(baseUrlRaw),
     token: validateToken(tokenRaw),
+    projectRoot: projectRoot?.trim() || undefined,
+    sessionId: sessionId?.trim() || undefined,
   };
 }

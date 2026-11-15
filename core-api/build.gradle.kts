@@ -116,6 +116,8 @@ configure<AllOpenExtension> {
 
 tasks.withType<Test> {
   useJUnitPlatform()
-  // 테스트별 Spring 컨텍스트가 캐시에 쌓여 기본 512m 로는 힙이 모자람
-  maxHeapSize = "1g"
+  // 테스트별 Spring 컨텍스트(@SpringBootTest + Testcontainers)가 단일 테스트 JVM 의 컨텍스트 캐시에
+  // 쌓인다. 통합테스트가 늘며 1g 로도 부족해져 컨텍스트 로드 중 OutOfMemoryError(#180 머지 후 CI OOM) →
+  // 2g 로 상향(CI 러너 ubuntu-24.04-arm 16GB, 여유 충분). 그래도 모자라면 forkEvery 로 JVM 재활용 고려.
+  maxHeapSize = "2g"
 }

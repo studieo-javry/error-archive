@@ -59,6 +59,20 @@ const CONTENT_SHAPE = {
   dirtyWorktree: z.boolean().optional(),
   diffRef: z.string().optional().describe('변경 diff 의 식별자(내용이 아닌 참조)'),
   unknowns: z.array(z.string()).optional().describe('아직 확인하지 못한 내용'),
+  bodyMarkdown: z.string().optional().describe(
+    '상황을 리치 마크다운으로 서술한 본문. 재현에 핵심인 코드/명령 출력은 snippets 로 넣고 본문에서 @snippet(clientSnippetId) 로, ' +
+    '스크린샷·로그 이미지는 capture_attach_evidence 로 올린 뒤 @attach(clientArtifactId) 로 인라인 참조한다. ' +
+    '지정하면 반영 시 symptom/observedFacts 등 구조화 필드 대신 이 본문이 Case 설명이 된다. 근거 없는 원인 단정은 넣지 말 것.',
+  ),
+  snippets: z.array(z.object({
+    clientSnippetId: z.string().describe('이 Capture 안에서 유일한 식별자. bodyMarkdown 의 @snippet() 가 이 값을 가리킨다'),
+    title: z.string().optional(),
+    language: z.string().optional().describe('예: yaml, bash, kotlin, text'),
+    filePathOrClass: z.string().optional().describe('출처 파일/클래스/명령'),
+    lineRange: z.string().optional(),
+    caption: z.string().optional().describe('이 코드가 상황에서 뜻하는 바 한 줄'),
+    code: z.string(),
+  })).optional().describe('상황에 귀속되는 코드 스니펫(재현 코드·에러 출력·명령 결과). bodyMarkdown 의 @snippet() 가 참조한다.'),
 };
 
 export function createServer(

@@ -187,6 +187,10 @@ const RECORDING_POLICY =
   '사용자가 수정 방향을 직접 선택했다면 그 판단과 이유도 같은 Capture 에 함께 남는다. 단순 질문·설명·의도적 실패 테스트·일시적 환경 오류는 대상이 아니다. ' +
   '문제가 시각적 상태(깨진 UI·렌더 결과 스크린샷, 읽은 이미지 등)와 관련됐다면 그 재현 근거도 1급 근거이므로 해당 파일 경로로 capture_attach_evidence 에 첨부해 같은 Capture 에 남긴다. ' +
   '이런 파일(세션 중 찍은 스크린샷·읽은 이미지)은 디스크에 보존되어 capture 작성 시점에도 경로가 유효하다. ' +
+  '문제 상황은 한 줄 증상에 그치지 말고 "무엇이 어떻게 잘못됐는지"를 분명히 남긴다: 재현에 핵심인 코드·에러 출력·명령 결과는 ' +
+  'capture_start/capture_update 의 snippets 로 담아 bodyMarkdown 에서 @snippet(clientSnippetId) 로, 스크린샷·로그 이미지는 ' +
+  'capture_attach_evidence 로 올린 뒤 @attach(clientArtifactId) 로 상황 본문에 인라인 참조한다(코드블록·이미지로 상황을 표현). ' +
+  '해결 과정·수정 코드는 상황이 아니라 시도(capture_add_attempt)·해결책(capture_add_solution)으로 분리해 남긴다. ' +
   '정식 Case 반영은 사용자 검토 단계에서 이뤄지므로 AI 는 Capture 작성·봉인(capture_complete)까지만 담당하며, 미해결로 끝난 조사도 봉인해 남길 수 있다.';
 
 /**

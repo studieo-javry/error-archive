@@ -8,6 +8,7 @@ import type {
   AttemptDetail,
   CaptureContent,
   CaptureEnvironment,
+  CaptureSnippet,
   SolutionContent,
   Verification,
 } from './types.js';
@@ -33,6 +34,24 @@ export interface CaptureContentInput {
   dirtyWorktree?: boolean;
   diffRef?: string;
   unknowns?: string[];
+  bodyMarkdown?: string;
+  snippets?: CaptureSnippet[];
+}
+
+/** 빈 code 스니펫은 버린다. clientSnippetId 는 trim, code 는 원문 유지(들여쓰기 보존). */
+function cleanSnippets(values: CaptureSnippet[] | undefined): CaptureSnippet[] | undefined {
+  const cleaned = (values ?? [])
+    .map((s) => ({
+      clientSnippetId: s.clientSnippetId.trim(),
+      title: blankToUndefined(s.title),
+      language: blankToUndefined(s.language) ?? 'text',
+      filePathOrClass: blankToUndefined(s.filePathOrClass),
+      lineRange: blankToUndefined(s.lineRange),
+      caption: blankToUndefined(s.caption),
+      code: s.code ?? '',
+    }))
+    .filter((s) => s.clientSnippetId.length > 0 && s.code.trim().length > 0);
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 export function buildCaptureContent(input: CaptureContentInput): CaptureContent {
@@ -53,6 +72,8 @@ export function buildCaptureContent(input: CaptureContentInput): CaptureContent 
     reproduction: steps.length > 0 ? { steps, executed: input.reproductionExecuted ?? false } : undefined,
     environment: hasEnv ? env : undefined,
     unknowns: cleanList(input.unknowns),
+    bodyMarkdown: blankToUndefined(input.bodyMarkdown),
+    snippets: cleanSnippets(input.snippets),
   };
 }
 

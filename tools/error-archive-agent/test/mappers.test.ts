@@ -28,6 +28,31 @@ test('buildCaptureContent: reproductionExecuted 미지정이면 false(근거 없
   assert.equal(c.reproduction?.executed, false);
 });
 
+test('buildCaptureContent: bodyMarkdown 트림(빈 값은 생략), snippets 정리', () => {
+  const c = buildCaptureContent({
+    bodyMarkdown: '  ## 요약\n@snippet(s1)  ',
+    snippets: [
+      { clientSnippetId: ' s1 ', title: '  ', language: '', caption: 'cap', code: 'State: OOMKilled' },
+      { clientSnippetId: 'empty', code: '   ' }, // code 빈 → 버림
+      { clientSnippetId: '', code: 'x' }, // id 빈 → 버림
+    ],
+  });
+  assert.equal(c.bodyMarkdown, '## 요약\n@snippet(s1)');
+  assert.equal(c.snippets?.length, 1);
+  const s = c.snippets![0];
+  assert.equal(s.clientSnippetId, 's1');
+  assert.equal(s.title, undefined); // 공백 title → undefined
+  assert.equal(s.language, 'text'); // 빈 language → 기본 text
+  assert.equal(s.caption, 'cap');
+  assert.equal(s.code, 'State: OOMKilled');
+});
+
+test('buildCaptureContent: bodyMarkdown/snippets 없으면 생략', () => {
+  const c = buildCaptureContent({ symptom: 'x' });
+  assert.equal(c.bodyMarkdown, undefined);
+  assert.equal(c.snippets, undefined);
+});
+
 test('buildAttemptDetail: title 트림, 공백 필드는 undefined, evidenceRefs 정리', () => {
   const d = buildAttemptDetail({
     title: '  fix  ',

@@ -32,6 +32,11 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
    (한 버그 = 한 Capture. 수정 방법을 여러 번 바꿔도 Capture 는 하나이고 Attempt 가 여러 개다.)
 2. **시작** — 새 문제면 `capture_start` 로 OPEN 초안을 만든다(증상·기대 동작·발견 경위). 근거 없는 원인 단정은
    넣지 않는다.
+   - **상황을 코드블록·이미지로 분명히:** 한 줄 증상에 그치지 말고, "무엇이 어떻게 잘못됐는지"를 `bodyMarkdown`
+     (리치 마크다운)으로 남긴다. 재현에 핵심인 코드·에러 출력·명령 결과는 `snippets`(clientSnippetId·language·code)
+     로 담아 본문에서 `@snippet(clientSnippetId)` 로, 스크린샷·로그 이미지는 `capture_attach_evidence` 로 올린 뒤
+     `@attach(clientArtifactId)` 로 본문에 인라인 참조한다. **이 근거는 "상황"에 귀속**된다(특정 시도가 아님).
+     수정 코드·해결 과정은 상황이 아니라 아래 시도/해결책으로 분리한다.
 3. **관련 이벤트 연결** — `capture_list_events` 로 수집된 Hook 이벤트(실패한 명령·수정·재실행 등)를 확인하고
    `capture_link_events` 로 이 Capture 에 연결한다.
 4. **조사·시도 기록** — 시도마다 `capture_add_attempt`(result = SUCCEEDED/FAILED/INCONCLUSIVE, 무엇을 했고

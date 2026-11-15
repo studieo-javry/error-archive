@@ -40,6 +40,24 @@ export interface CaptureContent {
   reproduction?: Reproduction;
   environment?: CaptureEnvironment;
   unknowns: string[];
+  /**
+   * 상황을 리치 마크다운으로 서술한 본문(선택). `@snippet(clientSnippetId)`·`@attach(clientArtifactId)` 마커로
+   * 코드블록·이미지를 상황 본문에 인라인 참조한다. 지정되면 반영 시 위 구조화 필드 대신 이 본문이 Case 설명이 된다.
+   */
+  bodyMarkdown?: string;
+  /** 상황에 귀속되는 1급 코드 스니펫(선택). bodyMarkdown 의 @snippet(clientSnippetId) 가 가리킨다. */
+  snippets?: CaptureSnippet[];
+}
+
+/** 상황 본문에 인라인되는 코드 스니펫. clientSnippetId 는 이 Capture 안에서 유일. */
+export interface CaptureSnippet {
+  clientSnippetId: string;
+  title?: string;
+  language?: string;
+  filePathOrClass?: string;
+  lineRange?: string;
+  caption?: string;
+  code: string;
 }
 
 /** Attempt 의 서사 필드(결과·순서·clientId 는 상위). */

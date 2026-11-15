@@ -19,9 +19,14 @@ import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.usecase.CreateProjectBindingCommand
+import org.studieojavry.coreapi.agentcapture.application.usecase.CreateProjectBindingUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.EventResultType
 import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventItem
 import org.studieojavry.coreapi.agentcapture.application.usecase.IngestEventsUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterSessionCommand
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -71,6 +76,9 @@ class AgentCaptureConcurrencyIntegrationTest {
     @Autowired private lateinit var om: ObjectMapper
     @Autowired private lateinit var ingestEvents: IngestEventsUseCase
     @Autowired private lateinit var eventsPort: CaptureEventRepositoryPort
+    @Autowired private lateinit var createProjectBinding: CreateProjectBindingUseCase
+    @Autowired private lateinit var registerSession: RegisterCaptureSessionUseCase
+    @Autowired private lateinit var bindingsPort: ProjectBindingRepositoryPort
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -306,5 +314,56 @@ class AgentCaptureConcurrencyIntegrationTest {
         assertEquals(EventResultType.ACCEPTED, ingestEvents.invoke(conn, owner, listOf(item("""{"a":1}"""))).single().result)
         assertEquals(EventResultType.DUPLICATE, ingestEvents.invoke(conn, owner, listOf(item("""{"a":1}"""))).single().result)
         assertEquals(EventResultType.REJECTED, ingestEvents.invoke(conn, owner, listOf(item("""{"a":2}"""))).single().result)
+    }
+
+    /**
+     * ProjectBinding 생성도 #180 과 같은 동시 생성 경합이 있었다(선조회+save, catch 없음).
+     * ON CONFLICT findOrCreate 로 — 웹 동시 생성이 409/예외 없이 한 바인딩으로 수렴한다.
+     */
+    @Test
+    fun `ProjectBinding 웹 동시 생성 - 409 없이 한 바인딩으로 수렴`() {
+        val owner = 7060L
+        val key = "checkout-svc"
+        val cmd = CreateProjectBindingCommand(ownerUserId = owner, projectKey = key)
+
+        val pool = Executors.newFixedThreadPool(2)
+        val gate = CountDownLatch(1)
+        val futures = (1..2).map { pool.submit(Callable { gate.await(); runCatching { createProjectBinding.invoke(cmd) } }) }
+        gate.countDown()
+        val results = futures.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertTrue(results.all { it.isSuccess }, "동시 생성이 예외(409 CONCURRENT_REQUEST 등)로 깨지면 안 됨: $results")
+        val ids = results.mapNotNull { it.getOrNull()?.binding?.id }.toSet()
+        assertEquals(1, ids.size, "같은 (owner, projectKey)는 하나의 바인딩으로 수렴")
+        assertEquals(1, bindingsPort.listByOwner(owner).count { it.projectKey == key }, "DB 에 바인딩 한 개")
+    }
+
+    /**
+     * 같은 레포 다중 세션 동시 시작 — resolveBinding 의 바인딩 findOrCreate 경합에도 세션 등록
+     * 트랜잭션이 깨지지 않고, 두 세션이 같은 바인딩에 귀속된다(예전엔 UNIQUE 위반으로 세션 등록 실패 → 미귀속).
+     */
+    @Test
+    fun `ProjectBinding 세션 동시 등록 - 경합에도 세션 안 깨지고 같은 바인딩 귀속`() {
+        val owner = 7061L
+        val conn = UUID.randomUUID()
+        val key = "svc-multi"
+        fun cmd() = RegisterSessionCommand(
+            sessionUuid = UUID.randomUUID(), ownerUserId = owner, connectionId = conn,
+            clientKind = "claude-code", clientVersion = null, clientSessionId = UUID.randomUUID().toString(),
+            projectKey = key,
+        )
+
+        val pool = Executors.newFixedThreadPool(2)
+        val gate = CountDownLatch(1)
+        val futures = (1..2).map { pool.submit(Callable { gate.await(); runCatching { registerSession.invoke(cmd()) } }) }
+        gate.countDown()
+        val results = futures.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertTrue(results.all { it.isSuccess }, "세션 등록이 바인딩 생성 경합으로 깨지면 안 됨: $results")
+        val bids = results.mapNotNull { it.getOrNull()?.projectBindingId }.toSet()
+        assertEquals(1, bids.size, "두 세션이 같은 바인딩에 귀속되어야 함")
+        assertEquals(1, bindingsPort.listByOwner(owner).count { it.projectKey == key }, "DB 에 바인딩 한 개")
     }
 }

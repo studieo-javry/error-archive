@@ -209,4 +209,28 @@ interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
 interface ProjectBindingJpaRepository : JpaRepository<ProjectBindingEntity, Long> {
     fun findByOwnerUserIdAndProjectKey(ownerUserId: Long, projectKey: String): ProjectBindingEntity?
     fun findByOwnerUserIdOrderByProjectKeyAsc(ownerUserId: Long): List<ProjectBindingEntity>
+
+    /**
+     * 충돌 없는 멱등 삽입 — UNIQUE(owner_user_id, project_key) 충돌 시 DO NOTHING(예외 없음).
+     * id 는 IDENTITY DEFAULT 로 생성. @return 삽입 행 수(1=삽입, 0=충돌).
+     */
+    @Modifying
+    @Query(
+        value = """
+            INSERT INTO project_binding
+              (owner_user_id, project_key, normalized_repo_id, storage_policy, created_at, updated_at)
+            VALUES
+              (:ownerUserId, :projectKey, :normalizedRepoId, :storagePolicy, :createdAt, :updatedAt)
+            ON CONFLICT (owner_user_id, project_key) DO NOTHING
+        """,
+        nativeQuery = true,
+    )
+    fun insertIfAbsent(
+        @Param("ownerUserId") ownerUserId: Long,
+        @Param("projectKey") projectKey: String,
+        @Param("normalizedRepoId") normalizedRepoId: String?,
+        @Param("storagePolicy") storagePolicy: String,
+        @Param("createdAt") createdAt: Instant,
+        @Param("updatedAt") updatedAt: Instant,
+    ): Int
 }

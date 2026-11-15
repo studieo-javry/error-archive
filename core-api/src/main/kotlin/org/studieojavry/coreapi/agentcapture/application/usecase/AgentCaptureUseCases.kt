@@ -85,14 +85,16 @@ class RegisterCaptureSessionUseCase(
             return bid
         }
         cmd.projectKey?.takeIf { it.isNotBlank() }?.let { key ->
-            bindings.findByOwnerAndKey(cmd.ownerUserId, key)?.let { return it.id }
+            // 충돌 없는 멱등 findOrCreate — 같은 레포 다중 세션 동시 등록에도 UNIQUE 위반으로 세션 등록
+            // 트랜잭션이 깨지지 않는다(ON CONFLICT DO NOTHING 후 재조회로 기존/신규 행을 읽는다).
             val now = Instant.now(clock)
-            return bindings.save(
+            bindings.insertIfAbsent(
                 ProjectBinding(
                     ownerUserId = cmd.ownerUserId, projectKey = key, normalizedRepoId = null,
                     storagePolicy = StoragePolicy.DEFAULT, createdAt = now, updatedAt = now,
                 ),
-            ).id
+            )
+            return bindings.findByOwnerAndKey(cmd.ownerUserId, key)?.id
         }
         return null
     }

@@ -505,6 +505,16 @@ class ProjectBindingRepositoryAdapter(
     override fun listByOwner(ownerUserId: Long): List<ProjectBinding> =
         jpa.findByOwnerUserIdOrderByProjectKeyAsc(ownerUserId).map { it.toDomain() }
 
+    override fun insertIfAbsent(binding: ProjectBinding): Boolean =
+        jpa.insertIfAbsent(
+            ownerUserId = binding.ownerUserId,
+            projectKey = binding.projectKey,
+            normalizedRepoId = binding.normalizedRepoId,
+            storagePolicy = binding.storagePolicy.name,
+            createdAt = binding.createdAt,
+            updatedAt = binding.updatedAt,
+        ) == 1
+
     private fun ProjectBindingEntity.toDomain(): ProjectBinding = ProjectBinding(
         id = id,
         ownerUserId = ownerUserId,

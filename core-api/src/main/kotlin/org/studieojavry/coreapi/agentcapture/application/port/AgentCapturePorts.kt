@@ -78,6 +78,13 @@ interface ProjectBindingRepositoryPort {
     fun findById(id: Long): ProjectBinding?
     fun findByOwnerAndKey(ownerUserId: Long, projectKey: String): ProjectBinding?
     fun listByOwner(ownerUserId: Long): List<ProjectBinding>
+
+    /**
+     * 충돌 없는 멱등 삽입 — UNIQUE(owner_user_id, project_key) 에 INSERT … ON CONFLICT DO NOTHING.
+     * 동시 생성 경합에서도 **예외를 던지지 않아** 트랜잭션을 오염시키지 않는다(세션 등록·웹 생성 공통).
+     * @return 실제로 삽입했으면 true, 이미 있어(충돌) 삽입하지 않았으면 false. 호출측은 findByOwnerAndKey 로 행을 읽는다.
+     */
+    fun insertIfAbsent(binding: ProjectBinding): Boolean
 }
 
 interface CaptureAttemptRepositoryPort {

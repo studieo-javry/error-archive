@@ -23,11 +23,10 @@ class CreateProjectBindingUseCase(
 ) {
     @Transactional
     fun invoke(cmd: CreateProjectBindingCommand): Result {
-        bindings.findByOwnerAndKey(cmd.ownerUserId, cmd.projectKey)?.let {
-            return Result(it, created = false)
-        }
         val now = Instant.now(clock)
-        val saved = bindings.save(
+        // 충돌 없는 멱등 findOrCreate — 동시 생성 경합(같은 owner·projectKey)에도 UNIQUE 위반 예외 없이
+        // 수렴한다(ON CONFLICT DO NOTHING). 이미 있으면 삽입 안 하고(created=false) 그 행을 그대로 반환.
+        val created = bindings.insertIfAbsent(
             ProjectBinding(
                 ownerUserId = cmd.ownerUserId,
                 projectKey = cmd.projectKey,
@@ -37,7 +36,10 @@ class CreateProjectBindingUseCase(
                 updatedAt = now,
             ),
         )
-        return Result(saved, created = true)
+        val row = requireNotNull(bindings.findByOwnerAndKey(cmd.ownerUserId, cmd.projectKey)) {
+            "project_binding must exist after insertIfAbsent"
+        }
+        return Result(row, created = created)
     }
 
     data class Result(val binding: ProjectBinding, val created: Boolean)

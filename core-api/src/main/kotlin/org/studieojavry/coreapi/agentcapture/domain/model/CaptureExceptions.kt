@@ -37,6 +37,10 @@ class UnknownSolutionReferenceException(val captureUuid: UUID, val clientSolutio
 class UnknownArtifactReferenceException(val captureUuid: UUID, val clientArtifactId: String) :
     RuntimeException("references unknown/incomplete artifact '$clientArtifactId' in $captureUuid")
 
+/** 본문 `@snippet(x)` 가 이 캡처의 content.snippets 에 없는 스니펫을 참조 → 422. */
+class UnknownSnippetReferenceException(val captureUuid: UUID, val clientSnippetId: String) :
+    RuntimeException("references unknown snippet '$clientSnippetId' in $captureUuid")
+
 /**
  * 선택한 Solution 이 참조하는 Attempt 를 하나도 선택하지 않아 반영할 Step 이 없음 → 422.
  * (부분 참조는 허용하되, 참조 Step 이 0개가 되는 선택은 조용히 누락하지 않고 거부한다.)

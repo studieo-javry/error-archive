@@ -19,4 +19,15 @@ object MarkerTokens {
     /** text 안의 `@snippet(x)` markerId 집합. */
     fun snippetIds(text: String?): Set<String> =
         text?.let { SNIPPET.findAll(it).map { m -> m.groupValues[1] }.toSet() } ?: emptySet()
+
+    /**
+     * 본문의 마커 id 를 치환한다 — `@snippet(old)`·`@attach(old)` 의 old 를 맵의 new 로.
+     * 캡처 import 에서 클라이언트 임시 id(@snippet(clientSnippetId)/@attach(clientArtifactId))를
+     * 서버 발급 markerId 로 바꿔 심을 때 쓴다. 맵에 없는 id 는 그대로 둔다(미해소는 상위에서 검증).
+     */
+    fun rewrite(text: String?, snippetMap: Map<String, String>, attachMap: Map<String, String>): String? {
+        if (text == null) return null
+        val afterSnippet = SNIPPET.replace(text) { m -> "@snippet(${snippetMap[m.groupValues[1]] ?: m.groupValues[1]})" }
+        return ATTACH.replace(afterSnippet) { m -> "@attach(${attachMap[m.groupValues[1]] ?: m.groupValues[1]})" }
+    }
 }

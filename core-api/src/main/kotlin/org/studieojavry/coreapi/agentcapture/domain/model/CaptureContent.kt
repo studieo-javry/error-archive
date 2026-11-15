@@ -9,6 +9,11 @@ package org.studieojavry.coreapi.agentcapture.domain.model
  *  - reproduction:  제안한 재현 절차 + 실제 실행 여부
  *  - environment:   관측 가능한 실행 환경
  *  - unknowns:      아직 확인하지 못한 내용
+ *  - bodyMarkdown:  (선택) 상황을 리치 마크다운으로 서술한 본문. `@snippet(clientSnippetId)`·
+ *                   `@attach(clientArtifactId)` 마커로 코드/이미지를 상황 본문에 인라인 참조한다.
+ *                   지정되면 import 는 위 6개 구조화 필드 대신 이 본문을 Case description 으로 쓴다.
+ *  - snippets:      (선택) 상황에 귀속되는 1급 코드 스니펫. import 시 CodeSnippet 으로 승격되어
+ *                   본문 `@snippet` 마커가 가리킨다(시도가 아니라 "상황"의 근거 코드).
  */
 data class CaptureContent(
     val symptom: String? = null,
@@ -17,11 +22,27 @@ data class CaptureContent(
     val reproduction: Reproduction? = null,
     val environment: CaptureEnvironment? = null,
     val unknowns: List<String> = emptyList(),
+    val bodyMarkdown: String? = null,
+    val snippets: List<CaptureSnippet> = emptyList(),
 ) {
     companion object {
         val EMPTY = CaptureContent()
     }
 }
+
+/**
+ * 상황 본문에 인라인되는 코드 스니펫(CodeSnippet 의 캡처측 대응). clientSnippetId 는 같은 Capture 안에서
+ * 유일하며 bodyMarkdown 의 `@snippet(clientSnippetId)` 가 이를 가리킨다. import 시 CodeSnippet 으로 승격된다.
+ */
+data class CaptureSnippet(
+    val clientSnippetId: String,
+    val title: String? = null,
+    val language: String = "text",
+    val filePathOrClass: String? = null,
+    val lineRange: String? = null,
+    val caption: String? = null,
+    val code: String = "",
+)
 
 data class Reproduction(
     val steps: List<String> = emptyList(),

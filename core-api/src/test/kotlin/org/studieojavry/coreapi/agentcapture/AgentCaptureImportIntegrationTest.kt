@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.agentcapture
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -36,6 +37,8 @@ import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSnippet
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureAttempt
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureContent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
@@ -127,6 +130,7 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var publisher: RecordingPublisher
     @Autowired private lateinit var captureArtifacts: CaptureArtifactRepositoryPort
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
+    @Autowired private lateinit var codeSnippets: CodeSnippetRepositoryPort
     @Autowired private lateinit var storage: AttachmentStoragePort
     @Autowired private lateinit var importCapture: org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
     @Autowired private lateinit var registerSession: org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
@@ -648,6 +652,82 @@ class AgentCaptureImportIntegrationTest {
         assertEquals(1, atts.size, "선택한 art1 만 반영")
         val step = steps.findAllByErrorCaseId(caseId).single()
         assertTrue(step.body?.contains("@attach(${atts.single().markerId})") == true)
+    }
+
+    @Test
+    fun `상황 본문(bodyMarkdown)의 @snippet·@attach 가 승격되고 마커가 서버 id 로 치환된다`() {
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = userId, originatingConnectionId = UUID.randomUUID(),
+                title = "OOMKilled", project = "svc",
+                content = CaptureContent(
+                    symptom = "OOMKilled",
+                    bodyMarkdown = "## 요약\n파드가 OOMKilled 로 반복 재시작.\n\n@snippet(snip1)\n\n알림 스샷:\n\n@attach(img1)",
+                    snippets = listOf(
+                        CaptureSnippet(
+                            clientSnippetId = "snip1", title = "describe pod", language = "yaml",
+                            filePathOrClass = "kubectl describe pod", caption = "Exit 137 = OOM",
+                            code = "Last State: Terminated\n  Reason: OOMKilled\n  Exit Code: 137",
+                        ),
+                    ),
+                ),
+                now = now(),
+            )
+        )
+        val captureId = saved.id!!
+        attempts.save(CaptureAttempt.create(captureId, "a1", 0, AttemptResult.SUCCEEDED, "fix",
+            AttemptDetail(title = "힙 비율 낮춤", action = "MaxRAMPercentage=55"), now()))
+        // 본문이 @attach 로 참조하는 상황 이미지(시도 근거 아님 — selectedArtifactIds 에 없어도 본문 참조라 자동 승격).
+        captureArtifacts.save(CaptureArtifact.completed(
+            captureId = captureId, clientArtifactId = "img1", objectKey = "obj/img1", sha256 = "s",
+            contentType = "image/png", sizeBytes = 3, fileName = "alert.png", uploaderUserId = userId, now = now(),
+        ))
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+
+        doImport(uuid, userId, "imp-richbody",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[],"selectedArtifactIds":[]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val description = errorCases.findById(caseId)!!.description!!
+        // 클라이언트 임시 id 는 본문에서 사라지고 서버 markerId 로 치환됐다.
+        assertFalse(description.contains("snip1"), "clientSnippetId 는 치환돼 남지 않음")
+        assertFalse(description.contains("img1"), "clientArtifactId 는 치환돼 남지 않음")
+
+        // 상황 스니펫이 1급 CodeSnippet 으로 승격·연결됐고, 본문이 그 서버 markerId 를 가리킨다.
+        val snippet = codeSnippets.findAllByErrorCaseId(caseId).single()
+        assertEquals("yaml", snippet.language)
+        assertEquals("Exit 137 = OOM", snippet.caption)
+        assertTrue(snippet.code.contains("OOMKilled"))
+        assertTrue(description.contains("@snippet(${snippet.markerId})"), "본문이 승격된 스니펫 마커를 가리킴")
+
+        // 상황 이미지가 Case 첨부로 승격·연결됐고(시도 근거 아님), 본문이 그 markerId 를 가리킨다.
+        val att = caseAttachments.findAllByErrorCaseId(caseId).single()
+        assertTrue(description.contains("@attach(${att.markerId})"), "본문이 승격된 첨부 마커를 가리킴")
+        // 상황 본문에 배치된 이미지는 Step 에 중복 삽입되지 않는다.
+        assertTrue(steps.findAllByErrorCaseId(caseId).single().body?.contains("@attach(") != true)
+    }
+
+    @Test
+    fun `본문 @snippet 가 없는 스니펫을 참조하면 422`() {
+        val uuid = UUID.randomUUID()
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = userId, originatingConnectionId = UUID.randomUUID(),
+                title = "x", project = "svc",
+                content = CaptureContent(symptom = "x", bodyMarkdown = "## 요약\n\n@snippet(ghost)"),
+                now = now(),
+            )
+        )
+        attempts.save(CaptureAttempt.create(saved.id!!, "a1", 0, AttemptResult.SUCCEEDED, "fix",
+            AttemptDetail(title = "fix", action = "x"), now()))
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+
+        doImport(uuid, userId, "imp-ghostsnip",
+            """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"selectedSolutionIds":[]}""")
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.code").value("UNKNOWN_SNIPPET_REFERENCE"))
     }
 
     @Test

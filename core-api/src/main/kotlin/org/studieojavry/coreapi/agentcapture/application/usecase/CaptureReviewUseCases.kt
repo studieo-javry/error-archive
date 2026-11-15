@@ -32,8 +32,12 @@ import org.studieojavry.coreapi.agentcapture.domain.model.VerificationScope
 import org.studieojavry.coreapi.errorcase.shared.application.usecase.MarkerTokens
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSnippetReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
+import org.studieojavry.coreapi.errorcase.snippet.application.command.CreateSnippetCommand
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
+import org.studieojavry.coreapi.errorcase.snippet.application.usecase.CreateSnippetUseCase
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
@@ -79,6 +83,8 @@ class ImportCaptureUseCase(
     private val createAttachment: CreateAttachmentUseCase,
     private val caseAttachments: ErrorCaseAttachmentRepositoryPort,
     private val attachmentStorage: AttachmentStoragePort,
+    private val createSnippet: CreateSnippetUseCase,
+    private val codeSnippets: CodeSnippetRepositoryPort,
     private val activity: ActivityEventPublisherPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
     private val objectMapper: ObjectMapper,
@@ -154,10 +160,69 @@ class ImportCaptureUseCase(
         }
         val captureArtifactList = captureArtifacts.listByCapture(captureId)
         val artifactByClientId = captureArtifactList.associateBy { it.clientArtifactId }
-        cmd.selectedArtifactIds.forEach {
+
+        // 1-pre) Case 본문 결정 + 상황 인라인 근거 물질화.
+        //  본문 우선순위: editedDescription(사용자 정정) > content.bodyMarkdown(에이전트 리치 본문) > 6필드 조립.
+        //  본문의 @snippet(clientSnippetId)·@attach(clientArtifactId) 는 "상황 귀속" 근거 — 본문이 참조한 것만
+        //  자동 포함(선택지 a). 참조 스니펫은 CodeSnippet 으로, 참조 이미지는 Case 첨부로 승격해 서버 markerId 로 치환.
+        val rawDescription: String? = if (cmd.editedDescription != null) {
+            cmd.editedDescription.ifBlank { null }
+        } else {
+            capture.content.bodyMarkdown?.takeIf { it.isNotBlank() } ?: buildDescription(capture.content)
+        }
+
+        // 본문이 참조한 스니펫 → CodeSnippet 생성(미연결). clientSnippetId → 서버 markerId.
+        val snippetByClientId = capture.content.snippets.associateBy { it.clientSnippetId }
+        val snippetMarkerByClientId = LinkedHashMap<String, String>()
+        MarkerTokens.snippetIds(rawDescription).forEach { cid ->
+            val snip = snippetByClientId[cid] ?: throw UnknownSnippetReferenceException(cmd.captureUuid, cid)
+            val created = createSnippet.invoke(
+                CreateSnippetCommand(
+                    uploaderUserId = reviewer,
+                    title = snip.title,
+                    language = snip.language.ifBlank { "text" },
+                    filePathOrClass = snip.filePathOrClass,
+                    lineRange = snip.lineRange,
+                    caption = snip.caption,
+                    code = snip.code,
+                ),
+            )
+            snippetMarkerByClientId[cid] = created.markerId
+        }
+
+        // 승격할 아티팩트 = 시도 근거(selectedArtifactIds) ∪ 본문 @attach 참조. 전부 존재·완료 검증(미존재/미완료 → 422).
+        val descAttachIds = MarkerTokens.attachIds(rawDescription)
+        val artifactIdsToPromote = LinkedHashSet<String>().apply {
+            addAll(cmd.selectedArtifactIds)
+            addAll(descAttachIds)
+        }
+        artifactIdsToPromote.forEach {
             val art = artifactByClientId[it] ?: throw UnknownArtifactReferenceException(cmd.captureUuid, it)
             if (!art.isCompleted) throw UnknownArtifactReferenceException(cmd.captureUuid, it)
         }
+        // 선택 근거를 Case 첨부로 승격(미연결 생성). clientArtifactId → 새 markerId. linkToCase 는 케이스 생성 후.
+        val markerIdByClientArtifact = LinkedHashMap<String, String>()
+        artifactIdsToPromote.forEach { cid ->
+            val art = artifactByClientId.getValue(cid)
+            val created = createAttachment.invoke(
+                CreateAttachmentCommand(
+                    uploaderUserId = reviewer,
+                    title = null,
+                    caption = null,
+                    fileName = art.fileName ?: art.clientArtifactId,
+                    contentType = art.contentType,
+                    size = art.sizeBytes,
+                    bytes = attachmentStorage.getBytes(art.objectKey),
+                ),
+            )
+            markerIdByClientArtifact[cid] = created.markerId
+            art.markLinked()
+            captureArtifacts.save(art)
+        }
+
+        // 본문 마커를 서버 markerId 로 치환(미해소는 위 검증에서 이미 422).
+        val finalDescription = MarkerTokens.rewrite(rawDescription, snippetMarkerByClientId, markerIdByClientArtifact)
+            ?.ifBlank { null }
 
         // 1) 신규 케이스(PRIVATE, OPEN). 자동 RESOLVED 하지 않는다.
         //    검토 중 수정: editedTitle/editedDescription 이 있으면 캡처 원본 대신 사용.
@@ -172,8 +237,7 @@ class ImportCaptureUseCase(
                 ),
                 project = capture.project,
                 snapshot = null,
-                description = if (cmd.editedDescription != null) cmd.editedDescription.ifBlank { null }
-                    else buildDescription(capture.content),
+                description = finalDescription,
                 meta = Meta.create(workspaceId = null, severityCode = null),
                 visibility = Visibility.PRIVATE,
                 snippets = emptyList(),
@@ -188,34 +252,13 @@ class ImportCaptureUseCase(
         )
         val caseId = case.id!!
 
-        // 2-pre) 반영할 근거 = selectedArtifactIds (명시 선택 집합). Attempt 선택만으로 근거가 자동 포함되지 않으며,
-        //        사용자가 개별 근거를 제외할 수 있다(민감/노이즈 파일). FE 는 선택 Attempt 의 evidenceRefs 를 기본 포함해 보낸다.
-        //        선택 근거를 Case 첨부로 승격·연결하고, Step 본문 토큰 삽입용 clientArtifactId→새 markerId 매핑을 확보한다.
-        //        (존재·완료는 위에서 엄격 검증됨. 캡처 바이트를 error_case_attachment 로 복사, capture_artifact→LINKED.)
-        val selectedArtifactIdSet = cmd.selectedArtifactIds.toSet()
-        val markerIdByClientArtifact = LinkedHashMap<String, String>()
-        if (selectedArtifactIdSet.isNotEmpty()) {
-            captureArtifactList
-                .filter { it.clientArtifactId in selectedArtifactIdSet }
-                .forEach { art ->
-                    val created = createAttachment.invoke(
-                        CreateAttachmentCommand(
-                            uploaderUserId = reviewer,
-                            title = null,
-                            caption = null,
-                            fileName = art.fileName ?: art.clientArtifactId,
-                            contentType = art.contentType,
-                            size = art.sizeBytes,
-                            bytes = attachmentStorage.getBytes(art.objectKey),
-                        )
-                    )
-                    markerIdByClientArtifact[art.clientArtifactId] = created.markerId
-                    art.markLinked()
-                    captureArtifacts.save(art)
-                }
-            if (markerIdByClientArtifact.isNotEmpty()) {
-                caseAttachments.linkToCase(markerIdByClientArtifact.values.toList(), caseId)
-            }
+        // 2-pre) 위에서 미연결로 승격해 둔 첨부·스니펫을 이 케이스에 연결(벌크 UPDATE, errorCaseId 세팅).
+        //        첨부 = 시도 근거(selectedArtifactIds) ∪ 상황 본문 @attach. 스니펫 = 상황 본문 @snippet.
+        if (markerIdByClientArtifact.isNotEmpty()) {
+            caseAttachments.linkToCase(markerIdByClientArtifact.values.toList(), caseId)
+        }
+        if (snippetMarkerByClientId.isNotEmpty()) {
+            codeSnippets.linkToCase(snippetMarkerByClientId.values.toList(), caseId)
         }
 
         // 2) 선택 Attempt → Step(선택 순서 보존). clientAttemptId → 저장된 stepId 매핑(Solution 참조 해소용).
@@ -231,7 +274,8 @@ class ImportCaptureUseCase(
             val edit = cmd.stepEdits[attempt.clientAttemptId]
             val baseBody = if (edit?.body != null) edit.body.ifBlank { null } else buildStepBody(attempt.detail)
             val evidenceTokens = attempt.detail.evidenceRefs
-                .filter { it in markerIdByClientArtifact && assignedArtifacts.add(it) }
+                // 상황 본문(@attach)에 이미 배치된 근거는 Step 에 중복 삽입하지 않는다("상황 귀속" 우선).
+                .filter { it in markerIdByClientArtifact && it !in descAttachIds && assignedArtifacts.add(it) }
                 .map { "@attach(${markerIdByClientArtifact[it]})" }
                 .filter { token -> baseBody?.contains(token) != true }
             val body = appendEvidenceTokens(baseBody, evidenceTokens)

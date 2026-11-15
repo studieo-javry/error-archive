@@ -12,6 +12,7 @@ import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
+import type { ProjectContext } from './projectContext.js';
 import { createRequire } from 'node:module';
 
 /**
@@ -60,7 +61,7 @@ const CONTENT_SHAPE = {
   unknowns: z.array(z.string()).optional().describe('아직 확인하지 못한 내용'),
 };
 
-export function createServer(client: ApiClient): McpServer {
+export function createServer(client: ApiClient, project?: ProjectContext): McpServer {
   const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
 
   server.registerTool(
@@ -91,13 +92,15 @@ export function createServer(client: ApiClient): McpServer {
     (args) =>
       guard(async () => {
         const captureUuid = newUuid();
+        // 세션 문맥 자동 전달: 명시 sessionUuid 가 없으면 승인된 프로젝트 세션을 자동 주입(미승인이면 미귀속).
+        const sessionUuid = args.sessionUuid ?? (project ? await project.ensureSession() : undefined);
         const created = await client.createCapture(
           {
             captureUuid,
             title: args.title,
             project: args.project,
             content: buildCaptureContent(args),
-            sessionUuid: args.sessionUuid,
+            sessionUuid,
             projectBindingId: args.projectBindingId,
           },
           idempotencyKeyFor('capture.create', captureUuid),
@@ -388,5 +391,69 @@ export function createServer(client: ApiClient): McpServer {
     (args) => guard(async () => ok(await client.getCase(args.caseId))),
   );
 
+  server.registerTool(
+    'connect_project',
+    {
+      title: '프로젝트 연결(승인)',
+      description:
+        '현재 작업 폴더(git)를 Error Archive 프로젝트로 연결한다. **사용자 승인**이 필요하며, 승인 후 이 세션의 ' +
+        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제한다.',
+      inputSchema: {
+        path: z.string().optional().describe('git 작업 폴더 경로(생략 시 설정 projectRoot·현재 경로로 자동 식별)'),
+        disconnect: z.boolean().optional().describe('true 면 연결 해제'),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        if (!project) return ok({ enabled: false, message: '프로젝트 문맥 비활성(설정 없음).' });
+        const resolved = project.detect(args.path);
+        if (!resolved) {
+          return ok({ detected: false, message: 'git 저장소를 찾지 못했습니다. path 로 작업 폴더를 지정하세요.' });
+        }
+        const base = { gitRoot: resolved.gitRoot, projectKey: resolved.projectKey, remote: resolved.remote, trust: resolved.trust };
+        if (args.disconnect) {
+          await project.revoke(resolved);
+          return ok({ ...base, connected: false, message: '연결 해제됨.' });
+        }
+        if (await project.isApproved(resolved)) {
+          return ok({ ...base, connected: true, message: '이미 연결됨.' });
+        }
+        const decision = await elicitProjectApproval(server, resolved.gitRoot, resolved.projectKey);
+        if (decision === 'accept') {
+          await project.approve(resolved);
+          return ok({ ...base, connected: true, message: '연결 승인됨. 이후 Capture 가 이 프로젝트에 귀속됩니다.' });
+        }
+        if (decision === 'unsupported') {
+          return ok({
+            ...base, connected: false, needsApproval: true,
+            message: '이 클라이언트는 인라인 승인을 지원하지 않습니다. 터미널에서 `npx -y @error-archive/agent connect-project` 를 실행해 승인하세요.',
+          });
+        }
+        return ok({ ...base, connected: false, message: '승인되지 않았습니다(사용자 취소/거절).' });
+      }),
+  );
+
   return server;
+}
+
+/** MCP elicitation 으로 실제 사용자 승인을 받는다. 미지원 클라이언트면 'unsupported'(CLI 폴백). */
+async function elicitProjectApproval(
+  server: McpServer,
+  gitRoot: string,
+  projectKey: string,
+): Promise<'accept' | 'decline' | 'unsupported'> {
+  try {
+    const res = await server.server.elicitInput({
+      message: `이 작업 폴더를 Error Archive 프로젝트로 연결할까요?\n경로: ${gitRoot}\n프로젝트: ${projectKey}`,
+      requestedSchema: {
+        type: 'object',
+        properties: { connect: { type: 'boolean', description: '연결을 승인하면 true' } },
+        required: ['connect'],
+      },
+    });
+    if (res.action === 'accept' && (res.content as { connect?: boolean } | undefined)?.connect === true) return 'accept';
+    return 'decline';
+  } catch {
+    return 'unsupported';
+  }
 }

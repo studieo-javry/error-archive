@@ -11,12 +11,16 @@ import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventReposi
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceipt
 import org.studieojavry.coreapi.agentcapture.application.port.IdempotencyReceiptPort
+import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureImport
+import org.studieojavry.coreapi.agentcapture.domain.model.ProjectBinding
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureEventJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.CaptureImportJpaRepository
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.ProjectBindingJpaRepository
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureEventEntity
 import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.CaptureImportEntity
+import org.studieojavry.coreapi.agentcapture.infrastructure.jpa.entity.ProjectBindingEntity
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureArtifact
@@ -62,6 +66,7 @@ class AgentCaptureRepositoryAdapter(
             updatedAt = capture.updatedAt,
             completedAt = capture.completedAt,
             importedCaseId = capture.importedCaseId,
+            projectBindingId = capture.projectBindingId,
         )
         // saveAndFlush: @Version(revision) 증가가 flush 시점에 일어나므로, 응답에 새 revision 을
         // 반영하려면 즉시 flush 해야 한다(그래야 멱등 영수증에도 올바른 revision 이 저장된다).
@@ -97,6 +102,7 @@ class AgentCaptureRepositoryAdapter(
         updatedAt = updatedAt,
         completedAt = completedAt,
         importedCaseId = importedCaseId,
+        projectBindingId = projectBindingId,
     )
 }
 
@@ -194,6 +200,7 @@ class CaptureSessionRepositoryAdapter(
             clientVersion = session.clientVersion,
             clientSessionId = session.clientSessionId,
             startedAt = session.startedAt,
+            projectBindingId = session.projectBindingId,
         )
         return jpa.save(entity).toDomain()
     }
@@ -215,6 +222,7 @@ class CaptureSessionRepositoryAdapter(
         clientVersion = clientVersion,
         clientSessionId = clientSessionId,
         startedAt = startedAt,
+        projectBindingId = projectBindingId,
     )
 }
 
@@ -396,5 +404,42 @@ class CaptureEventRepositoryAdapter(
         payloadHash = payloadHash,
         captureId = captureId,
         status = status,
+    )
+}
+
+@Repository
+class ProjectBindingRepositoryAdapter(
+    private val jpa: ProjectBindingJpaRepository,
+) : ProjectBindingRepositoryPort {
+
+    override fun save(binding: ProjectBinding): ProjectBinding {
+        val entity = ProjectBindingEntity(
+            id = binding.id,
+            ownerUserId = binding.ownerUserId,
+            projectKey = binding.projectKey,
+            normalizedRepoId = binding.normalizedRepoId,
+            storagePolicy = binding.storagePolicy,
+            createdAt = binding.createdAt,
+            updatedAt = binding.updatedAt,
+        )
+        return jpa.save(entity).toDomain()
+    }
+
+    override fun findById(id: Long): ProjectBinding? = jpa.findById(id).orElse(null)?.toDomain()
+
+    override fun findByOwnerAndKey(ownerUserId: Long, projectKey: String): ProjectBinding? =
+        jpa.findByOwnerUserIdAndProjectKey(ownerUserId, projectKey)?.toDomain()
+
+    override fun listByOwner(ownerUserId: Long): List<ProjectBinding> =
+        jpa.findByOwnerUserIdOrderByProjectKeyAsc(ownerUserId).map { it.toDomain() }
+
+    private fun ProjectBindingEntity.toDomain(): ProjectBinding = ProjectBinding(
+        id = id,
+        ownerUserId = ownerUserId,
+        projectKey = projectKey,
+        normalizedRepoId = normalizedRepoId,
+        storagePolicy = storagePolicy,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
     )
 }

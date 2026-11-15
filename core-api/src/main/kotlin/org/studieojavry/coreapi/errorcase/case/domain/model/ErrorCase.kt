@@ -41,6 +41,8 @@ class ErrorCase private constructor(
     val reviewedByUserId: Long? = null,
     /** 반영의 출처가 된 agent_capture 의 id(추적용). 그 외엔 null. */
     val sourceCaptureId: Long? = null,
+    /** 귀속 ProjectBinding id(P1 case:read 스코프 기준). 미귀속이면 null. */
+    val projectBindingId: Long? = null,
 ) {
     init {
         require(title.isNotBlank()) { "Title cannot be blank" }
@@ -121,6 +123,7 @@ class ErrorCase private constructor(
             source: ContentSource = ContentSource.MANUAL,
             reviewedByUserId: Long? = null,
             sourceCaptureId: Long? = null,
+            projectBindingId: Long? = null,
         ): ErrorCase {
             val now = LocalDateTime.now()
             return ErrorCase(
@@ -142,6 +145,7 @@ class ErrorCase private constructor(
                 source = source,
                 reviewedByUserId = reviewedByUserId,
                 sourceCaptureId = sourceCaptureId,
+                projectBindingId = projectBindingId,
             )
         }
 
@@ -167,6 +171,7 @@ class ErrorCase private constructor(
             source: ContentSource = ContentSource.MANUAL,
             reviewedByUserId: Long? = null,
             sourceCaptureId: Long? = null,
+            projectBindingId: Long? = null,
         ): ErrorCase = ErrorCase(
             id = id,
             ownerUserId = ownerUserId,
@@ -189,6 +194,7 @@ class ErrorCase private constructor(
             source = source,
             reviewedByUserId = reviewedByUserId,
             sourceCaptureId = sourceCaptureId,
+            projectBindingId = projectBindingId,
         )
     }
 }

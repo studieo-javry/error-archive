@@ -17,6 +17,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.ArtifactStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus
+import org.studieojavry.coreapi.agentcapture.domain.model.StoragePolicy
 import java.time.Instant
 import java.util.UUID
 
@@ -57,6 +58,9 @@ class AgentCaptureEntity(
 
     @Column(name = "project", length = 200)
     var project: String? = null,
+
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "content", columnDefinition = "jsonb", nullable = false)
@@ -169,6 +173,9 @@ class CaptureSessionEntity(
 
     @Column(name = "started_at", nullable = false, updatable = false)
     var startedAt: Instant,
+
+    @Column(name = "project_binding_id")
+    var projectBindingId: Long? = null,
 )
 
 @Entity
@@ -374,4 +381,35 @@ class CaptureEventEntity(
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     var status: CaptureEventStatus,
+)
+
+/** 프로젝트 바인딩(project_binding, V25). 소유자별 project_key 유일. */
+@Entity
+@Table(
+    name = "project_binding",
+    uniqueConstraints = [UniqueConstraint(name = "uq_project_binding_owner_key", columnNames = ["owner_user_id", "project_key"])],
+)
+class ProjectBindingEntity(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "project_binding_id")
+    var id: Long? = null,
+
+    @Column(name = "owner_user_id", nullable = false)
+    var ownerUserId: Long,
+
+    @Column(name = "project_key", nullable = false, length = 200)
+    var projectKey: String,
+
+    @Column(name = "normalized_repo_id", length = 300)
+    var normalizedRepoId: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "storage_policy", nullable = false, length = 30)
+    var storagePolicy: StoragePolicy,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant,
+
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant,
 )

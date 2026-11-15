@@ -79,6 +79,10 @@ export interface RegisterSessionRequest {
   clientKind: string;
   clientVersion?: string;
   clientSessionId: string;
+  /** 세션의 프로젝트 귀속(본인 소유 ProjectBinding). 생성될 Capture 가 상속. projectKey 보다 우선. */
+  projectBindingId?: number;
+  /** 프로젝트 식별자 — 바인딩 없으면 본인 소유로 생성(findOrCreate). */
+  projectKey?: string;
 }
 
 export interface CreateCaptureRequest {
@@ -87,6 +91,8 @@ export interface CreateCaptureRequest {
   project?: string;
   content: CaptureContent;
   sessionUuid?: string;
+  /** 명시 프로젝트 귀속(선택). 미지정 시 세션의 projectBindingId 상속. */
+  projectBindingId?: number;
 }
 
 export interface PatchCaptureRequest {
@@ -191,4 +197,59 @@ export interface CaptureDetailResponse {
 export interface UploadArtifactResult {
   artifact: ArtifactResponse;
   deduplicated: boolean;
+}
+
+// ── case:read (과거 해결경험 조회 — ProjectBinding 독립) ──────────────────────
+
+/** 검색 결과 요약(본인 소유). */
+export interface AgentCaseSummary {
+  id: number;
+  title: string;
+  status: string;
+  exceptionClass: string | null;
+  createdAt: string;
+}
+
+export interface AgentCaseListResponse {
+  items: AgentCaseSummary[];
+}
+
+/** 상세의 Step — 본문 포함(해결 과정 재활용). */
+export interface AgentCaseStep {
+  orderIndex: number;
+  title: string;
+  status: string;
+  attemptType: string | null;
+  body: string | null;
+  insight: string | null;
+}
+
+export interface AgentCaseVerification {
+  result: string | null;
+  executed: boolean;
+  command: string | null;
+  testId: string | null;
+  ranAt: string | null;
+  commitSha: string | null;
+  evidence: string | null;
+}
+
+export interface AgentCaseSolution {
+  title: string;
+  description: string | null;
+  verification: AgentCaseVerification | null;
+}
+
+/** 상세 — Step 본문·Solution 설명·검증 포함. */
+export interface AgentCaseDetail {
+  id: number;
+  title: string;
+  status: string;
+  project: string | null;
+  projectBindingId: number | null;
+  description: string | null;
+  exceptionClass: string | null;
+  exceptionMessage: string | null;
+  steps: AgentCaseStep[];
+  solutions: AgentCaseSolution[];
 }

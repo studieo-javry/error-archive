@@ -12,6 +12,7 @@ import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
+import type { ProjectContext } from './projectContext.js';
 import { createRequire } from 'node:module';
 
 /**
@@ -60,7 +61,7 @@ const CONTENT_SHAPE = {
   unknowns: z.array(z.string()).optional().describe('아직 확인하지 못한 내용'),
 };
 
-export function createServer(client: ApiClient): McpServer {
+export function createServer(client: ApiClient, project?: ProjectContext): McpServer {
   const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
 
   server.registerTool(
@@ -83,19 +84,24 @@ export function createServer(client: ApiClient): McpServer {
         title: z.string().optional(),
         project: z.string().optional(),
         sessionUuid: z.string().uuid().optional().describe('이 초안을 이을 세션(선택)'),
+        projectBindingId: z.number().int().positive().optional()
+          .describe('이 초안을 귀속시킬 프로젝트(ProjectBinding) id. 미지정 시 세션 프로젝트를 상속한다.'),
         ...CONTENT_SHAPE,
       },
     },
     (args) =>
       guard(async () => {
         const captureUuid = newUuid();
+        // 세션 문맥 자동 전달: 명시 sessionUuid 가 없으면 승인된 프로젝트 세션을 자동 주입(미승인이면 미귀속).
+        const sessionUuid = args.sessionUuid ?? (project ? await project.ensureSession() : undefined);
         const created = await client.createCapture(
           {
             captureUuid,
             title: args.title,
             project: args.project,
             content: buildCaptureContent(args),
-            sessionUuid: args.sessionUuid,
+            sessionUuid,
+            projectBindingId: args.projectBindingId,
           },
           idempotencyKeyFor('capture.create', captureUuid),
         );
@@ -358,5 +364,96 @@ export function createServer(client: ApiClient): McpServer {
       }),
   );
 
+  server.registerTool(
+    'find_cases',
+    {
+      title: '과거 사례 검색',
+      description:
+        '본인이 전에 해결한 Case 를 검색한다(과거 해결경험 재활용). query 로 제목·설명·예외로 유사 오류를 찾고, ' +
+        'projectBindingId 로 특정 프로젝트로 좁힐 수 있다(선택 — 미지정 시 프로젝트 무관 전체). 공개 사례·타인 데이터는 조회되지 않는다.',
+      inputSchema: {
+        query: z.string().optional(),
+        projectBindingId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    (args) => guard(async () => ok(await client.searchCases(args.query, args.projectBindingId, args.limit))),
+  );
+
+  server.registerTool(
+    'get_case',
+    {
+      title: '과거 사례 상세',
+      description:
+        '과거 Case 상세를 조회한다 — Step 본문·Solution 설명·검증 근거까지 포함해 해결 과정을 그대로 참고할 수 있다. 본인 소유만(아니면 404).',
+      inputSchema: { caseId: z.number().int().positive() },
+    },
+    (args) => guard(async () => ok(await client.getCase(args.caseId))),
+  );
+
+  server.registerTool(
+    'connect_project',
+    {
+      title: '프로젝트 연결(승인)',
+      description:
+        '현재 작업 폴더(git)를 Error Archive 프로젝트로 연결한다. **사용자 승인**이 필요하며, 승인 후 이 세션의 ' +
+        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제한다.',
+      inputSchema: {
+        path: z.string().optional().describe('git 작업 폴더 경로(생략 시 설정 projectRoot·현재 경로로 자동 식별)'),
+        disconnect: z.boolean().optional().describe('true 면 연결 해제'),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        if (!project) return ok({ enabled: false, message: '프로젝트 문맥 비활성(설정 없음).' });
+        const resolved = project.detect(args.path);
+        if (!resolved) {
+          return ok({ detected: false, message: 'git 저장소를 찾지 못했습니다. path 로 작업 폴더를 지정하세요.' });
+        }
+        const base = { gitRoot: resolved.gitRoot, projectKey: resolved.projectKey, remote: resolved.remote, trust: resolved.trust };
+        if (args.disconnect) {
+          await project.revoke(resolved);
+          return ok({ ...base, connected: false, message: '연결 해제됨.' });
+        }
+        if (await project.isApproved(resolved)) {
+          return ok({ ...base, connected: true, message: '이미 연결됨.' });
+        }
+        const decision = await elicitProjectApproval(server, resolved.gitRoot, resolved.projectKey);
+        if (decision === 'accept') {
+          await project.approve(resolved);
+          return ok({ ...base, connected: true, message: '연결 승인됨. 이후 Capture 가 이 프로젝트에 귀속됩니다.' });
+        }
+        if (decision === 'unsupported') {
+          return ok({
+            ...base, connected: false, needsApproval: true,
+            message: '이 클라이언트는 인라인 승인을 지원하지 않습니다. 터미널에서 `npx -y @error-archive/agent connect-project` 를 실행해 승인하세요.',
+          });
+        }
+        return ok({ ...base, connected: false, message: '승인되지 않았습니다(사용자 취소/거절).' });
+      }),
+  );
+
   return server;
+}
+
+/** MCP elicitation 으로 실제 사용자 승인을 받는다. 미지원 클라이언트면 'unsupported'(CLI 폴백). */
+async function elicitProjectApproval(
+  server: McpServer,
+  gitRoot: string,
+  projectKey: string,
+): Promise<'accept' | 'decline' | 'unsupported'> {
+  try {
+    const res = await server.server.elicitInput({
+      message: `이 작업 폴더를 Error Archive 프로젝트로 연결할까요?\n경로: ${gitRoot}\n프로젝트: ${projectKey}`,
+      requestedSchema: {
+        type: 'object',
+        properties: { connect: { type: 'boolean', description: '연결을 승인하면 true' } },
+        required: ['connect'],
+      },
+    });
+    if (res.action === 'accept' && (res.content as { connect?: boolean } | undefined)?.connect === true) return 'accept';
+    return 'decline';
+  } catch {
+    return 'unsupported';
+  }
 }

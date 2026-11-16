@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.agentcapture
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -53,6 +54,7 @@ import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventP
 import org.studieojavry.coreapi.errorcase.solution.application.port.SolutionRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.application.port.StepRepositoryPort
 import org.studieojavry.coreapi.errorcase.step.domain.model.vo.StepStatus
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
 import org.studieojavry.internalauth.InternalAuthentication
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -129,6 +131,7 @@ class AgentCaptureImportIntegrationTest {
     @Autowired private lateinit var caseAttachments: ErrorCaseAttachmentRepositoryPort
     @Autowired private lateinit var storage: AttachmentStoragePort
     @Autowired private lateinit var importCapture: org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
+    @Autowired private lateinit var codeSnippets: CodeSnippetRepositoryPort
     private lateinit var mvc: MockMvc
 
     private val userId = 7001L
@@ -856,5 +859,76 @@ class AgentCaptureImportIntegrationTest {
         """.trimIndent())
             .andExpect(status().isUnprocessableEntity)
             .andExpect(jsonPath("$.code").value("UNKNOWN_SOLUTION_REFERENCE"))
+    }
+
+    // ── 코드블록 → 코드 스니펫(@snippet) 자동 승격 ──────────────────────────────────
+
+    /** 본문(symptom)에 무태그 2줄 블록, 스텝(action)에 kotlin 블록을 심은 캡처. */
+    private fun seedCaptureWithCode(owner: Long, shortBareBlock: Boolean = false): UUID {
+        val uuid = UUID.randomUUID()
+        val actionCode = if (shortBareBlock) "원인:\n```\none line\n```" else "Bean 교체:\n```kotlin\nc.setAutoStartup(false)\n```"
+        val saved = captures.save(
+            AgentCapture.start(
+                captureUuid = uuid, ownerUserId = owner, originatingConnectionId = UUID.randomUUID(),
+                title = "Redis startup crash", project = "noti-api",
+                content = CaptureContent(
+                    symptom = "부팅 실패:\n```\nUnable to connect to Redis\ntimeout after 2s\n```",
+                ),
+                now = now(),
+            ),
+        )
+        val cid = saved.id!!
+        attempts.save(
+            CaptureAttempt.create(cid, "a1", 0, AttemptResult.SUCCEEDED, "fix",
+                AttemptDetail(title = "lazy 리스너", action = actionCode), now()),
+        )
+        val c = captures.findByUuid(uuid)!!; c.complete(now()); captures.save(c)
+        return uuid
+    }
+
+    @Test
+    fun `반영 시 코드블록이 코드 스니펫(@snippet)으로 승격된다(기본 on)`() {
+        val uuid = seedCaptureWithCode(userId)
+        doImport(uuid, userId, "imp-snip", """{"reviewedRevision":1,"selectedAttemptIds":["a1"]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        val case = errorCases.findById(caseId)!!
+        val step = steps.findAllByErrorCaseId(caseId).single()
+
+        // 본문·스텝에서 펜스는 사라지고 @snippet 토큰으로 치환
+        assertFalse(case.description!!.contains("```"), "본문에 코드펜스가 남음")
+        assertTrue(case.description!!.contains("@snippet("), "본문에 @snippet 없음")
+        assertFalse(step.body!!.contains("```"), "스텝에 코드펜스가 남음")
+        assertTrue(step.body!!.contains("@snippet("), "스텝에 @snippet 없음")
+
+        // 케이스에 스니펫 2개 연결(본문 무태그=text, 스텝 kotlin)
+        val linked = codeSnippets.findAllByErrorCaseId(caseId)
+        assertEquals(2, linked.size)
+        assertEquals(setOf("text", "kotlin"), linked.map { it.language }.toSet())
+    }
+
+    @Test
+    fun `promoteSnippets=false 면 코드블록 그대로, 스니펫 생성 안 함`() {
+        val uuid = seedCaptureWithCode(userId)
+        doImport(uuid, userId, "imp-nosnip", """{"reviewedRevision":1,"selectedAttemptIds":["a1"],"promoteSnippets":false}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        assertTrue(errorCases.findById(caseId)!!.description!!.contains("```"), "본문 펜스가 보존돼야 함")
+        assertTrue(steps.findAllByErrorCaseId(caseId).single().body!!.contains("```"))
+        assertTrue(codeSnippets.findAllByErrorCaseId(caseId).isEmpty())
+    }
+
+    @Test
+    fun `무태그 1줄 블록은 승격하지 않는다(과승격 방지)`() {
+        val uuid = seedCaptureWithCode(userId, shortBareBlock = true)
+        doImport(uuid, userId, "imp-short", """{"reviewedRevision":1,"selectedAttemptIds":["a1"]}""")
+            .andExpect(status().isCreated)
+
+        val caseId = captures.findByUuid(uuid)!!.importedCaseId!!
+        // 스텝의 1줄 무태그 블록은 펜스 유지, 본문의 2줄 무태그 블록만 승격
+        assertTrue(steps.findAllByErrorCaseId(caseId).single().body!!.contains("```"), "1줄 블록은 펜스 유지")
+        assertEquals(1, codeSnippets.findAllByErrorCaseId(caseId).size) // 본문 블록만
     }
 }

@@ -271,6 +271,9 @@ data class ImportCaptureRequest(
     val projectBindingId: Long? = null,
     @Schema(description = "명시적 프로젝트 해제. true 면 capture 가 프로젝트에 귀속돼 있어도 프로젝트 없이 반영한다(projectBindingId 보다 우선).")
     val clearProjectBinding: Boolean = false,
+    @Schema(description = "본문·스텝의 ```코드블록을 코드 스니펫(@snippet 카드)으로 자동 승격(기본 true). " +
+        "언어 태그 블록은 항상, 무태그/```text 는 2줄 이상일 때 승격. false 면 코드블록 그대로 반영.")
+    val promoteSnippets: Boolean = true,
 )
 
 @Schema(description = "검토 중 Step 수정. null 필드는 캡처 원본 유지, body 는 빈 문자열이면 본문 없음.")

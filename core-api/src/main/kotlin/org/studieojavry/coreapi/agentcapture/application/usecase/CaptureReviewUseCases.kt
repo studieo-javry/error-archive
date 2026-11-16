@@ -13,6 +13,9 @@ import org.studieojavry.coreapi.errorcase.attachment.application.command.CreateA
 import org.studieojavry.coreapi.errorcase.attachment.application.port.AttachmentStoragePort
 import org.studieojavry.coreapi.errorcase.attachment.application.port.ErrorCaseAttachmentRepositoryPort
 import org.studieojavry.coreapi.errorcase.attachment.application.usecase.CreateAttachmentUseCase
+import org.studieojavry.coreapi.errorcase.snippet.application.command.CreateSnippetCommand
+import org.studieojavry.coreapi.errorcase.snippet.application.port.CodeSnippetRepositoryPort
+import org.studieojavry.coreapi.errorcase.snippet.application.usecase.CreateSnippetUseCase
 import org.studieojavry.coreapi.agentcapture.domain.model.AgentCapture
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptDetail
 import org.studieojavry.coreapi.agentcapture.domain.model.AttemptResult
@@ -78,6 +81,8 @@ class ImportCaptureUseCase(
     private val caseSolutions: SolutionRepositoryPort,
     private val createAttachment: CreateAttachmentUseCase,
     private val caseAttachments: ErrorCaseAttachmentRepositoryPort,
+    private val createSnippet: CreateSnippetUseCase,
+    private val caseSnippets: CodeSnippetRepositoryPort,
     private val attachmentStorage: AttachmentStoragePort,
     private val activity: ActivityEventPublisherPort,
     private val cacheInvalidator: org.studieojavry.coreapi.shared.config.DashboardCacheInvalidator,
@@ -128,6 +133,27 @@ class ImportCaptureUseCase(
         val reviewer = cmd.reviewerUserId
         val captureId = capture.id!!
 
+        // 본문·스텝의 ```lang 코드블록을 CodeSnippet(@snippet)으로 승격(855 와 동일한 리치 카드). 정책은
+        // FencedCodePromoter(언어태그=항상, 무태그/text=2줄↑). cmd.promoteSnippets=false 면 비활성(펜스 유지).
+        // 생성 스니펫은 미연결로 만들고, caseId 확보 후 맨 끝에 일괄 linkToCase — 첨부 승격과 동일 패턴.
+        val snippetPromoter = FencedCodePromoter()
+        val promotedSnippetMarkers = mutableListOf<String>()
+        fun promoteSnippets(body: String?): String? {
+            if (!cmd.promoteSnippets || body.isNullOrBlank()) return body
+            val scan = snippetPromoter.scan(body)
+            if (scan.blocks.isEmpty()) return body
+            val markers = scan.blocks.map { b ->
+                createSnippet.invoke(
+                    CreateSnippetCommand(
+                        uploaderUserId = reviewer, title = b.filePathOrClass, language = b.language,
+                        filePathOrClass = b.filePathOrClass, lineRange = null, caption = null, code = b.code,
+                    ),
+                ).markerId
+            }
+            promotedSnippetMarkers += markers
+            return snippetPromoter.render(scan, markers)
+        }
+
         // 사용자가 선택한 Attempt 만, 선택 순서대로. 중복 선택은 distinct(첫 등장 순서 유지)로 Step 중복 생성 방지.
         // 없는 참조는 422.
         val attemptByClientId = attempts.listByCapture(captureId).associateBy { it.clientAttemptId }
@@ -172,8 +198,10 @@ class ImportCaptureUseCase(
                 ),
                 project = capture.project,
                 snapshot = null,
-                description = if (cmd.editedDescription != null) cmd.editedDescription.ifBlank { null }
+                description = promoteSnippets(
+                    if (cmd.editedDescription != null) cmd.editedDescription.ifBlank { null }
                     else buildDescription(capture.content),
+                ),
                 meta = Meta.create(workspaceId = null, severityCode = null),
                 visibility = Visibility.PRIVATE,
                 snippets = emptyList(),
@@ -234,8 +262,10 @@ class ImportCaptureUseCase(
                 .filter { it in markerIdByClientArtifact && assignedArtifacts.add(it) }
                 .map { "@attach(${markerIdByClientArtifact[it]})" }
                 .filter { token -> baseBody?.contains(token) != true }
-            val body = appendEvidenceTokens(baseBody, evidenceTokens)
-            validateImportedStepBodyMarkers(body, promotedMarkers, cmd.captureUuid)
+            val assembledBody = appendEvidenceTokens(baseBody, evidenceTokens)
+            // 코드블록 → @snippet 승격(본문과 동일). 승격분은 아래 검증에서 허용되도록 promotedSnippetMarkers 에 누적.
+            val body = promoteSnippets(assembledBody)
+            validateImportedStepBodyMarkers(body, promotedMarkers, promotedSnippetMarkers.toSet(), cmd.captureUuid)
             val step = steps.save(
                 Step.create(
                     errorCaseId = caseId,
@@ -255,6 +285,9 @@ class ImportCaptureUseCase(
             )
             stepIdByClientAttempt[attempt.clientAttemptId] = step.id!!
         }
+
+        // 2-post) 본문·스텝에서 승격한 스니펫을 케이스에 일괄 연결(첨부와 동일). 본문 @snippet 참조가 유효해진다.
+        if (promotedSnippetMarkers.isNotEmpty()) caseSnippets.linkToCase(promotedSnippetMarkers, caseId)
 
         // 3) 선택 SolutionCandidate → Solution. 참조 clientAttemptId 를 (선택된) stepId 로 해소.
         //    후보의 상세 설명(description)·검증 근거(verification)도 함께 이관한다.
@@ -364,6 +397,7 @@ class ImportCaptureUseCase(
             "solutionEdits" to cmd.solutionEdits.toSortedMap(),
             "projectBindingId" to cmd.projectBindingId,
             "clearProjectBinding" to cmd.clearProjectBinding,
+            "promoteSnippets" to cmd.promoteSnippets,
         )
         val json = objectMapper.writeValueAsString(normalized)
         return MessageDigest.getInstance("SHA-256").digest(json.toByteArray())
@@ -425,13 +459,19 @@ class ImportCaptureUseCase(
     private fun truncate(s: String, max: Int): String = if (s.length <= max) s else s.take(max)
 
     /**
-     * 반영될 Step 본문의 마커 검증(일반 Step API 와 일관): @attach 는 이번에 승격된 첨부만, @snippet 은 불가.
+     * 반영될 Step 본문의 마커 검증(일반 Step API 와 일관): @attach 는 이번에 승격된 첨부만, @snippet 은
+     * 이번에 승격된 스니펫만 허용한다(그 외 임의 마커 — 예: 사용자 수정 본문의 오타 — 는 422).
      */
-    private fun validateImportedStepBodyMarkers(body: String?, promoted: Set<String>, captureUuid: UUID) {
+    private fun validateImportedStepBodyMarkers(
+        body: String?,
+        promotedAttachments: Set<String>,
+        promotedSnippets: Set<String>,
+        captureUuid: UUID,
+    ) {
         if (body.isNullOrBlank()) return
-        MarkerTokens.attachIds(body).firstOrNull { it !in promoted }
+        MarkerTokens.attachIds(body).firstOrNull { it !in promotedAttachments }
             ?.let { throw ImportedStepBodyMarkerException(captureUuid, it) }
-        MarkerTokens.snippetIds(body).firstOrNull()
+        MarkerTokens.snippetIds(body).firstOrNull { it !in promotedSnippets }
             ?.let { throw ImportedStepBodyMarkerException(captureUuid, "@snippet($it)") }
     }
 
@@ -502,6 +542,8 @@ data class ImportCaptureCommand(
     val projectBindingId: Long? = null,
     /** 명시적 프로젝트 해제 — true 면 capture 상속값이 있어도 미귀속(null)으로 반영. projectBindingId 보다 우선. */
     val clearProjectBinding: Boolean = false,
+    /** 본문·스텝의 ```코드블록을 코드 스니펫(@snippet)으로 자동 승격(기본 on). false 면 코드블록 그대로 반영. */
+    val promoteSnippets: Boolean = true,
 )
 
 /** 검토 중 Step 수정. null 필드는 캡처 원본 유지. status 는 캡처 Attempt 결과서 파생된 기본 상태 정정용. */

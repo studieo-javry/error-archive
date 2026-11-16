@@ -4,11 +4,14 @@ import org.junit.jupiter.api.Test
 import org.springframework.mock.env.MockEnvironment
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.studieojavry.sharederror.masking.ErrorMaskingPolicy
@@ -30,6 +33,9 @@ class GlobalExceptionHandlerMvcTest {
 
         @GetMapping("/t")
         fun byParam(@RequestParam n: Int): Map<String, Any> = mapOf("n" to n)
+
+        @PostMapping("/t/hdr")
+        fun byHeader(@RequestHeader("Idempotency-Key") key: String): Map<String, Any> = mapOf("key" to key)
     }
 
     private val mvc: MockMvc = MockMvcBuilders
@@ -63,6 +69,20 @@ class GlobalExceptionHandlerMvcTest {
         mvc.perform(get("/t"))
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.code").value("MISSING_PARAMETER"))
+    }
+
+    @Test
+    fun `missing required header maps to 400 MISSING_HEADER, not 500`() {
+        mvc.perform(post("/t/hdr"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("MISSING_HEADER"))
+    }
+
+    @Test
+    fun `present required header still succeeds`() {
+        mvc.perform(post("/t/hdr").header("Idempotency-Key", "k-1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.key").value("k-1"))
     }
 
     @Test

@@ -1,18 +1,30 @@
 #!/usr/bin/env node
 /**
  * 엔트리포인트.
- *   error-archive-agent            → MCP stdio 서버(Claude Code 가 연결)
- *   error-archive-agent doctor     → 설정·연결 진단(1회성 CLI)
+ *   error-archive-agent               → MCP stdio 서버(Claude Code 가 연결) + 수집 이벤트 주기 flush
+ *   error-archive-agent doctor        → 설정·연결 진단(1회성 CLI)
+ *   error-archive-agent connect-project [path] → 프로젝트 연결 승인(터미널)
+ *   error-archive-agent hook          → Claude Code Hook 어댑터(stdin JSON → 로컬 큐 적재만)
+ *   error-archive-agent flush         → 수집 큐를 서버 인박스로 즉시 전송
+ *   error-archive-agent install-hooks → ~/.claude/settings.json 에 Hook 설정 주입
  *
  * ⚠️ MCP 모드에서 stdout 은 프로토콜 채널이다. 로그/진단은 반드시 stderr 로만 낸다.
  */
+import { readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
+import { accountNamespace, EventQueue } from './eventQueue.js';
+import { flushQueue } from './eventSender.js';
+import { normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
 import { ProjectContext } from './projectContext.js';
 import { createServer } from './server.js';
+
+const FLUSH_INTERVAL_MS = 10_000;
 
 async function runDoctor(): Promise<number> {
   let config;
@@ -60,6 +72,17 @@ async function runServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`error-archive-agent MCP 서버 시작(base=${config.baseUrl}, token=${maskToken(config.token)})\n`);
+
+  // 수집 이벤트 sender — 장기 실행 서버가 주기적으로 큐를 서버 인박스로 flush(오프라인 안전).
+  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+  const flush = () => {
+    flushQueue(client, queue).catch((err) => {
+      process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    });
+  };
+  flush();
+  const timer = setInterval(flush, FLUSH_INTERVAL_MS);
+  if (typeof timer.unref === 'function') timer.unref();
 }
 
 /** CLI 프로젝트 연결 승인(1회성) — 터미널에서 사용자가 직접 실행하는 명시적 승인 경로(elicitation 폴백). */
@@ -103,6 +126,71 @@ async function runConnectProject(): Promise<number> {
   return 1;
 }
 
+/** stdin 전체 읽기(Hook JSON). */
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Hook 어댑터(P1-4) — Claude Code 가 Hook 으로 호출. stdin JSON 을 정규화해 **로컬 큐에 적재만** 한다
+ * (네트워크 X). 항상 0 종료(Claude Code 흐름을 막지 않음). 수집 대상 아니거나 오류여도 조용히 통과.
+ */
+async function runHook(): Promise<number> {
+  try {
+    const raw = await readStdin();
+    if (!raw.trim()) return 0;
+    const input = JSON.parse(raw) as HookInput;
+    if (!shouldCollect(input)) return 0;
+    const config = loadConfig();
+    const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+    queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
+  } catch (err) {
+    process.stderr.write(`[hook] 적재 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+  }
+  return 0; // Hook 은 절대 실패로 종료하지 않는다
+}
+
+/** 큐를 서버로 즉시 flush(CLI 보조). */
+async function runFlush(): Promise<number> {
+  const config = loadConfig();
+  const client = createApiClient(config, undefined, resolveClientInfo());
+  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+  const r = await flushQueue(client, queue);
+  process.stderr.write(`[events] sent=${r.sent} rejected=${r.rejected} pending=${r.pending}\n`);
+  return 0;
+}
+
+/** Claude Code settings.json 에 Hook(PostToolUse·Stop → `error-archive-agent hook`) 설정 주입. */
+async function runInstallHooks(): Promise<number> {
+  const settingsPath = process.env.CLAUDE_SETTINGS ?? join(homedir(), '.claude', 'settings.json');
+  const hookCmd = { type: 'command', command: 'error-archive-agent hook' };
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+  } catch {
+    settings = {};
+  }
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+  for (const event of ['PostToolUse', 'Stop']) {
+    const arr = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
+    const already = arr.some((m) => JSON.stringify(m).includes('error-archive-agent hook'));
+    if (!already) arr.push({ hooks: [hookCmd] });
+    hooks[event] = arr;
+  }
+  settings.hooks = hooks;
+  try {
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+    process.stderr.write(`✓ Hook 설치: ${settingsPath} (PostToolUse·Stop → error-archive-agent hook)\n`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(`✗ settings.json 쓰기 실패(${settingsPath}): ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write('수동 설정: PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
+    return 1;
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2];
   if (command === 'doctor') {
@@ -111,8 +199,17 @@ async function main(): Promise<void> {
   if (command === 'connect-project') {
     process.exit(await runConnectProject());
   }
+  if (command === 'hook') {
+    process.exit(await runHook());
+  }
+  if (command === 'flush') {
+    process.exit(await runFlush());
+  }
+  if (command === 'install-hooks') {
+    process.exit(await runInstallHooks());
+  }
   if (command && command !== 'serve') {
-    process.stderr.write(`알 수 없는 명령: ${command}\n사용법: error-archive-agent [serve|doctor|connect-project [path]]\n`);
+    process.stderr.write(`알 수 없는 명령: ${command}\n사용법: error-archive-agent [serve|doctor|connect-project [path]|hook|flush|install-hooks]\n`);
     process.exit(2);
   }
   try {

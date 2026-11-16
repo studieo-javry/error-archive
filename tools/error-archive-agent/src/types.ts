@@ -253,3 +253,40 @@ export interface AgentCaseDetail {
   steps: AgentCaseStep[];
   solutions: AgentCaseSolution[];
 }
+
+// ── Hook 이벤트 수집 (events/batch) ───────────────────────────────────────────
+
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+
+/** 정규화한 Hook 이벤트 1건(서버 EventItemRequest 와 정합). redactedPayload 는 마스킹된 JSON(≤64KiB). */
+export interface EventItemRequest {
+  clientEventId: string;
+  eventType: string;
+  localSequence: number;
+  /** ISO-8601 관측 시각. */
+  observedAt: string;
+  redactedPayload: JsonValue;
+  truncated: boolean;
+  evidenceRefs: string[];
+  projectBindingId?: number | null;
+  clientKind?: string | null;
+  clientVersion?: string | null;
+  sessionId?: string | null;
+  streamId?: string | null;
+  toolCallId?: string | null;
+}
+
+export interface EventBatchRequest {
+  events: EventItemRequest[];
+}
+
+export interface EventResultResponse {
+  clientEventId: string;
+  /** ACCEPTED | DUPLICATE | REJECTED */
+  result: string;
+  reason?: string | null;
+}
+
+export interface EventBatchResponse {
+  results: EventResultResponse[];
+}

@@ -23,6 +23,8 @@ import type {
   CaptureResponse,
   CompleteCaptureRequest,
   CreateCaptureRequest,
+  EventBatchRequest,
+  EventBatchResponse,
   PatchCaptureRequest,
   RegisterSessionRequest,
   SessionResponse,
@@ -93,6 +95,8 @@ export interface ApiClient {
   searchCases(query?: string, projectBindingId?: number, limit?: number): Promise<AgentCaseListResponse>;
   /** 과거 사례 상세(본인 소유만, 아니면 404). Step 본문·Solution 설명·검증 포함. */
   getCase(caseId: number): Promise<AgentCaseDetail>;
+  /** Hook 이벤트 배치 적재(미분류 인박스). per-event clientEventId 로 멱등. */
+  ingestEvents(req: EventBatchRequest): Promise<EventBatchResponse>;
 }
 
 /** 파일 확장자 → MIME(서버가 매직 바이트로 재검사하므로 추정이면 충분). */
@@ -241,5 +245,8 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     getCase: (caseId) =>
       request<AgentCaseDetail>({ method: 'GET', path: `/api/v1/agent/cases/${encodeURIComponent(caseId)}` }),
+
+    ingestEvents: (req) =>
+      request<EventBatchResponse>({ method: 'POST', path: '/api/v1/agent/events/batch', body: req }),
   };
 }

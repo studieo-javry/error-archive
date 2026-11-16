@@ -61,7 +61,11 @@ const CONTENT_SHAPE = {
   unknowns: z.array(z.string()).optional().describe('아직 확인하지 못한 내용'),
 };
 
-export function createServer(client: ApiClient, project?: ProjectContext): McpServer {
+export function createServer(
+  client: ApiClient,
+  project?: ProjectContext,
+  flushEvents?: () => Promise<void>,
+): McpServer {
   const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
 
   server.registerTool(
@@ -431,6 +435,40 @@ export function createServer(client: ApiClient, project?: ProjectContext): McpSe
         }
         return ok({ ...base, connected: false, message: '승인되지 않았습니다(사용자 취소/거절).' });
       }),
+  );
+
+  server.registerTool(
+    'capture_list_events',
+    {
+      title: '수집 이벤트 조회(미분류)',
+      description:
+        '아직 Capture 에 연결되지 않은, 자동 수집된 Hook 이벤트를 조회한다. 지금 처리 중인 오류의 해결 과정에 ' +
+        '해당하는 이벤트를 **고르기 위한 후보**다. 같은 세션이라고 전부 연결하지 말고, 이 오류와 관련된 것만 골라라. sessionId 로 현재 세션만 좁힐 수 있다.',
+      inputSchema: {
+        sessionId: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        if (flushEvents) await flushEvents(); // 지연 전송 이벤트까지 인박스 반영 후 조회
+        return ok(await client.listEvents('UNCLASSIFIED', args.sessionId, args.limit));
+      }),
+  );
+
+  server.registerTool(
+    'capture_link_events',
+    {
+      title: '이벤트를 Capture 에 연결',
+      description:
+        '선택한 수집 이벤트를 이 Capture 의 근거로 연결한다. **같은 오류 해결 과정에 속한 이벤트만** 넘겨라. ' +
+        '이미 다른 Capture 에 속한 이벤트는 skipped 로 돌아온다(가로채지 않음).',
+      inputSchema: {
+        captureUuid: z.string().uuid(),
+        clientEventIds: z.array(z.string()).min(1),
+      },
+    },
+    (args) => guard(async () => ok(await client.linkEvents(args.captureUuid, args.clientEventIds))),
   );
 
   return server;

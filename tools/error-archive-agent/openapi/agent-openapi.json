@@ -971,6 +971,75 @@
         }
       }
     },
+    "/api/v1/agent/events": {
+      "get": {
+        "tags": [
+          "agent-event"
+        ],
+        "summary": "미분류 이벤트 조회",
+        "description": "본인 소유 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보. sessionId 로 현재 세션만 좁힐 수 있다. 조회는 연결하지 않는다.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "principal",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AgentPrincipal"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "UNCLASSIFIED"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 30
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEventListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "capture:read 스코프 없음",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEventListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent/cases": {
       "get": {
         "tags": [
@@ -1360,7 +1429,7 @@
       "JsonNode": {
         "type": "object",
         "properties": {
-          "string": {
+          "container": {
             "type": "boolean"
           },
           "empty": {
@@ -1369,7 +1438,19 @@
           "array": {
             "type": "boolean"
           },
+          "number": {
+            "type": "boolean"
+          },
+          "object": {
+            "type": "boolean"
+          },
+          "float": {
+            "type": "boolean"
+          },
           "missingNode": {
+            "type": "boolean"
+          },
+          "null": {
             "type": "boolean"
           },
           "valueNode": {
@@ -1426,19 +1507,7 @@
           "binary": {
             "type": "boolean"
           },
-          "object": {
-            "type": "boolean"
-          },
-          "container": {
-            "type": "boolean"
-          },
-          "null": {
-            "type": "boolean"
-          },
-          "number": {
-            "type": "boolean"
-          },
-          "float": {
+          "string": {
             "type": "boolean"
           },
           "embeddedValue": {
@@ -2141,6 +2210,68 @@
           "connectionId",
           "scopes",
           "userId"
+        ]
+      },
+      "AgentEventListResponse": {
+        "type": "object",
+        "description": "미분류 이벤트 조회 목록.",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentEventSummaryResponse"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AgentEventSummaryResponse": {
+        "type": "object",
+        "description": "미분류 이벤트 조회 결과 1건(AI 가 Capture 연결 여부를 판단하기 위한 후보).",
+        "properties": {
+          "clientEventId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "toolCallId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "description": "UNCLASSIFIED | LINKED | DISCARDED"
+          },
+          "redactedPayload": {
+            "$ref": "#/components/schemas/JsonNode",
+            "description": "마스킹된 payload(≤64 KiB). AI 판단 재료."
+          }
+        },
+        "required": [
+          "clientEventId",
+          "eventType",
+          "observedAt",
+          "redactedPayload",
+          "status",
+          "truncated"
         ]
       },
       "AgentCaseListResponse": {

@@ -68,20 +68,23 @@ async function runServer(): Promise<void> {
     projectRoot: config.projectRoot,
     sessionId: config.sessionId,
   });
-  const server = createServer(client, project);
+  // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
+  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+  const flushEvents = async () => {
+    try {
+      await flushQueue(client, queue);
+    } catch (err) {
+      process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  };
+
+  const server = createServer(client, project, flushEvents);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`error-archive-agent MCP 서버 시작(base=${config.baseUrl}, token=${maskToken(config.token)})\n`);
 
-  // 수집 이벤트 sender — 장기 실행 서버가 주기적으로 큐를 서버 인박스로 flush(오프라인 안전).
-  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
-  const flush = () => {
-    flushQueue(client, queue).catch((err) => {
-      process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
-    });
-  };
-  flush();
-  const timer = setInterval(flush, FLUSH_INTERVAL_MS);
+  void flushEvents();
+  const timer = setInterval(() => void flushEvents(), FLUSH_INTERVAL_MS);
   if (typeof timer.unref === 'function') timer.unref();
 }
 

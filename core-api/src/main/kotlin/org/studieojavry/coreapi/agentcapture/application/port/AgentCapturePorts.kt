@@ -19,6 +19,25 @@ interface AgentCaptureRepositoryPort {
     fun findByUuidAndOwner(captureUuid: UUID, ownerUserId: Long): AgentCapture?
     /** 소유자의 특정 상태 초안 목록(검토 큐 = READY_FOR_REVIEW). 최근 갱신순. */
     fun listByOwnerAndStatus(ownerUserId: Long, status: CaptureStatus): List<AgentCapture>
+    /**
+     * 소유자의 여러 상태 초안을 keyset(cursor)로 한 페이지 조회. 정렬 `updatedAt DESC, id DESC`.
+     * cursor(updatedAt,id) 이후만 반환(null 이면 처음부터). limit 만큼 읽는다(hasNext 판정은 호출측에서 +1).
+     * 검토 큐(단일 상태)·검토 이력(IMPORTED/DISCARDED)의 무한 누적을 LIMIT 으로 막는다.
+     */
+    fun pageByOwnerAndStatuses(
+        ownerUserId: Long,
+        statuses: Collection<CaptureStatus>,
+        cursorUpdatedAt: Instant?,
+        cursorId: Long?,
+        limit: Int,
+    ): List<AgentCapture>
+    /**
+     * 연결(install)이 생성한 특정 상태 초안 목록. 최근 갱신순, 최대 limit 건. 진행 중(OPEN) Capture
+     * 재사용 후보 조회용 — 연결 전체의 미봉인 초안이 누적돼도 상한으로 막는다.
+     */
+    fun listByConnectionAndStatus(connectionId: UUID, status: CaptureStatus, limit: Int): List<AgentCapture>
+    /** 소유자의 since 이후 생성 초안을 상태별로 집계(자동기록 계측 — 오생성/채택 퍼널). 상태→건수. */
+    fun countByOwnerSinceByStatus(ownerUserId: Long, since: Instant): Map<CaptureStatus, Long>
     /** 변이 연산 전용 — capture 행을 잠가(SELECT … FOR UPDATE) complete 와 쓰기를 직렬화한다. */
     fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture?
 }
@@ -84,6 +103,8 @@ interface CaptureSessionRepositoryPort {
     fun findByUuid(sessionUuid: UUID): CaptureSession?
     /** Capture↔Session 연결(멱등 — 이미 연결돼 있으면 무시). */
     fun link(sessionId: Long, captureId: Long)
+    /** 이 세션에 연결된 Capture id 집합(진행 중 후보를 세션 범위로 좁힐 때). */
+    fun linkedCaptureIds(sessionId: Long): Set<Long>
 }
 
 /**

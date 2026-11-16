@@ -84,7 +84,44 @@ class AgentCaptureRepositoryAdapter(
         status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
     ): List<AgentCapture> =
         jpa.findByOwnerUserIdAndStatusOrderByUpdatedAtDescIdDesc(ownerUserId, status).map { it.toDomain() }
-        
+
+    override fun pageByOwnerAndStatuses(
+        ownerUserId: Long,
+        statuses: Collection<org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus>,
+        cursorUpdatedAt: java.time.Instant?,
+        cursorId: Long?,
+        limit: Int,
+    ): List<AgentCapture> {
+        if (statuses.isEmpty()) return emptyList()
+        val page = org.springframework.data.domain.PageRequest.of(0, limit)
+        // cursor 유무로 쿼리 분리 — null Instant 바인딩(Postgres 타입 추론 실패) 회피.
+        val rows = if (cursorUpdatedAt != null && cursorId != null) {
+            jpa.pageAfterByOwnerAndStatuses(ownerUserId, statuses, cursorUpdatedAt, cursorId, page)
+        } else {
+            jpa.firstPageByOwnerAndStatuses(ownerUserId, statuses, page)
+        }
+        return rows.map { it.toDomain() }
+    }
+
+    override fun listByConnectionAndStatus(
+        connectionId: UUID,
+        status: org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus,
+        limit: Int,
+    ): List<AgentCapture> =
+        jpa.findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(
+            connectionId,
+            status,
+            org.springframework.data.domain.PageRequest.of(0, limit),
+        ).map { it.toDomain() }
+
+    override fun countByOwnerSinceByStatus(
+        ownerUserId: Long,
+        since: java.time.Instant,
+    ): Map<org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus, Long> =
+        jpa.countByStatusSince(ownerUserId, since).associate { row ->
+            (row[0] as org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus) to (row[1] as Long)
+        }
+
     override fun findByUuidAndOwnerForUpdate(captureUuid: UUID, ownerUserId: Long): AgentCapture? =
         jpa.findForUpdateByCaptureUuidAndOwnerUserId(captureUuid, ownerUserId)?.toDomain()
 
@@ -207,6 +244,9 @@ class CaptureSessionRepositoryAdapter(
 
     override fun findByUuid(sessionUuid: UUID): CaptureSession? =
         jpa.findBySessionUuid(sessionUuid)?.toDomain()
+
+    override fun linkedCaptureIds(sessionId: Long): Set<Long> =
+        linkJpa.captureIdsBySessionId(sessionId).toSet()
 
     override fun link(sessionId: Long, captureId: Long) {
         if (!linkJpa.existsBySessionIdAndCaptureId(sessionId, captureId)) {

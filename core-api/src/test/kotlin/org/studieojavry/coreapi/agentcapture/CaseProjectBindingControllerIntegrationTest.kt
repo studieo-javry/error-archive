@@ -14,6 +14,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -129,5 +130,37 @@ class CaseProjectBindingControllerIntegrationTest {
         mvc.perform(bind(uid, caseId, othersBinding))
             .andExpect(status().isNotFound)
             .andExpect(jsonPath("$.code").value("PROJECT_BINDING_NOT_FOUND"))
+    }
+
+    @Test
+    fun `미귀속 Case 현재 조회 → 200, projectBinding null`() {
+        val uid = 9230L
+        val caseId = newCase(uid)
+        mvc.perform(get("/api/v1/me/cases/$caseId/project-binding").with(asUser(uid)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.projectBinding").isEmpty)
+    }
+
+    @Test
+    fun `귀속된 Case 현재 조회 → 200, 현재 바인딩 반환`() {
+        val uid = 9240L
+        val caseId = newCase(uid)
+        val bindingId = newBinding(uid, "billing-svc")
+        mvc.perform(bind(uid, caseId, bindingId)).andExpect(status().isNoContent)
+
+        mvc.perform(get("/api/v1/me/cases/$caseId/project-binding").with(asUser(uid)))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.projectBinding.id").value(bindingId.toInt()))
+            .andExpect(jsonPath("$.projectBinding.projectKey").value("billing-svc"))
+    }
+
+    @Test
+    fun `타인 소유 Case 현재 조회 → 404 CASE_NOT_FOUND`() {
+        val owner = 9250L
+        val other = 9251L
+        val caseId = newCase(owner)
+        mvc.perform(get("/api/v1/me/cases/$caseId/project-binding").with(asUser(other)))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.code").value("CASE_NOT_FOUND"))
     }
 }

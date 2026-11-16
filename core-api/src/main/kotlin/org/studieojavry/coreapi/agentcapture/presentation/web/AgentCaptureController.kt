@@ -33,6 +33,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.CreateCaptureUs
 import org.studieojavry.coreapi.agentcapture.application.usecase.GetCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.IdempotencyService
 import org.studieojavry.coreapi.agentcapture.application.usecase.LinkEventsToCaptureUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.ListOpenCapturesUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.PatchCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.PatchCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RegisterCaptureSessionUseCase
@@ -53,6 +54,7 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CompleteCaptur
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CreateCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.OpenCaptureListResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.PatchCaptureRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.RegisterSessionRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SessionResponse
@@ -79,6 +81,7 @@ class AgentCaptureController(
     private val completeCapture: CompleteCaptureUseCase,
     private val uploadArtifact: UploadCaptureArtifactUseCase,
     private val linkEvents: LinkEventsToCaptureUseCase,
+    private val listOpenCaptures: ListOpenCapturesUseCase,
     private val idempotency: IdempotencyService,
 ) {
 
@@ -164,6 +167,32 @@ class AgentCaptureController(
             )
         }
         return ResponseEntity.status(result.status).body(result.body)
+    }
+
+    @Operation(
+        summary = "진행 중(OPEN) Capture 후보 조회",
+        description = """
+            현재 연결(install)이 만든 OPEN(미봉인) Capture 를 최근 갱신순으로 반환한다. `sessionUuid` 를 주면
+            그 세션(현재 연결 소유)에 연결된 것만 좁혀 보여준다. AI 가 지금 다루는 문제가 기존 진행 중 Capture 와
+            같은 버그인지 판단해, 같으면 그 captureUuid 를 재사용(Attempt 누적)하고 다르면 새로 생성하도록(한 버그=한
+            Capture, 중복 난립 방지) 돕는 조회다. READY_FOR_REVIEW·IMPORTED·DISCARDED 는 포함하지 않는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공(빈 목록 가능)"),
+    )
+    // 재사용 후보라 소량이지만, 미봉인 초안이 연결 전역에 누적될 수 있어 use case 에서 최근순 최대 100건으로 상한.
+    @GetMapping("/captures")
+    fun listOpen(
+        principal: AgentPrincipal,
+        @Parameter(description = "이 세션에 연결된 Capture 로 좁히기(선택). 현재 연결에서 등록한 세션만 유효.")
+        @RequestParam(required = false) sessionUuid: UUID?,
+    ): OpenCaptureListResponse {
+        principal.requireScope(AgentScopes.CAPTURE_READ)
+        val items = listOpenCaptures
+            .invoke(UUID.fromString(principal.connectionId), sessionUuid)
+            .map(CaptureResponse::from)
+        return OpenCaptureListResponse(items = items)
     }
 
     @Operation(summary = "초안 조회·재개", description = "Attempt·Solution 포함. 본인 소유만(아니면 404).")

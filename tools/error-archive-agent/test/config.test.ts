@@ -56,6 +56,28 @@ test('환경변수가 설정 파일보다 우선한다', () => {
   assert.equal(cfg.token, 'eaa_env'); // env 가 우선
 });
 
+test('CLAUDE_CODE_SESSION_ID 가 sessionId 로 배선된다(Claude Code 자동 주입)', () => {
+  const cfg = loadConfig({
+    env: {
+      ERROR_ARCHIVE_BASE_URL: 'https://x.com', ERROR_ARCHIVE_AGENT_TOKEN: 'eaa_1',
+      CLAUDE_CODE_SESSION_ID: 'cc-sess-123',
+    },
+    readFile: noFile,
+  });
+  assert.equal(cfg.sessionId, 'cc-sess-123');
+});
+
+test('ERROR_ARCHIVE_SESSION_ID 가 CLAUDE_CODE_SESSION_ID 보다 우선한다', () => {
+  const cfg = loadConfig({
+    env: {
+      ERROR_ARCHIVE_BASE_URL: 'https://x.com', ERROR_ARCHIVE_AGENT_TOKEN: 'eaa_1',
+      ERROR_ARCHIVE_SESSION_ID: 'explicit', CLAUDE_CODE_SESSION_ID: 'cc-sess-123',
+    },
+    readFile: noFile,
+  });
+  assert.equal(cfg.sessionId, 'explicit');
+});
+
 test('maskToken 은 원문을 노출하지 않는다', () => {
   const masked = maskToken('eaa_supersecretvalue');
   assert.ok(!masked.includes('supersecret'));

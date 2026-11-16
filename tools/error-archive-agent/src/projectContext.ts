@@ -11,21 +11,28 @@
 import { createHash } from 'node:crypto';
 import type { ApiClient } from './apiClient.js';
 import { newIdempotencyKey, newUuid } from './idempotency.js';
-import { resolveProject, type ResolvedProject } from './project.js';
+import { resolveProject, type ResolveOptions, type ResolvedProject } from './project.js';
 import { approve as persistApprove, getApproved, namespaceOf, revoke as persistRevoke } from './projectState.js';
+import { readContext, type ResolvedSessionContext } from './sessionContext.js';
 
 export interface ProjectContextConfig {
   baseUrl: string;
   /** 사용자가 설정한 프로젝트 루트(선택). */
   projectRoot?: string;
-  /** 클라이언트 세션 id(선택) — 있으면 sessionUuid 로 사용. */
+  /** 클라이언트 세션 id(선택) — hook session_id 다음 순위로 sessionUuid 파생에 사용. */
   sessionId?: string;
   /** 승인 상태 파일 경로 override(테스트용). */
   statePath?: string;
   /** cwd override(테스트용). */
   cwd?: string;
   /** 프로젝트 해석 주입(테스트용 — 기본은 git 기반 resolveProject). */
-  resolve?: (explicitPath?: string) => ResolvedProject | null;
+  resolve?: (opts: ResolveOptions) => ResolvedProject | null;
+  /** 세션 문맥 저장소 네임스페이스(accountNamespace). 설정되면 Hook cwd·session_id 를 읽어 문맥 복원(G). */
+  hookNamespace?: string;
+  /** 세션 문맥 저장소 경로 override(테스트용). */
+  hookStatePath?: string;
+  /** 세션 문맥 읽기 주입(테스트용 — 기본은 hookNamespace 로 readContext). */
+  readHookContext?: () => ResolvedSessionContext | null;
 }
 
 export class ProjectContext {
@@ -35,6 +42,12 @@ export class ProjectContext {
   private sessionUuid: string;
   /** 마지막으로 세션에 등록한 projectKey. undefined=미등록, null=프로젝트 없이 등록됨. */
   private lastRegisteredKey: string | null | undefined = undefined;
+  /** 마지막으로 등록한 sessionUuid — session_id 채택으로 uuid 가 바뀌면 재등록 유도. */
+  private lastRegisteredSessionUuid: string | undefined = undefined;
+  /** detect() 캐시 무효화용 — 마지막으로 해석에 사용한 hook cwd(프로젝트 전환 감지). */
+  private lastHookCwd: string | undefined = undefined;
+  /** 해제/전이로 sessionUuid 를 로테이션한 상태. true 면 session_id 재채택을 막는다(미귀속 decouple 유지). */
+  private rotated = false;
 
   constructor(
     private readonly client: ApiClient,
@@ -44,17 +57,42 @@ export class ProjectContext {
     this.sessionUuid = sid && sid.length > 0 ? deriveUuid(sid) : newUuid();
   }
 
-  private resolveAt(explicitPath?: string): ResolvedProject | null {
-    if (this.cfg.resolve) return this.cfg.resolve(explicitPath);
-    if (explicitPath) return resolveProject({ explicitPath });
-    return resolveProject({ configRoot: this.cfg.projectRoot, cwd: this.cfg.cwd ?? process.cwd() });
+  /** 세션 문맥(Hook 이 기록한 실제 cwd·session_id) 읽기. 없으면 null. */
+  private readHook(): ResolvedSessionContext | null {
+    if (this.cfg.readHookContext) return this.cfg.readHookContext();
+    if (!this.cfg.hookNamespace) return null;
+    return readContext(this.cfg.hookNamespace, { preferSessionId: this.cfg.sessionId, path: this.cfg.hookStatePath });
   }
 
-  /** git 식별. 무인자는 프로세스 1회 캐시(gitRoot 안정적). 명시 경로는 즉시 해석(캐시 안 함). */
+  /**
+   * 현재 개발 세션의 **원본** Claude Code session_id(Hook 기록 우선, 없으면 config). 없으면 undefined.
+   *
+   * 이벤트 조회 스코프 전용: Hook 이벤트는 **원본 session_id** 로 태깅돼 서버에 저장되므로(hook.ts),
+   * 파생 UUID(`sessionUuid`)가 아니라 이 원본값으로 좁혀야 매칭된다. 해제(rotated) 여부와 무관하게
+   * 원본 세션은 그대로이므로(이벤트 태깅은 프로젝트 바인딩과 독립) 로테이션을 반영하지 않는다.
+   */
+  currentSessionId(): string | undefined {
+    return this.readHook()?.sessionId ?? this.cfg.sessionId ?? undefined;
+  }
+
+  private resolveAt(explicitPath: string | undefined, hookCwd: string | undefined): ResolvedProject | null {
+    // 우선순위: 명시 인자 > config.projectRoot > hook cwd > process.cwd(). (roots 는 미사용 — project.ts 참고)
+    const opts: ResolveOptions = explicitPath
+      ? { explicitPath }
+      : { configRoot: this.cfg.projectRoot, hookPath: hookCwd, cwd: this.cfg.cwd ?? process.cwd() };
+    return this.cfg.resolve ? this.cfg.resolve(opts) : resolveProject(opts);
+  }
+
+  /**
+   * git 식별. 명시 경로는 즉시 해석(캐시 안 함). 무인자는 1회 캐시하되, **hook cwd 가 바뀌면 재해석**
+   * (프로젝트 전환 대응). approve() 가 문맥을 고정하면 그 값을 유지.
+   */
   detect(explicitPath?: string): ResolvedProject | null {
-    if (explicitPath) return this.resolveAt(explicitPath);
-    if (this.cachedResolve === undefined) {
-      this.cachedResolve = this.resolveAt();
+    if (explicitPath) return this.resolveAt(explicitPath, undefined);
+    const hookCwd = this.readHook()?.cwd;
+    if (this.cachedResolve === undefined || hookCwd !== this.lastHookCwd) {
+      this.lastHookCwd = hookCwd;
+      this.cachedResolve = this.resolveAt(undefined, hookCwd);
     }
     return this.cachedResolve;
   }
@@ -92,6 +130,7 @@ export class ProjectContext {
     persistApprove(ns, p.gitRoot, { projectKey: p.projectKey, remote: p.remote }, { path: this.cfg.statePath });
     // 명시 경로로 승인했어도 이후 ensureSession(무인자 detect)이 같은 프로젝트를 쓰도록 문맥 고정(②).
     this.cachedResolve = p;
+    this.lastHookCwd = this.readHook()?.cwd; // 고정값과 hook 캐시키 정합(승인 직후 재해석으로 덮이지 않게)
     this.lastRegisteredKey = undefined; // 재등록 유도
   }
 
@@ -104,6 +143,7 @@ export class ProjectContext {
     if (!ns) return;
     persistRevoke(ns, p.gitRoot, { path: this.cfg.statePath });
     this.sessionUuid = newUuid();
+    this.rotated = true; // session_id 재채택 금지(미귀속 decouple 유지)
     this.lastRegisteredKey = undefined;
   }
 
@@ -112,24 +152,39 @@ export class ProjectContext {
    * 등록 실패는 삼킨다(서버가 미등록 세션 무시 → Capture 미귀속).
    */
   async ensureSession(): Promise<string> {
+    // 세션 정체성(D2): hook session_id 우선, 없으면 config.sessionId 에서 sessionUuid 파생.
+    // 이벤트(sessionId 로 태그)와 Capture(sessionUuid)가 같은 세션에서 나와 B 연결이 상관 가능해진다.
+    // 로테이션(해제) 상태에서는 재채택하지 않는다(미귀속 decouple 유지).
+    const rawSessionId = this.currentSessionId(); // 원본 세션 id(Hook 우선) — 파일 1회 읽기
+    if (!this.rotated && rawSessionId) {
+      const derived = deriveUuid(rawSessionId);
+      if (derived !== this.sessionUuid) this.sessionUuid = derived;
+    }
     const desired = await this.approvedProjectKey();
-    if (this.lastRegisteredKey !== desired) {
+    const needsRegister = this.lastRegisteredKey !== desired || this.lastRegisteredSessionUuid !== this.sessionUuid;
+    if (needsRegister) {
       // 바운드→미귀속 전이(승인 철회·remote 변경 등, revoke 미경유 포함): 기존 세션 바인딩을 비울 수 없으므로
       // 새 sessionUuid 로 로테이션해 미귀속 세션을 새로 쓴다(①).
       if (desired == null && typeof this.lastRegisteredKey === 'string') {
         this.sessionUuid = newUuid();
+        this.rotated = true;
       }
+      // clientSessionId 저장 정책(부): **원본** session_id 를 일관 보관한다(설정값 없을 때 파생 UUID 로
+      // 떨어지면 CaptureSession.clientSessionId 와 이벤트의 원본 sessionId 가 어긋나 상관이 끊긴다).
+      // 로테이션(미귀속 decouple) 상태에서만 파생 UUID 를 쓴다(원본과 의도적으로 분리).
+      const clientSessionId = (!this.rotated && rawSessionId) ? rawSessionId : this.sessionUuid;
       try {
         await this.client.registerSession(
           {
             sessionUuid: this.sessionUuid,
             clientKind: 'claude-code',
-            clientSessionId: this.cfg.sessionId ?? this.sessionUuid,
+            clientSessionId,
             projectKey: desired ?? undefined,
           },
           newIdempotencyKey(),
         );
         this.lastRegisteredKey = desired;
+        this.lastRegisteredSessionUuid = this.sessionUuid;
       } catch (err) {
         process.stderr.write(`[project] 세션 등록 실패(무시, Capture 는 미귀속): ${err instanceof Error ? err.message : String(err)}\n`);
       }

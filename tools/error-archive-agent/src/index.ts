@@ -23,6 +23,7 @@ import { normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
 import { ProjectContext } from './projectContext.js';
 import { createServer } from './server.js';
+import { recordContext } from './sessionContext.js';
 
 const FLUSH_INTERVAL_MS = 10_000;
 
@@ -63,13 +64,17 @@ async function runServer(): Promise<void> {
   // 설정이 없으면 즉시 실패(MCP 핸드셰이크 전에 명확히 알림).
   const config = loadConfig();
   const client = createApiClient(config, undefined, resolveClientInfo());
+  const ns = accountNamespace(config.baseUrl, config.token);
   const project = new ProjectContext(client, {
     baseUrl: config.baseUrl,
     projectRoot: config.projectRoot,
     sessionId: config.sessionId,
+    // Hook 이 기록한 실제 cwd·session_id 를 읽어 문맥 복원(G). MCP 서버 프로세스의 process.cwd() 는
+    // Claude Code 작업 폴더가 아닐 수 있으므로 hook cwd 를 더 신뢰한다.
+    hookNamespace: ns,
   });
   // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
-  const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+  const queue = new EventQueue(ns);
   const flushEvents = async () => {
     try {
       await flushQueue(client, queue);
@@ -137,17 +142,27 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * Hook 어댑터(P1-4) — Claude Code 가 Hook 으로 호출. stdin JSON 을 정규화해 **로컬 큐에 적재만** 한다
- * (네트워크 X). 항상 0 종료(Claude Code 흐름을 막지 않음). 수집 대상 아니거나 오류여도 조용히 통과.
+ * Hook 어댑터(P1-4 + G) — Claude Code 가 Hook 으로 호출. stdin JSON 에서:
+ *   1) 세션 문맥({session_id, cwd}) 을 로컬 저장소에 기록(G — 수집 대상 여부와 무관, MCP 서버가 읽어 복원).
+ *   2) 수집 대상(PostToolUse·Stop)이면 정규화해 로컬 큐에 적재(네트워크 X).
+ * 항상 0 종료(Claude Code 흐름을 막지 않음). 오류여도 조용히 통과.
  */
 async function runHook(): Promise<number> {
   try {
     const raw = await readStdin();
     if (!raw.trim()) return 0;
     const input = JSON.parse(raw) as HookInput;
-    if (!shouldCollect(input)) return 0;
     const config = loadConfig();
-    const queue = new EventQueue(accountNamespace(config.baseUrl, config.token));
+    const ns = accountNamespace(config.baseUrl, config.token);
+    // (1) 실제 cwd·session_id 를 서버 프로세스로 넘기기 위해 기록(SessionStart 등 비수집 이벤트도 포함).
+    try {
+      recordContext(ns, { sessionId: input.session_id, cwd: input.cwd });
+    } catch (err) {
+      process.stderr.write(`[hook] 문맥 기록 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+    // (2) 수집 대상만 이벤트 큐에 적재.
+    if (!shouldCollect(input)) return 0;
+    const queue = new EventQueue(ns);
     queue.enqueue(normalizeHookEvent(input, queue.nextLocalSequence()));
   } catch (err) {
     process.stderr.write(`[hook] 적재 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
@@ -165,7 +180,12 @@ async function runFlush(): Promise<number> {
   return 0;
 }
 
-/** Claude Code settings.json 에 Hook(PostToolUse·Stop → `error-archive-agent hook`) 설정 주입. */
+/**
+ * Claude Code settings.json 에 Hook 설정 주입.
+ *   SessionStart → 세션 시작 시 cwd·session_id 기록(첫 도구 실행 전에 프로젝트 문맥 확보, G).
+ *   PostToolUse·Stop → 이벤트 수집 + 문맥 갱신.
+ * 모두 `error-archive-agent hook` 으로 연결.
+ */
 async function runInstallHooks(): Promise<number> {
   const settingsPath = process.env.CLAUDE_SETTINGS ?? join(homedir(), '.claude', 'settings.json');
   const hookCmd = { type: 'command', command: 'error-archive-agent hook' };
@@ -176,7 +196,7 @@ async function runInstallHooks(): Promise<number> {
     settings = {};
   }
   const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  for (const event of ['PostToolUse', 'Stop']) {
+  for (const event of ['SessionStart', 'PostToolUse', 'Stop']) {
     const arr = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
     const already = arr.some((m) => JSON.stringify(m).includes('error-archive-agent hook'));
     if (!already) arr.push({ hooks: [hookCmd] });
@@ -185,11 +205,11 @@ async function runInstallHooks(): Promise<number> {
   settings.hooks = hooks;
   try {
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-    process.stderr.write(`✓ Hook 설치: ${settingsPath} (PostToolUse·Stop → error-archive-agent hook)\n`);
+    process.stderr.write(`✓ Hook 설치: ${settingsPath} (SessionStart·PostToolUse·Stop → error-archive-agent hook)\n`);
     return 0;
   } catch (err) {
     process.stderr.write(`✗ settings.json 쓰기 실패(${settingsPath}): ${err instanceof Error ? err.message : String(err)}\n`);
-    process.stderr.write('수동 설정: PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
+    process.stderr.write('수동 설정: SessionStart·PostToolUse·Stop Hook 에 `error-archive-agent hook` 커맨드를 추가하세요.\n');
     return 1;
   }
 }

@@ -28,6 +28,58 @@ interface AgentCaptureJpaRepository : JpaRepository<AgentCaptureEntity, Long> {
         status: CaptureStatus,
     ): List<AgentCaptureEntity>
 
+    fun findByOriginatingConnectionIdAndStatusOrderByUpdatedAtDescIdDesc(
+        originatingConnectionId: UUID,
+        status: CaptureStatus,
+        pageable: Pageable,
+    ): List<AgentCaptureEntity>
+
+    /**
+     * 소유자의 여러 상태 초안 첫 페이지. 정렬 `updatedAt DESC, id DESC`.
+     * ix_agent_capture_owner_status_updated 로 LIMIT 만큼만 스캔(검토 이력 무한 누적 방어).
+     */
+    @Query(
+        "select c from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.status in :statuses " +
+            "order by c.updatedAt desc, c.id desc",
+    )
+    fun firstPageByOwnerAndStatuses(
+        @Param("owner") owner: Long,
+        @Param("statuses") statuses: Collection<CaptureStatus>,
+        pageable: Pageable,
+    ): List<AgentCaptureEntity>
+
+    /**
+     * 다음 페이지(keyset) — (updatedAt,id) 튜플이 cursor 보다 "작은"(= 더 과거/뒤) 행만. 같은 정렬.
+     * cursor 파라미터는 null 이 아니다(널 바인딩 시 Postgres 타입 추론 실패를 피하려 첫 페이지와 분리).
+     */
+    @Query(
+        "select c from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.status in :statuses " +
+            "and (c.updatedAt < :cursorUpdatedAt " +
+            "     or (c.updatedAt = :cursorUpdatedAt and c.id < :cursorId)) " +
+            "order by c.updatedAt desc, c.id desc",
+    )
+    fun pageAfterByOwnerAndStatuses(
+        @Param("owner") owner: Long,
+        @Param("statuses") statuses: Collection<CaptureStatus>,
+        @Param("cursorUpdatedAt") cursorUpdatedAt: java.time.Instant,
+        @Param("cursorId") cursorId: Long,
+        pageable: Pageable,
+    ): List<AgentCaptureEntity>
+
+    @Query(
+        "select c.status, count(c) from AgentCaptureEntity c " +
+            "where c.ownerUserId = :owner and c.createdAt >= :since group by c.status",
+    )
+    fun countByStatusSince(
+        @Param("owner") owner: Long,
+        @Param("since") since: java.time.Instant,
+    ): List<Array<Any>>
+
+    /** 전역 상태별 현재 건수(ARC Prometheus 게이지 — scrape 마다 조회). */
+    fun countByStatus(status: CaptureStatus): Long
+
     /**
      * 변이(쓰기·봉인) 연산 전용 — capture 행을 PESSIMISTIC_WRITE(SELECT … FOR UPDATE)로 잠가
      * complete 와 add-attempt/solution/edit 를 capture 단위로 직렬화한다. add-attempt 는 capture
@@ -74,6 +126,9 @@ interface CaptureSessionJpaRepository : JpaRepository<CaptureSessionEntity, Long
 
 interface CaptureSessionLinkJpaRepository : JpaRepository<CaptureSessionLinkEntity, Long> {
     fun existsBySessionIdAndCaptureId(sessionId: Long, captureId: Long): Boolean
+
+    @Query("select l.captureId from CaptureSessionLinkEntity l where l.sessionId = :sessionId")
+    fun captureIdsBySessionId(@Param("sessionId") sessionId: Long): List<Long>
 }
 
 interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEntity, Long> {

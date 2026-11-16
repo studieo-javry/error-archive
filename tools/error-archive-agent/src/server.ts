@@ -83,7 +83,8 @@ export function createServer(
     {
       title: '초안 수집 시작',
       description:
-        '새 OPEN 초안을 만든다. captureUuid 는 서버가 아닌 이 도구가 부여하므로, 반환된 captureUuid 를 이후 attempt/solution/evidence/complete 에 전달하라. 근거 없는 원인 단정은 넣지 말 것.',
+        '새 OPEN 초안을 만든다. 시작 전에 capture_list_open 으로 현재 세션의 진행 중 Capture 를 확인해, 같은 버그의 연속이면 새로 만들지 말고 그 captureUuid 에 이어서 기록하라(한 버그=한 Capture). ' +
+        'captureUuid 는 서버가 아닌 이 도구가 부여하므로, 반환된 captureUuid 를 이후 attempt/solution/evidence/complete 에 전달하라. 근거 없는 원인 단정은 넣지 말 것.',
       inputSchema: {
         title: z.string().optional(),
         project: z.string().optional(),
@@ -95,6 +96,21 @@ export function createServer(
     },
     (args) =>
       guard(async () => {
+        // (Phase3) 승인 전 무수집 — 식별된 프로젝트가 아직 미승인이면 자동 Capture 생성을 차단하고 연결을 유도한다.
+        // (프로젝트 미식별이면 귀속 대상이 없으므로 차단하지 않고 미귀속으로 생성. 명시 sessionUuid 지정 시는 건너뜀.)
+        if (project && !args.sessionUuid) {
+          const resolved = project.detect();
+          if (resolved && !(await project.isApproved(resolved))) {
+            return ok({
+              created: false,
+              needsApproval: true,
+              projectKey: resolved.projectKey,
+              message:
+                `'${resolved.projectKey}' 프로젝트가 아직 연결(승인)되지 않아 자동 기록을 시작할 수 없습니다. ` +
+                'connect_project 로 먼저 연결하거나, 사용자가 원치 않으면 connect_project(snooze/disconnect) 하세요.',
+            });
+          }
+        }
         const captureUuid = newUuid();
         // 세션 문맥 자동 전달: 명시 sessionUuid 가 없으면 승인된 프로젝트 세션을 자동 주입(미승인이면 미귀속).
         const sessionUuid = args.sessionUuid ?? (project ? await project.ensureSession() : undefined);
@@ -289,7 +305,8 @@ export function createServer(
     {
       title: '근거 첨부',
       description:
-        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
+        '로컬 파일(스크린샷·로그·diff·JSON)을 초안 근거로 업로드한다. 시각적 재현 근거(깨진 UI·렌더 결과 스크린샷, 읽은 이미지)도 1급 근거이니 문제가 시각 상태와 관련되면 그 파일 경로로 첨부하라. ' +
+        '반환된 clientArtifactId 를 시도의 evidenceRefs 에 연결하라. 허용: PNG/JPEG/WebP·UTF-8 텍스트/로그/diff·JSON(파일당 10MiB).',
       inputSchema: {
         captureUuid: z.string().uuid(),
         filePath: z.string().describe('업로드할 로컬 파일의 절대/상대 경로'),
@@ -347,11 +364,37 @@ export function createServer(
   );
 
   server.registerTool(
+    'capture_list_open',
+    {
+      title: '진행 중 Capture 조회',
+      description:
+        '현재 세션에서 진행 중(OPEN)인 Capture 후보를 조회한다(최근 갱신순). 새 문제 해결을 기록하기 전에 먼저 호출해, ' +
+        '지금 다루는 문제가 기존 진행 중 Capture 와 같은 버그면 그 captureUuid 를 재사용하고(한 버그=한 Capture, 중복 난립 방지), ' +
+        '원인이 다른 별개 문제면 capture_start 로 새로 시작한다. 기본은 현재 세션으로 좁혀 보여주고, allSessions=true 면 이 연결의 모든 OPEN 을 본다. ' +
+        '봉인된(READY_FOR_REVIEW)·반영된·폐기된 Capture 는 포함하지 않는다.',
+      inputSchema: {
+        allSessions: z
+          .boolean()
+          .optional()
+          .describe('현재 세션으로 좁히지 않고 이 연결의 모든 OPEN Capture 조회(기본 false)'),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        const sessionUuid = args.allSessions ? undefined : project ? await project.ensureSession() : undefined;
+        return ok(await client.listOpenCaptures(sessionUuid));
+      }),
+  );
+
+  server.registerTool(
     'capture_complete',
     {
       title: '초안 봉인(검토 대기)',
       description:
-        '초안을 READY_FOR_REVIEW 로 봉인한다. 문제 해결 여부와 무관. 참조한 근거(evidenceRefs)가 모두 업로드돼 있어야 한다(아니면 422). 사용자 지시 없이 자동 호출하지 말 것.',
+        '초안을 READY_FOR_REVIEW 로 봉인한다. 문제 해결 여부와 무관(해결/미해결 모두 봉인 가능 — 미해결은 조사 내용·미해결 사유를 남기고 봉인). ' +
+        '참조한 근거(evidenceRefs)가 모두 업로드돼 있어야 한다(아니면 422). ' +
+        '한 번의 문제 해결 작업(조사·수정·검증, 또는 조사 끝 미해결 결론)이 끝났을 때 봉인한다 — 사용자가 기록을 따로 요청하지 않아도 된다. ' +
+        '단, 아직 원인 조사 중이거나 사용자 결정(수정 방향)을 기다리는 중, 또는 단지 한 턴이 끝났다는 이유만으로 봉인하지 말 것(그 동안은 OPEN 유지).',
       inputSchema: {
         captureUuid: z.string().uuid(),
         expectedRevision: z.number().int().optional(),
@@ -401,10 +444,12 @@ export function createServer(
       title: '프로젝트 연결(승인)',
       description:
         '현재 작업 폴더(git)를 Error Archive 프로젝트로 연결한다. **사용자 승인**이 필요하며, 승인 후 이 세션의 ' +
-        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제한다.',
+        'Capture 가 자동으로 그 프로젝트에 귀속된다. path 로 폴더를 지정할 수 있고, disconnect=true 로 해제, ' +
+        "snooze=true 로 이 세션에서 최초 연결 안내를 보류('나중에')한다.",
       inputSchema: {
         path: z.string().optional().describe('git 작업 폴더 경로(생략 시 설정 projectRoot·현재 경로로 자동 식별)'),
         disconnect: z.boolean().optional().describe('true 면 연결 해제'),
+        snooze: z.boolean().optional().describe("true 면 이 세션에서 최초 연결 안내 보류('나중에' — 승인 아님, 수집 안 함)"),
       },
     },
     (args) =>
@@ -418,6 +463,10 @@ export function createServer(
         if (args.disconnect) {
           await project.revoke(resolved);
           return ok({ ...base, connected: false, message: '연결 해제됨.' });
+        }
+        if (args.snooze) {
+          await project.snooze(resolved);
+          return ok({ ...base, connected: false, snoozed: true, message: "이 세션에선 다시 안내하지 않습니다('나중에'). 수집·귀속은 아직 비활성." });
         }
         if (await project.isApproved(resolved)) {
           return ok({ ...base, connected: true, message: '이미 연결됨.' });
@@ -433,7 +482,9 @@ export function createServer(
             message: '이 클라이언트는 인라인 승인을 지원하지 않습니다. 터미널에서 `npx -y @error-archive/agent connect-project` 를 실행해 승인하세요.',
           });
         }
-        return ok({ ...base, connected: false, message: '승인되지 않았습니다(사용자 취소/거절).' });
+        // 사용자 거절 → 영속 DECLINED(다음 세션에도 자동 안내 안 함, 명시 재연결로만 해제).
+        await project.decline(resolved);
+        return ok({ ...base, connected: false, declined: true, message: '거절로 기록했습니다. 다시 연결하려면 connect_project 를 명시 실행하세요.' });
       }),
   );
 

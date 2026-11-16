@@ -153,6 +153,8 @@ export interface CaptureResponse {
   revision: number;
   title: string | null;
   project: string | null;
+  /** 귀속된 ProjectBinding id(세션 상속/명시 지정). 미귀속이면 null. */
+  projectBindingId: number | null;
   content: CaptureContent;
   createdAt: string;
   updatedAt: string;
@@ -191,6 +193,11 @@ export interface CaptureDetailResponse {
   attempts: AttemptResponse[];
   solutions: SolutionResponse[];
   artifacts: ArtifactResponse[];
+}
+
+/** 진행 중(OPEN) Capture 후보 목록 — 같은 버그 재사용·다른 버그 분리 판단용(ARC). */
+export interface OpenCaptureListResponse {
+  items: CaptureResponse[];
 }
 
 /** 업로드 결과 — 서버가 201(신규)/200(멱등 재업로드)로 구분한다. */
@@ -274,6 +281,15 @@ export interface EventItemRequest {
   sessionId?: string | null;
   streamId?: string | null;
   toolCallId?: string | null;
+}
+
+/**
+ * 로컬 큐에 저장되는 이벤트 — 전송 payload(EventItemRequest) + **커넥터 로컬 메타**(_local).
+ * _local 은 Sender flush 시 승인 재검사(해제 후 잔여 전송 금지)에 쓰고, **전송 전 반드시 strip**한다
+ * (gitRoot 는 로컬 경로라 서버로 보내지 않는다).
+ */
+export interface QueuedEvent extends EventItemRequest {
+  _local?: { gitRoot: string; remote: string | null; projectKey: string };
 }
 
 export interface EventBatchRequest {

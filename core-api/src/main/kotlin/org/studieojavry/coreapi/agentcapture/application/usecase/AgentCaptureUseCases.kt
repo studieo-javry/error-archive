@@ -22,6 +22,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundExcepti
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSession
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureSolutionCandidate
 import org.studieojavry.coreapi.agentcapture.domain.model.EvidenceNotReadyException
+import org.studieojavry.coreapi.agentcapture.domain.model.SessionConnectionConflictException
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionContent
 import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutAttemptException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
@@ -50,6 +51,13 @@ class RegisterCaptureSessionUseCase(
         val bindingId = resolveBinding(cmd)
         val existing = sessions.findByUuid(cmd.sessionUuid)
         if (existing != null) {
+            // 연결 경계 — 남의 연결 세션을 재사용·변경(문맥 탈취)하지 못하게 거부. sessionUuid 는 UNIQUE 라
+            // 여기서 두 연결이 같은 uuid 를 다툰다(특히 CC 세션 id 파생 결정적 uuid). CreateCapture 의
+            // connection 검증과 동일 경계이나, 더 앞선 등록 단계에서 막는다. resolveBinding 보다 뒤라도
+            // 바인딩 생성(findOrCreate)은 요청자 본인 소유라 교차 영향 없음(남의 세션은 절대 건드리지 않음).
+            if (existing.connectionId != cmd.connectionId) {
+                throw SessionConnectionConflictException(cmd.sessionUuid)
+            }
             return if (bindingId != null && existing.projectBindingId != bindingId) {
                 sessions.save(existing.withProjectBinding(bindingId))
             } else {
@@ -178,6 +186,39 @@ data class CaptureView(
     val solutions: List<CaptureSolutionCandidate>,
     val artifacts: List<CaptureArtifact>,
 )
+
+/**
+ * 진행 중(OPEN) Capture 후보 조회 — AI 가 같은 버그면 기존 captureUuid 를 재사용하고 다른 문제면
+ * 새로 생성하도록(한 버그=한 Capture, 중복 난립 방지) 판단 재료를 준다. 현재 연결(install)이 만든
+ * OPEN 만 보이고, sessionUuid 를 주면 그 세션(현재 연결 소유)에 링크된 Capture 로 좁힌다.
+ * READY_FOR_REVIEW·IMPORTED·DISCARDED 는 에이전트 쓰기 불가 상태라 후보에서 제외된다.
+ */
+@Service
+class ListOpenCapturesUseCase(
+    private val captures: AgentCaptureRepositoryPort,
+    private val sessions: CaptureSessionRepositoryPort,
+) {
+    @Transactional(readOnly = true)
+    fun invoke(connectionId: UUID, sessionUuid: UUID?): List<AgentCapture> {
+        // 재사용 후보라 소량(진행 중 초안)이지만, 봉인되지 않은 초안이 연결 전역에 누적될 수 있어 상한으로 막는다.
+        val open = captures.listByConnectionAndStatus(
+            connectionId,
+            org.studieojavry.coreapi.agentcapture.domain.model.CaptureStatus.OPEN,
+            MAX_OPEN,
+        )
+        if (sessionUuid == null) return open
+        // 세션 범위로 좁히기: 현재 연결에서 등록한 세션만 유효(교차연결 누출 방지) → 링크된 Capture 만.
+        val session = sessions.findByUuid(sessionUuid)?.takeIf { it.connectionId == connectionId }
+            ?: return emptyList()
+        val linked = sessions.linkedCaptureIds(session.id!!)
+        return open.filter { it.id in linked }
+    }
+
+    private companion object {
+        /** 진행 중(OPEN) 재사용 후보 상한. 한 세션의 미봉인 초안은 소수라 충분하며, 미봉인 누적을 막는다. */
+        const val MAX_OPEN = 100
+    }
+}
 
 /** OPEN 초안 기본 정보 교체(title/project/content 전체 교체). expectedRevision 검사. */
 @Service

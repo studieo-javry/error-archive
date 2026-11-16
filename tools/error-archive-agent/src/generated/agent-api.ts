@@ -51,7 +51,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * 진행 중(OPEN) Capture 후보 조회
+         * @description 현재 연결(install)이 만든 OPEN(미봉인) Capture 를 최근 갱신순으로 반환한다. `sessionUuid` 를 주면
+         *                 그 세션(현재 연결 소유)에 연결된 것만 좁혀 보여준다. AI 가 지금 다루는 문제가 기존 진행 중 Capture 와
+         *                 같은 버그인지 판단해, 같으면 그 captureUuid 를 재사용(Attempt 누적)하고 다르면 새로 생성하도록(한 버그=한
+         *                 Capture, 중복 난립 방지) 돕는 조회다. READY_FOR_REVIEW·IMPORTED·DISCARDED 는 포함하지 않는다.
+         */
+        get: operations["listOpen"];
         put?: never;
         /** OPEN 초안 생성 */
         post: operations["create"];
@@ -403,19 +410,14 @@ export interface components {
             evidenceRefs: string[];
         };
         JsonNode: {
-            container?: boolean;
-            empty?: boolean;
-            array?: boolean;
-            number?: boolean;
-            object?: boolean;
-            float?: boolean;
-            missingNode?: boolean;
-            null?: boolean;
             valueNode?: boolean;
+            container?: boolean;
+            missingNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            pojo?: boolean;
+            string?: boolean;
             integralNumber?: boolean;
+            pojo?: boolean;
             floatingPointNumber?: boolean;
             short?: boolean;
             int?: boolean;
@@ -427,7 +429,12 @@ export interface components {
             textual?: boolean;
             boolean?: boolean;
             binary?: boolean;
-            string?: boolean;
+            number?: boolean;
+            null?: boolean;
+            object?: boolean;
+            float?: boolean;
+            empty?: boolean;
+            array?: boolean;
             embeddedValue?: boolean;
         };
         /** @description 배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
@@ -487,6 +494,8 @@ export interface components {
             revision: number;
             title?: string | null;
             project?: string | null;
+            /** Format: int64 */
+            projectBindingId?: number | null;
             content: components["schemas"]["CaptureContent"];
             /** Format: date-time */
             createdAt: string;
@@ -686,6 +695,10 @@ export interface components {
             commitSha?: string | null;
             evidence?: string | null;
         };
+        /** @description 진행 중(OPEN) Capture 후보 목록 — 같은 버그 재사용·다른 버그 분리 판단용. */
+        OpenCaptureListResponse: {
+            items: components["schemas"]["CaptureResponse"][];
+        };
         /** @description 초안 상세(요약 + Attempt·Solution·Artifact 목록). */
         CaptureDetailResponse: {
             capture: components["schemas"]["CaptureResponse"];
@@ -788,6 +801,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["EventBatchResponse"];
+                };
+            };
+        };
+    };
+    listOpen: {
+        parameters: {
+            query: {
+                principal: components["schemas"]["AgentPrincipal"];
+                /** @description 이 세션에 연결된 Capture 로 좁히기(선택). 현재 연결에서 등록한 세션만 유효. */
+                sessionUuid?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공(빈 목록 가능) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OpenCaptureListResponse"];
                 };
             };
         };

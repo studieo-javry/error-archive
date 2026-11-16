@@ -45,3 +45,13 @@ data class AssignCaseProjectBindingRequest(
     @Schema(description = "귀속시킬 ProjectBinding id(본인 소유).")
     val projectBindingId: Long,
 )
+
+@Schema(description = "Case 의 현재 ProjectBinding 귀속 상태. 미귀속이면 projectBinding=null.")
+data class CaseProjectBindingResponse(
+    @Schema(description = "현재 귀속된 프로젝트. 미귀속(project_binding_id=null)이면 null.")
+    val projectBinding: ProjectBindingResponse?,
+) {
+    companion object {
+        fun from(binding: ProjectBinding?) = CaseProjectBindingResponse(binding?.let(ProjectBindingResponse::from))
+    }
+}

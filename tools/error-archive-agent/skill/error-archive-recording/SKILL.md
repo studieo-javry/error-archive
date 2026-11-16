@@ -36,6 +36,8 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
    `capture_link_events` 로 이 Capture 에 연결한다.
 4. **조사·시도 기록** — 시도마다 `capture_add_attempt`(result = SUCCEEDED/FAILED/INCONCLUSIVE, 무엇을 했고
    무엇을 알았는지). 실패한 시도도 남긴다(나중의 교훈).
+   - **코드는 코드블록으로**: 바꾼 코드·실패한 명령·핵심 diff 가 있으면 action(또는 symptom)에 ` ```언어 ` 펜스
+     코드블록으로 포함한다. 반영 시 **코드 스니펫 카드**로 전환된다. 전체 파일 덤프 말고 관련 조각만, 시크릿은 제외.
    - **시각 재현 근거**(깨진 UI·렌더 결과 스크린샷, 읽은 이미지)도 1급 근거다. 문제가 시각 상태와 관련되면
      `capture_attach_evidence` 로 그 파일 경로를 첨부하고 반환된 clientArtifactId 를 해당 시도의 evidenceRefs 에 잇는다.
      세션 중 찍은 스크린샷·읽은 이미지는 디스크에 보존되어 봉인 전까지 경로가 유효하다.

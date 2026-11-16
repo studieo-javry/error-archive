@@ -47,9 +47,13 @@ function fakeClient(overrides: Partial<ApiClient> = {}) {
   return { client: base, calls };
 }
 
-async function connect(api: ApiClient, flushEvents?: () => Promise<void>): Promise<Client> {
+async function connect(
+  api: ApiClient,
+  flushEvents?: () => Promise<void>,
+  project?: { currentSessionId(): string | undefined },
+): Promise<Client> {
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
-  const server = createServer(api, undefined, flushEvents);
+  const server = createServer(api, project as never, flushEvents);
   await server.connect(serverT);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientT);
@@ -240,6 +244,34 @@ test('capture_list_events: 조회 전 flush 하고 UNCLASSIFIED 를 sessionId �
   assert.equal(flushed, true); // 조회 전 flush
   assert.equal(listed!.status, 'UNCLASSIFIED');
   assert.equal(listed!.sessionId, 's1');
+});
+
+test('capture_list_events: sessionId 생략 → 현재 세션 id 자동 주입(주)', async () => {
+  let listed: { sessionId?: string } | null = null;
+  const { client } = fakeClient({
+    listEvents: async (_status, sessionId) => {
+      listed = { sessionId };
+      return { items: [] };
+    },
+  });
+  const project = { currentSessionId: () => 'raw-current-sid' };
+  const mcp = await connect(client, undefined, project);
+  await mcp.callTool({ name: 'capture_list_events', arguments: {} }); // sessionId 생략
+  assert.equal(listed!.sessionId, 'raw-current-sid'); // 커넥터가 아는 원본 세션 id 로 자동 좁힘
+});
+
+test('capture_list_events: 명시 sessionId 는 자동 주입을 override', async () => {
+  let listed: { sessionId?: string } | null = null;
+  const { client } = fakeClient({
+    listEvents: async (_status, sessionId) => {
+      listed = { sessionId };
+      return { items: [] };
+    },
+  });
+  const project = { currentSessionId: () => 'raw-current-sid' };
+  const mcp = await connect(client, undefined, project);
+  await mcp.callTool({ name: 'capture_list_events', arguments: { sessionId: 'explicit' } });
+  assert.equal(listed!.sessionId, 'explicit');
 });
 
 test('capture_link_events: 선택 이벤트만 링크 호출', async () => {

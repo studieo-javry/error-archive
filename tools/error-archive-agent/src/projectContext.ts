@@ -64,6 +64,17 @@ export class ProjectContext {
     return readContext(this.cfg.hookNamespace, { preferSessionId: this.cfg.sessionId, path: this.cfg.hookStatePath });
   }
 
+  /**
+   * 현재 개발 세션의 **원본** Claude Code session_id(Hook 기록 우선, 없으면 config). 없으면 undefined.
+   *
+   * 이벤트 조회 스코프 전용: Hook 이벤트는 **원본 session_id** 로 태깅돼 서버에 저장되므로(hook.ts),
+   * 파생 UUID(`sessionUuid`)가 아니라 이 원본값으로 좁혀야 매칭된다. 해제(rotated) 여부와 무관하게
+   * 원본 세션은 그대로이므로(이벤트 태깅은 프로젝트 바인딩과 독립) 로테이션을 반영하지 않는다.
+   */
+  currentSessionId(): string | undefined {
+    return this.readHook()?.sessionId ?? this.cfg.sessionId ?? undefined;
+  }
+
   private resolveAt(explicitPath: string | undefined, hookCwd: string | undefined): ResolvedProject | null {
     // 우선순위: 명시 인자 > config.projectRoot > hook cwd > process.cwd(). (roots 는 미사용 — project.ts 참고)
     const opts: ResolveOptions = explicitPath
@@ -144,13 +155,10 @@ export class ProjectContext {
     // 세션 정체성(D2): hook session_id 우선, 없으면 config.sessionId 에서 sessionUuid 파생.
     // 이벤트(sessionId 로 태그)와 Capture(sessionUuid)가 같은 세션에서 나와 B 연결이 상관 가능해진다.
     // 로테이션(해제) 상태에서는 재채택하지 않는다(미귀속 decouple 유지).
-    if (!this.rotated) {
-      const hookSid = this.readHook()?.sessionId ?? undefined;
-      const sidSource = hookSid ?? this.cfg.sessionId;
-      if (sidSource) {
-        const derived = deriveUuid(sidSource);
-        if (derived !== this.sessionUuid) this.sessionUuid = derived;
-      }
+    const rawSessionId = this.currentSessionId(); // 원본 세션 id(Hook 우선) — 파일 1회 읽기
+    if (!this.rotated && rawSessionId) {
+      const derived = deriveUuid(rawSessionId);
+      if (derived !== this.sessionUuid) this.sessionUuid = derived;
     }
     const desired = await this.approvedProjectKey();
     const needsRegister = this.lastRegisteredKey !== desired || this.lastRegisteredSessionUuid !== this.sessionUuid;
@@ -161,12 +169,16 @@ export class ProjectContext {
         this.sessionUuid = newUuid();
         this.rotated = true;
       }
+      // clientSessionId 저장 정책(부): **원본** session_id 를 일관 보관한다(설정값 없을 때 파생 UUID 로
+      // 떨어지면 CaptureSession.clientSessionId 와 이벤트의 원본 sessionId 가 어긋나 상관이 끊긴다).
+      // 로테이션(미귀속 decouple) 상태에서만 파생 UUID 를 쓴다(원본과 의도적으로 분리).
+      const clientSessionId = (!this.rotated && rawSessionId) ? rawSessionId : this.sessionUuid;
       try {
         await this.client.registerSession(
           {
             sessionUuid: this.sessionUuid,
             clientKind: 'claude-code',
-            clientSessionId: this.cfg.sessionId ?? this.sessionUuid,
+            clientSessionId,
             projectKey: desired ?? undefined,
           },
           newIdempotencyKey(),

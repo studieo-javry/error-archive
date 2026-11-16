@@ -12,7 +12,7 @@ const PROJECT: ResolvedProject = {
   gitRoot: '/dev/checkout', remote: 'github.com/org/checkout', projectKey: 'github.com/org/checkout', trust: 'config',
 };
 
-interface RegCall { projectKey: string | null; sessionUuid: string; key?: string }
+interface RegCall { projectKey: string | null; sessionUuid: string; clientSessionId: string; key?: string }
 
 function makeClient(calls: RegCall[], opts: { failTimes?: number } = {}): ApiClient {
   let attempts = 0;
@@ -21,7 +21,7 @@ function makeClient(calls: RegCall[], opts: { failTimes?: number } = {}): ApiCli
     registerSession: async (req: { projectKey?: string | null; sessionUuid: string; clientKind: string; clientSessionId: string }, key?: string) => {
       attempts += 1;
       if (opts.failTimes && attempts <= opts.failTimes) throw new Error('network');
-      calls.push({ projectKey: req.projectKey ?? null, sessionUuid: req.sessionUuid, key });
+      calls.push({ projectKey: req.projectKey ?? null, sessionUuid: req.sessionUuid, clientSessionId: req.clientSessionId, key });
       return { sessionUuid: req.sessionUuid, connectionId: 'c', clientKind: req.clientKind, clientVersion: null, clientSessionId: req.clientSessionId, startedAt: 't' };
     },
   } as unknown as ApiClient;
@@ -198,5 +198,65 @@ test('미승인 hook cwd → projectKey 미전송(승인 게이트 유지)', asy
   try {
     await c.ensureSession(); // 승인 없이
     assert.equal(calls.at(-1)!.projectKey, null);
+  } finally { cleanup(); }
+});
+
+// ── 세션 스코프 자동 주입(주) + clientSessionId 저장 정책(부) ───────────────────────
+
+test('currentSessionId: hook session_id 우선', () => {
+  const holder = { current: { cwd: '/dev/a', sessionId: 'hook-sid' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient([]), holder);
+  try {
+    assert.equal(c.currentSessionId(), 'hook-sid');
+  } finally { cleanup(); }
+});
+
+test('currentSessionId: hook sessionId 가 null 이면 config.sessionId 폴백', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-sid-'));
+  try {
+    const c = new ProjectContext(makeClient([]), {
+      baseUrl: 'https://api', statePath: join(dir, 'p.json'), sessionId: 'cfg-sid', resolve: () => PROJECT,
+      readHookContext: () => ({ cwd: '/dev/a', sessionId: null, ambiguous: false }),
+    });
+    assert.equal(c.currentSessionId(), 'cfg-sid');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('currentSessionId: 둘 다 없으면 undefined', () => {
+  const { c, cleanup } = makeCtx(makeClient([])); // hook/cfg.sessionId 없음
+  try {
+    assert.equal(c.currentSessionId(), undefined);
+  } finally { cleanup(); }
+});
+
+test('(부) config.sessionId 없이 hook session_id 만 있으면 clientSessionId=원본(파생 UUID 아님)', async () => {
+  const calls: RegCall[] = [];
+  // hook 이 비-UUID 원본 session_id 를 준다 → sessionUuid 는 파생 UUID, clientSessionId 는 원본이어야 함.
+  const holder = { current: { cwd: '/dev/a', sessionId: 'raw-sid' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    const uuid = await c.ensureSession();
+    assert.match(uuid, UUID_RE);
+    assert.notEqual(uuid, 'raw-sid'); // 파생됨
+    assert.equal(calls.at(-1)!.clientSessionId, 'raw-sid'); // 원본 보관(이벤트 sessionId 와 정합)
+    assert.equal(calls.at(-1)!.sessionUuid, uuid);
+  } finally { cleanup(); }
+});
+
+test('(부) 로테이션(해제) 상태에선 clientSessionId=파생 UUID(원본과 분리 유지)', async () => {
+  const calls: RegCall[] = [];
+  const holder = { current: { cwd: '/dev/hooked', sessionId: 'raw-sid' } as { cwd: string; sessionId: string | null } | null };
+  const { c, cleanup } = makeHookCtx(makeClient(calls), holder);
+  try {
+    const p = c.detect()!;
+    await c.approve(p);
+    await c.ensureSession(); // 바운드 등록(clientSessionId=raw-sid)
+    assert.equal(calls.at(-1)!.clientSessionId, 'raw-sid');
+    await c.revoke(p); // 해제 → 로테이션
+    await c.ensureSession(); // 미귀속 재등록
+    const last = calls.at(-1)!;
+    assert.equal(last.projectKey, null);
+    assert.equal(last.clientSessionId, last.sessionUuid); // 원본 아닌 파생 UUID(decouple)
+    assert.notEqual(last.clientSessionId, 'raw-sid');
   } finally { cleanup(); }
 });

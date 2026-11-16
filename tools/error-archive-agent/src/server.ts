@@ -48,7 +48,11 @@ const VERIFICATION_SCOPE = z.enum(['LOCAL', 'CI', 'MANUAL']);
 
 /** 서사 입력(capture_start / capture_update 공용). */
 const CONTENT_SHAPE = {
-  symptom: z.string().optional().describe('한 줄 증상 요약'),
+  symptom: z.string().optional().describe(
+    '한 줄 증상 요약. 실패 로그·스택트레이스·재현 코드가 있으면 ```언어 코드블록``` 으로 덧붙여라' +
+    '(반영 시 코드 스니펫 카드로 전환). 코드블록은 이 문단 필드나 attempt 의 action 에 넣고, ' +
+    'observedFacts·hypotheses(목록)에는 넣지 말 것.',
+  ),
   observedFacts: z.array(z.string()).optional().describe('실행 로그·테스트 결과 등 실제 관측된 사실'),
   hypotheses: z.array(z.string()).optional().describe('원인 후보(가설). 확정이 아님'),
   reproductionSteps: z.array(z.string()).optional().describe('재현 절차'),
@@ -142,7 +146,11 @@ export function createServer(
         attemptType: z.string().optional().describe('예: investigate, fix, verify'),
         title: z.string(),
         hypothesis: z.string().optional(),
-        action: z.string().optional().describe('실제 수행한 내용'),
+        action: z.string().optional().describe(
+          '실제 수행한 내용. 바꾼 코드·실패한 명령·핵심 diff 가 있으면 ```언어 코드블록``` 으로 포함하라' +
+          '(반영 시 코드 스니펫 카드로 전환된다). 파일 경로가 있으면 ```언어 경로/파일 처럼 첫 줄에 적는다. ' +
+          '전체 파일을 덤프하지 말고 관련 조각만. 시크릿·토큰·개인정보는 넣지 말 것.',
+        ),
         insight: z.string().optional().describe('이 시도에서 얻은 판단'),
         nextStep: z.string().optional(),
         evidenceRefs: z.array(z.string()).optional().describe('연결할 근거(clientArtifactId). 봉인 전 업로드돼야 함'),

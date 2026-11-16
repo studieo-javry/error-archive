@@ -71,7 +71,7 @@ configMapGenerator:
 images:
 - name: core-api
   newName: ghcr.io/studieo-javry/core-api
-  newTag: 6428e9afcda66fc0515de4d02b81a84036a1f407
+  newTag: c04cce024e9718cdfa30669e79292dd3ed712aca
 - name: iam-api
   newName: ghcr.io/studieo-javry/iam-api
   newTag: d6f899a1d35f523da18e4e3758446589f2772855

@@ -20,6 +20,8 @@ export interface AgentConfig {
   projectRoot?: string;
   /** 클라이언트 세션 id(선택) — 세션 식별에 사용(없으면 프로세스 UUID). */
   sessionId?: string;
+  /** HTTP 요청 타임아웃(ms, 선택) — 느리거나 멈춘 서버에 무한 대기 방지. 미설정 시 apiClient 기본값. */
+  timeoutMs?: number;
 }
 
 /** 연결 토큰 접두사(iam 발급 규칙과 동일). */
@@ -67,6 +69,7 @@ function readConfigFile(path: string, readFile: (p: string) => string): Partial<
       token: typeof parsed.token === 'string' ? parsed.token : undefined,
       projectRoot: typeof parsed.projectRoot === 'string' ? parsed.projectRoot : undefined,
       sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : undefined,
+      timeoutMs: typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? parsed.timeoutMs : undefined,
     };
   } catch {
     throw new ConfigError(`설정 파일 JSON 파싱 실패: ${path}`);
@@ -126,5 +129,6 @@ export function loadConfig(options: LoadOptions = {}): AgentConfig {
     token: validateToken(tokenRaw),
     projectRoot: projectRoot?.trim() || undefined,
     sessionId: sessionId?.trim() || undefined,
+    timeoutMs: file.timeoutMs, // 설정 파일의 timeoutMs 를 AgentConfig 까지 전파(없으면 apiClient 기본값)
   };
 }

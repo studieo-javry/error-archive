@@ -32,6 +32,9 @@ import { createServer } from './server.js';
 import { recordContext } from './sessionContext.js';
 
 const FLUSH_INTERVAL_MS = 10_000;
+// 조회직전 flush 예산 — 최신 이 건수만 전송 시도하고 바로 조회로 넘어간다(대량 적체 시 조회 지연 방지).
+// 초과분은 pending 으로 남아 주기 flush(FLUSH_INTERVAL_MS)가 처리하고, capture_list_events 는 sync.pending 으로 알린다.
+const PREQUERY_FLUSH_MAX_EVENTS = 100;
 
 async function runDoctor(): Promise<number> {
   let config;
@@ -119,22 +122,28 @@ async function runServer(): Promise<void> {
   });
   // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
   const queue = new EventQueue(ns);
-  // single-flight: 주기 flush 와 조회직전 flush 가 겹쳐 같은 큐를 동시에 재작성하는 경합을 막는다.
-  // 실패해도 FlushResult(pending 포함)를 반환해 호출측(capture_list_events)이 미전송 건수를 알 수 있다.
-  const flushEvents = singleFlight<FlushResult>(() =>
-    flushQueue(client, queue, { consentNamespace: ns }).catch((err) => {
-      process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
-      return { sent: 0, rejected: 0, dropped: 0, pending: queue.size() };
-    }),
+  const onFlushErr = (err: unknown): FlushResult => {
+    // 실패해도 FlushResult(pending 포함)를 반환해 호출측(capture_list_events)이 미전송 건수를 알 수 있다.
+    process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    return { sent: 0, rejected: 0, dropped: 0, pending: queue.size() };
+  };
+  // 주기/초기 flush — 전량 전송(백그라운드). single-flight 로 주기 틱이 겹쳐 쌓이지 않게.
+  const flushAll = singleFlight<FlushResult>(() =>
+    flushQueue(client, queue, { consentNamespace: ns }).catch(onFlushErr),
+  );
+  // 조회직전 flush — 최신 N건만 예산 전송 후 바로 조회로 넘어간다(대량 적체가 조회를 멈추지 않게). 초과분은
+  // pending 으로 남아 flushAll 이 처리. 조회 연타를 묶는 별도 single-flight(flushAll 과는 독립 — 느린 전량에 안 묶임).
+  const flushForQuery = singleFlight<FlushResult>(() =>
+    flushQueue(client, queue, { consentNamespace: ns, maxEvents: PREQUERY_FLUSH_MAX_EVENTS, newestFirst: true }).catch(onFlushErr),
   );
 
-  const server = createServer(client, project, flushEvents);
+  const server = createServer(client, project, flushForQuery);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`error-archive-agent MCP 서버 시작(base=${config.baseUrl}, token=${maskToken(config.token)})\n`);
 
-  void flushEvents();
-  const timer = setInterval(() => void flushEvents(), FLUSH_INTERVAL_MS);
+  void flushAll();
+  const timer = setInterval(() => void flushAll(), FLUSH_INTERVAL_MS);
   if (typeof timer.unref === 'function') timer.unref();
 }
 

@@ -31,11 +31,29 @@ test('미승인(레코드 없음) → 안내 반환(projectKey 포함)', () => {
   } finally { cleanup(); }
 });
 
-test('APPROVED → 무안내(null)', () => {
+test('APPROVED → "연결 완료" 확인을 최초 1회만, 이후 세션엔 null', () => {
   const { path, cleanup } = tmp();
   try {
     setConsent(NS, { projectKey: P.projectKey, gitRoot: P.gitRoot, status: 'APPROVED', remoteAtApproval: P.remote }, { path });
-    assert.equal(buildFirstConnectNotice(P, NS, 'sid-1', { path }), null);
+    const first = buildFirstConnectNotice(P, NS, 'sid-1', { path });
+    assert.ok(first, '연결 직후 1회는 확인 안내');
+    assert.ok(first!.systemMessage.includes('연결 완료'));
+    assert.ok(first!.systemMessage.includes(P.projectKey));
+    assert.equal(first!.hookSpecificOutput.hookEventName, 'SessionStart');
+    assert.equal(buildFirstConnectNotice(P, NS, 'sid-2', { path }), null, '다음 세션부턴 조용');
+  } finally { cleanup(); }
+});
+
+test('재승인(setConsent) 하면 "연결 완료" 확인이 다시 1회 노출(ack 리셋)', () => {
+  const { path, cleanup } = tmp();
+  try {
+    const approve = () =>
+      setConsent(NS, { projectKey: P.projectKey, gitRoot: P.gitRoot, status: 'APPROVED', remoteAtApproval: P.remote }, { path });
+    approve();
+    assert.ok(buildFirstConnectNotice(P, NS, 's1', { path }), '최초 1회');
+    assert.equal(buildFirstConnectNotice(P, NS, 's2', { path }), null, '1회 후 조용');
+    approve(); // 재연결 → connectAckAt 떨어짐
+    assert.ok(buildFirstConnectNotice(P, NS, 's3', { path }), '재연결 후 다시 1회');
   } finally { cleanup(); }
 });
 

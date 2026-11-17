@@ -137,7 +137,8 @@ async function runServer(): Promise<void> {
     flushQueue(client, queue, { consentNamespace: ns, maxEvents: PREQUERY_FLUSH_MAX_EVENTS, newestFirst: true }).catch(onFlushErr),
   );
 
-  const server = createServer(client, project, flushForQuery);
+  // 조회직전=flushForQuery(예산·최신), 봉인직전=flushAll(전량), pendingForSession=봉인 완결성 점검(PR-5).
+  const server = createServer(client, project, flushForQuery, flushAll, (sid) => queue.pendingForSession(sid));
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`error-archive-agent MCP 서버 시작(base=${config.baseUrl}, token=${maskToken(config.token)})\n`);

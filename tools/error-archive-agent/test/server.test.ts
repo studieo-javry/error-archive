@@ -57,9 +57,11 @@ async function connect(
   api: ApiClient,
   flushEvents?: () => Promise<FlushResult>,
   project?: { currentSessionId(): string | undefined },
+  sealFlush?: () => Promise<FlushResult>,
+  pendingForSession?: (sessionId: string) => number,
 ): Promise<Client> {
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
-  const server = createServer(api, project as never, flushEvents);
+  const server = createServer(api, project as never, flushEvents, sealFlush, pendingForSession);
   await server.connect(serverT);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientT);
@@ -360,4 +362,73 @@ test('capture_start(Phase3): 미승인 프로젝트면 생성 차단, 승인 후
     await mcp.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ── PR-5: 봉인 완결성(B+D) — 미전송/미확인 근거 있으면 봉인 보류, force 로 강행 ──────────
+const fr = (pending: number): FlushResult => ({ sent: 0, rejected: 0, dropped: 0, pending });
+const sealResp = (): CaptureResponse => ({
+  captureUuid: AUUID, status: 'READY_FOR_REVIEW', revision: 1, title: null, project: null,
+  content: { observedFacts: [], hypotheses: [], unknowns: [] }, createdAt: 't', updatedAt: 't', completedAt: 't',
+});
+const evSummary = (id: string, sessionId: string) => ({
+  clientEventId: id, eventType: 'PostToolUse:Bash', sessionId, observedAt: 't', toolCallId: null,
+  truncated: false, status: 'UNCLASSIFIED', redactedPayload: {},
+});
+
+test('(PR-5) capture_complete: 미전송 근거(localPending>0) 있으면 봉인 보류 + completeCapture 미호출', async () => {
+  let completeCalled = false;
+  let flushed = false;
+  const { client } = fakeClient({
+    listEvents: async () => ({ items: [] }), // 서버 미확인분 없음
+    completeCapture: async () => { completeCalled = true; return sealResp(); },
+  });
+  const mcp = await connect(
+    client, undefined, { currentSessionId: () => 's1' },
+    async () => { flushed = true; return fr(2); }, // sealFlush
+    () => 2, // pendingForSession → 2 미전송
+  );
+  const payload = JSON.parse(textOf((await mcp.callTool({ name: 'capture_complete', arguments: { captureUuid: AUUID } })) as never));
+  assert.equal(flushed, true, '봉인 전 전량 flush 선행');
+  assert.equal(payload.sealed, false);
+  assert.equal(payload.reason, 'EVIDENCE_PENDING');
+  assert.equal(payload.localPending, 2);
+  assert.equal(completeCalled, false);
+});
+
+test('(PR-5) capture_complete: 서버에 미확인(unseen) 이벤트 있으면 봉인 보류', async () => {
+  let completeCalled = false;
+  const { client } = fakeClient({
+    listEvents: async () => ({ items: [evSummary('E9', 's1')] }), // AI 가 list 로 본 적 없음 → unseen
+    completeCapture: async () => { completeCalled = true; return sealResp(); },
+  });
+  const mcp = await connect(client, undefined, { currentSessionId: () => 's1' }, async () => fr(0), () => 0);
+  const payload = JSON.parse(textOf((await mcp.callTool({ name: 'capture_complete', arguments: { captureUuid: AUUID } })) as never));
+  assert.equal(payload.sealed, false);
+  assert.equal(payload.unseenOnServer, 1);
+  assert.equal(completeCalled, false);
+});
+
+test('(PR-5) capture_complete: 본 이벤트뿐이고 미전송 0 이면 봉인', async () => {
+  let completeCalled = false;
+  const { client } = fakeClient({
+    listEvents: async () => ({ items: [evSummary('E9', 's1')] }),
+    completeCapture: async () => { completeCalled = true; return sealResp(); },
+  });
+  const mcp = await connect(client, undefined, { currentSessionId: () => 's1' }, async () => fr(0), () => 0);
+  await mcp.callTool({ name: 'capture_list_events', arguments: {} }); // E9 를 봄(seen 기록)
+  const payload = JSON.parse(textOf((await mcp.callTool({ name: 'capture_complete', arguments: { captureUuid: AUUID } })) as never));
+  assert.equal(payload.sealed, true);
+  assert.equal(completeCalled, true);
+});
+
+test('(PR-5) capture_complete: force=true 면 미전송/미확인 있어도 봉인', async () => {
+  let completeCalled = false;
+  const { client } = fakeClient({
+    listEvents: async () => ({ items: [evSummary('E9', 's1')] }), // unseen 존재
+    completeCapture: async () => { completeCalled = true; return sealResp(); },
+  });
+  const mcp = await connect(client, undefined, { currentSessionId: () => 's1' }, async () => fr(0), () => 5); // pending 5 도
+  const payload = JSON.parse(textOf((await mcp.callTool({ name: 'capture_complete', arguments: { captureUuid: AUUID, force: true } })) as never));
+  assert.equal(payload.sealed, true);
+  assert.equal(completeCalled, true);
 });

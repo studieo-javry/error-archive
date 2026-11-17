@@ -13,6 +13,7 @@ import { ApiError } from './apiClient.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
 import { describeConnection } from './connectionStatus.js';
+import type { FlushResult } from './eventSender.js';
 import type { ProjectContext } from './projectContext.js';
 import { createRequire } from 'node:module';
 
@@ -69,7 +70,7 @@ const CONTENT_SHAPE = {
 export function createServer(
   client: ApiClient,
   project?: ProjectContext,
-  flushEvents?: () => Promise<void>,
+  flushEvents?: () => Promise<FlushResult>,
 ): McpServer {
   const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
 
@@ -537,7 +538,9 @@ export function createServer(
       description:
         '아직 Capture 에 연결되지 않은, 자동 수집된 Hook 이벤트를 조회한다. 지금 처리 중인 오류의 해결 과정에 ' +
         '해당하는 이벤트를 **고르기 위한 후보**다. 같은 세션이라고 전부 연결하지 말고, 이 오류와 관련된 것만 골라라. ' +
-        'sessionId 를 생략하면 현재 개발 세션으로 자동으로 좁혀진다(다른 세션 이벤트 제외). 명시하면 그 값으로 좁힌다.',
+        'sessionId 를 생략하면 현재 개발 세션으로 자동으로 좁혀진다(다른 세션 이벤트 제외). 명시하면 그 값으로 좁힌다. ' +
+        '응답의 sync.pending 이 0 보다 크면 아직 서버로 전송되지 못한 로컬 이벤트가 그만큼 있다는 뜻이다 — ' +
+        '중요한 근거가 빠졌을 수 있으니, 봉인(capture_complete) 전에 잠시 후 다시 조회해 반영을 확인하라.',
       inputSchema: {
         sessionId: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional(),
@@ -545,11 +548,17 @@ export function createServer(
     },
     (args) =>
       guard(async () => {
-        if (flushEvents) await flushEvents(); // 지연 전송 이벤트까지 인박스 반영 후 조회
+        // 조회 직전 flush — 결과(pending/rejected)를 응답 sync 로 전달해, flush 가 실패해 아직 서버에 반영되지
+        // 않은 이벤트가 있으면 AI 가 그 사실을 알 수 있게 한다(미전송분을 '없음'으로 오인하지 않도록).
+        const flush = flushEvents ? await flushEvents() : null;
         // 세션 스코프 자동 주입(주): AI 가 sessionId 를 생략하면 커넥터가 아는 **원본** 세션 id 로 좁힌다.
         // 이벤트는 원본 session_id 로 태깅되므로 파생 UUID 가 아니라 원본을 넘겨야 매칭된다(project.currentSessionId).
         const sessionId = args.sessionId ?? project?.currentSessionId();
-        return ok(await client.listEvents('UNCLASSIFIED', sessionId, args.limit));
+        const res = await client.listEvents('UNCLASSIFIED', sessionId, args.limit);
+        return ok({
+          ...res,
+          sync: flush ? { pending: flush.pending, rejected: flush.rejected } : undefined,
+        });
       }),
   );
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -15,9 +15,9 @@ function ev(id: string): EventItemRequest {
   };
 }
 
-function tempQueue(): { q: EventQueue; cleanup: () => void } {
+function tempQueue(): { q: EventQueue; dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'ea-snd-'));
-  return { q: new EventQueue('ns', { dir }), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { q: new EventQueue('ns', { dir }), dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 function clientWith(fn: (req: EventBatchRequest) => Promise<EventBatchResponse>): ApiClient {
@@ -42,7 +42,7 @@ test('flush: ACCEPTED/DUPLICATE 는 큐에서 제거', async () => {
 });
 
 test('flush: REJECTED 는 제거+dead-letter, 큐에서 사라짐', async () => {
-  const { q, cleanup } = tempQueue();
+  const { q, dir, cleanup } = tempQueue();
   try {
     q.enqueue(ev('bad'));
     const client = clientWith(async (req) => ({
@@ -50,7 +50,9 @@ test('flush: REJECTED 는 제거+dead-letter, 큐에서 사라짐', async () => 
     }));
     const r = await flushQueue(client, q);
     assert.equal(r.rejected, 1);
-    assert.equal(q.size(), 0);
+    assert.equal(q.size(), 0); // pending 에서 제거
+    // dead-letter 로 **실제 이동**됐는지(유실 아님). shard = 'ba'(clientEventId 'bad' 앞 2자리)
+    assert.ok(existsSync(join(dir, 'ns', 'rejected', 'ba', 'bad.json')), 'rejected 로 원자적 이동됨');
   } finally {
     cleanup();
   }

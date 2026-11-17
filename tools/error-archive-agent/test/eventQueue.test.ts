@@ -18,11 +18,9 @@ function tempQueue(): { q: EventQueue; cleanup: () => void } {
   return { q: new EventQueue('ns', { dir }), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-test('enqueue/readAll + localSequence 단조 증가', () => {
+test('enqueue/readAll — 적재분 보존(observedAt·clientEventId 순)', () => {
   const { q, cleanup } = tempQueue();
   try {
-    assert.equal(q.nextLocalSequence(), 1);
-    assert.equal(q.nextLocalSequence(), 2);
     q.enqueue(ev('a'));
     q.enqueue(ev('b'));
     assert.deepEqual(q.readAll().map((e) => e.clientEventId), ['a', 'b']);
@@ -31,14 +29,14 @@ test('enqueue/readAll + localSequence 단조 증가', () => {
   }
 });
 
-test('remove: 완료 id 제거·나머지 유지, rejected 는 dead-letter 로', () => {
+test('remove: 완료 id 파일 삭제, rejected 는 dead-letter 로 이동', () => {
   const { q, cleanup } = tempQueue();
   try {
     q.enqueue(ev('a'));
     q.enqueue(ev('b'));
     q.enqueue(ev('c'));
-    q.remove(new Set(['a', 'c']), [ev('c')]);
-    assert.deepEqual(q.readAll().map((e) => e.clientEventId), ['b']); // a·c 제거, b 유지
+    q.remove(new Set(['a']), [ev('c')]); // a 삭제, c 는 dead-letter(이동)
+    assert.deepEqual(q.readAll().map((e) => e.clientEventId), ['b']); // a·c 는 pending 에서 빠지고 b 유지
   } finally {
     cleanup();
   }

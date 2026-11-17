@@ -21,7 +21,8 @@ import { ConfigError, loadConfig, maskToken } from './config.js';
 import { describeConnection } from './connectionStatus.js';
 import { isCollectionApproved } from './consentIndex.js';
 import { accountNamespace, EventQueue } from './eventQueue.js';
-import { flushQueue } from './eventSender.js';
+import { flushQueue, type FlushResult } from './eventSender.js';
+import { singleFlight } from './singleFlight.js';
 import { buildFirstConnectNotice } from './firstConnect.js';
 import { collectionEnabled, isSensitive, normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
@@ -118,13 +119,14 @@ async function runServer(): Promise<void> {
   });
   // 수집 이벤트 큐/sender — capture_list_events 조회 전 flush + 주기 flush 로 서버 인박스 반영.
   const queue = new EventQueue(ns);
-  const flushEvents = async () => {
-    try {
-      await flushQueue(client, queue, { consentNamespace: ns }); // 전송 직전 승인 재검사(해제 후 잔여 전송 금지)
-    } catch (err) {
+  // single-flight: 주기 flush 와 조회직전 flush 가 겹쳐 같은 큐를 동시에 재작성하는 경합을 막는다.
+  // 실패해도 FlushResult(pending 포함)를 반환해 호출측(capture_list_events)이 미전송 건수를 알 수 있다.
+  const flushEvents = singleFlight<FlushResult>(() =>
+    flushQueue(client, queue, { consentNamespace: ns }).catch((err) => {
       process.stderr.write(`[events] flush 오류(무시): ${err instanceof Error ? err.message : String(err)}\n`);
-    }
-  };
+      return { sent: 0, rejected: 0, dropped: 0, pending: queue.size() };
+    }),
+  );
 
   const server = createServer(client, project, flushEvents);
   const transport = new StdioServerTransport();
@@ -266,7 +268,9 @@ async function runHook(): Promise<number> {
     if (!proj) return 0; // 프로젝트 미식별 → 무수집
     if (!isCollectionApproved(ns, proj.gitRoot, proj.remote)) return 0; // 미승인/보류/거절/remote 변경 → 무수집
     const queue = new EventQueue(ns);
-    const event = normalizeHookEvent(input, queue.nextLocalSequence());
+    // localSequence: 공유 .seq 카운터(전역 가변 상태) 대신 수집 시각(ms)을 쓴다 — 서버는 자체 id 로 정렬하므로
+    // 이 값은 정보성이고, 전역 카운터 경합(per-file 로 없앤 공용 상태)을 다시 만들지 않기 위함.
+    const event = normalizeHookEvent(input, Date.now());
     // _local: 전송 안 함. Sender flush 때 승인 재검사(해제 후 잔여 전송 금지)용.
     queue.enqueue({ ...event, _local: { gitRoot: proj.gitRoot, remote: proj.remote, projectKey: proj.projectKey } });
   } catch (err) {

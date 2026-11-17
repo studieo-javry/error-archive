@@ -87,6 +87,7 @@ test('모든 기대 도구가 등록돼 있다', async () => {
     'capture_update_attempt',
     'capture_update_solution',
     'connect_project',
+    'connection_status',
     'diagnose',
     'find_cases',
     'get_case',

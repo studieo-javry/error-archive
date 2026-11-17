@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ApiError, createApiClient } from './apiClient.js';
 import { ConfigError, loadConfig, maskToken } from './config.js';
+import { describeConnection } from './connectionStatus.js';
 import { isCollectionApproved } from './consentIndex.js';
 import { accountNamespace, EventQueue } from './eventQueue.js';
 import { flushQueue } from './eventSender.js';
@@ -62,6 +63,29 @@ async function runDoctor(): Promise<number> {
   const install = resolveClientInfo();
   process.stderr.write(`install  : ${install.installLabel ?? '(label 생략)'} · ${install.kind} ${install.version ?? ''}\n`);
   const client = createApiClient(config, undefined, install);
+
+  // 이 폴더가 어떤 프로젝트로 연결됐는지(오프라인 — 토큰-ns 동의 인덱스만). 네트워크 전에 먼저 보여준다.
+  try {
+    const project = new ProjectContext(client, {
+      baseUrl: config.baseUrl,
+      projectRoot: config.projectRoot,
+      sessionId: config.sessionId,
+      consentNamespace: accountNamespace(config.baseUrl, config.token),
+    });
+    const resolved = project.detect();
+    if (resolved) {
+      const insp = project.inspectConsent(resolved);
+      const { label } = describeConnection(insp);
+      const since = insp.connected && insp.since ? ` · ${insp.since.slice(0, 10)} 부터` : '';
+      process.stderr.write(`프로젝트 : ${resolved.projectKey}${resolved.remote == null ? ' (로컬 전용 키)' : ''}\n`);
+      process.stderr.write(`연결상태 : ${label}${since}\n`);
+    } else {
+      process.stderr.write('프로젝트 : (현재 폴더는 git 저장소가 아님 — connect-project 로 폴더 지정 가능)\n');
+    }
+  } catch {
+    /* 프로젝트 조회 실패해도 doctor 는 계속한다 */
+  }
+
   try {
     const me = await client.whoami();
     process.stderr.write('✓ 연결 OK\n');

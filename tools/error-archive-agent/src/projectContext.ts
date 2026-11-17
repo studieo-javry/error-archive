@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import type { ApiClient } from './apiClient.js';
 import { newIdempotencyKey, newUuid } from './idempotency.js';
 import { resolveProject, type ResolveOptions, type ResolvedProject } from './project.js';
-import { clearConsent, setConsent } from './consentIndex.js';
+import { clearConsent, isCollectionApproved, readConsent, setConsent } from './consentIndex.js';
+import type { ConnectionInspect } from './connectionStatus.js';
 import { approve as persistApprove, getApproved, namespaceOf, revoke as persistRevoke } from './projectState.js';
 import { readContext, type ResolvedSessionContext } from './sessionContext.js';
 
@@ -137,6 +138,24 @@ export class ProjectContext {
     const ns = await this.namespace();
     if (!ns) return false;
     return getApproved(ns, p.gitRoot, p.remote, { path: this.cfg.statePath }) != null;
+  }
+
+  /**
+   * 읽기 전용 연결상태 조회 — 네트워크·승인 다이얼로그·상태 변경 없음.
+   * 오프라인 토큰-ns 동의 인덱스(Hook 의 수집 판정 source of truth)만 읽는다.
+   */
+  inspectConsent(p: ResolvedProject): ConnectionInspect {
+    const ns = this.cfg.consentNamespace;
+    if (!ns) return { recordStatus: null, connected: false, remoteChanged: false, since: null };
+    const opts = { path: this.cfg.consentPath };
+    const rec = readConsent(ns, p.gitRoot, opts);
+    const connected = isCollectionApproved(ns, p.gitRoot, p.remote, opts);
+    return {
+      recordStatus: rec?.status ?? null,
+      connected,
+      remoteChanged: rec?.status === 'APPROVED' && !connected,
+      since: rec?.updatedAt ?? null,
+    };
   }
 
   /** 실제 사용자 승인 후 호출 — 로컬 저장 + 승인한 프로젝트를 현재 문맥으로 고정 + 재등록 유도. */

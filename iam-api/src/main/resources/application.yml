@@ -43,6 +43,13 @@ iam:
     default-invitation-ttl-hours: 168          # 7 days
     max-invitation-ttl-hours: 720              # 30 days
     max-members-per-workspace: 200
+  agent-connector:
+    # 로컬 커넥터 설치 안내용 최신 버전 조회. 설치 명령은 @latest 라 이 값에 의존하지 않음(표시·고정용).
+    # 비공개(restricted) 패키지라 읽기 권한 npm 토큰 필요 — 공개 전환 시 FE 가 npm 직접 조회로 대체 가능.
+    package-name: "@error-archive/agent"
+    npm-registry-url: "https://registry.npmjs.org"
+    npm-token: ${AGENT_CONNECTOR_NPM_TOKEN:}
+    version-cache-ttl-seconds: 300
   email:
     # provider: smtp | logging.
     #   smtp    → SmtpInvitationEmailSenderAdapter 활성

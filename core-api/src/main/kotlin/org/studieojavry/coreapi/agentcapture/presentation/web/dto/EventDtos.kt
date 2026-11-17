@@ -73,7 +73,11 @@ data class AgentEventSummaryResponse(
     val redactedPayload: JsonNode,
 )
 
-@Schema(description = "미분류 이벤트 조회 목록.")
+@Schema(description = "이벤트 후보 조회 목록(이 연결 스코프, keyset cursor 페이지).")
 data class AgentEventListResponse(
     val items: List<AgentEventSummaryResponse>,
+    @Schema(description = "다음 페이지 cursor — 이 값을 cursor 로 다시 조회하면 더 오래된 이벤트를 잇는다. 더 없으면 null.")
+    val nextCursor: Long? = null,
+    @Schema(description = "더 오래된 이벤트가 더 있는지")
+    val hasNext: Boolean = false,
 )

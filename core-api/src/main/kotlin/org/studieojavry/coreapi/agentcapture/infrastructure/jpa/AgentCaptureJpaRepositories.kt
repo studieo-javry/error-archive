@@ -151,13 +151,16 @@ interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
     fun findByConnectionIdAndClientEventId(connectionId: UUID, clientEventId: String): CaptureEventEntity?
 
     @Query(
-        "SELECT e FROM CaptureEventEntity e WHERE e.ownerUserId = :owner AND e.status = :status " +
-            "AND (:sessionId IS NULL OR e.sessionId = :sessionId) ORDER BY e.observedAt DESC, e.id DESC",
+        "SELECT e FROM CaptureEventEntity e WHERE e.ownerUserId = :owner AND e.connectionId = :conn AND e.status = :status " +
+            "AND (:sessionId IS NULL OR e.sessionId = :sessionId) " +
+            "AND (:cursorId IS NULL OR e.id < :cursorId) ORDER BY e.id DESC",
     )
-    fun findByOwnerAndStatus(
+    fun findCandidates(
         @Param("owner") owner: Long,
+        @Param("conn") connectionId: UUID,
         @Param("status") status: CaptureEventStatus,
         @Param("sessionId") sessionId: String?,
+        @Param("cursorId") cursorId: Long?,
         pageable: Pageable,
     ): List<CaptureEventEntity>
 }

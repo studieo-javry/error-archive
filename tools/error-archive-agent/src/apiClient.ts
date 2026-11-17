@@ -39,6 +39,19 @@ import type {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** 기본 HTTP 타임아웃(ms). 느리거나 멈춘 서버에 무한 대기하지 않도록. config.timeoutMs 로 재정의. */
+const DEFAULT_TIMEOUT_MS = 15_000;
+/** 업로드는 본문이 커 더 넉넉히(첨부 전송용). */
+const UPLOAD_TIMEOUT_MS = 60_000;
+
+/** AbortController 기반 타임아웃 — ms 뒤 abort. done() 으로 타이머 해제(응답 수신 후 반드시 호출). */
+function withTimeout(ms: number): { signal: AbortSignal; done: () => void } {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  if (typeof timer.unref === 'function') timer.unref(); // 타이머가 프로세스 종료를 막지 않게
+  return { signal: ctrl.signal, done: () => clearTimeout(timer) };
+}
+
 /**
  * 커넥터가 서버에 신고하는 설치 메타(표시용). 연결 목록을 사람이 알아보게 하려는 값으로,
  * 모든 요청에 X-Agent-* 헤더로 실린다. 서버는 인가에 쓰지 않는다(위조 가능).
@@ -147,16 +160,23 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
 
     // 같은 멱등키가 동시에 in-flight 면 서버가 409 CONCURRENT_REQUEST(재시도 가능)를 준다. 같은 키로
     // 다시 보내는 건 구성상 안전하므로(중복 생성 불가) 한 번만 재시도한다. 그 외 오류는 그대로 올린다.
+    const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     for (let attempt = 0; ; attempt++) {
       let res: Response;
+      let text: string;
+      const { signal, done } = withTimeout(timeoutMs);
       try {
-        res = await doFetch(`${config.baseUrl}${opts.path}`, { method: opts.method, headers, body });
+        res = await doFetch(`${config.baseUrl}${opts.path}`, { method: opts.method, headers, body, signal });
+        text = await res.text(); // 본문 수신까지 타임아웃 적용(헤더만 오고 본문이 안 닫히는 서버 방지)
       } catch (err) {
+        if (signal.aborted) {
+          throw new ApiError(0, 'TIMEOUT', `요청 시간 초과(${timeoutMs}ms): ${opts.method} ${opts.path}`);
+        }
         const reason = err instanceof Error ? err.message : String(err);
         throw new ApiError(0, 'NETWORK', `요청 실패(${opts.method} ${opts.path}): ${reason}`);
+      } finally {
+        done();
       }
-
-      const text = await res.text();
       if (!res.ok) {
         let code: string | undefined;
         let detail = text;
@@ -228,13 +248,19 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
         ...installHeaders,
       };
       let res: Response;
+      let text: string;
+      const uploadTimeoutMs = config.timeoutMs ?? UPLOAD_TIMEOUT_MS; // 업로드는 기본 더 넉넉(본문 큼)
+      const { signal, done } = withTimeout(uploadTimeoutMs);
       try {
-        res = await doFetch(`${config.baseUrl}/api/v1/agent/captures/${uuid}/artifacts`, { method: 'POST', headers, body: form });
+        res = await doFetch(`${config.baseUrl}/api/v1/agent/captures/${uuid}/artifacts`, { method: 'POST', headers, body: form, signal });
+        text = await res.text();
       } catch (err) {
+        if (signal.aborted) throw new ApiError(0, 'TIMEOUT', `첨부 업로드 시간 초과(${uploadTimeoutMs}ms)`);
         const reason = err instanceof Error ? err.message : String(err);
         throw new ApiError(0, 'NETWORK', `첨부 업로드 실패: ${reason}`);
+      } finally {
+        done();
       }
-      const text = await res.text();
       if (!res.ok) {
         let code: string | undefined;
         let detail = text;

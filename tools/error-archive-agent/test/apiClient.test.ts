@@ -140,3 +140,21 @@ test('네트워크 예외는 status 0 NETWORK ApiError', async () => {
     (err: unknown) => err instanceof ApiError && err.status === 0 && err.code === 'NETWORK',
   );
 });
+
+test('(PR-4) 응답 없는 서버는 timeoutMs 뒤 TIMEOUT 으로 중단(무한 대기 X)', async () => {
+  // signal.abort 을 존중하는 '멈춘 서버' — 실제 fetch 처럼 abort 시 AbortError 로 reject.
+  const hanging: FetchLike = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        const e = new Error('The operation was aborted');
+        e.name = 'AbortError';
+        reject(e);
+      });
+    });
+  const started = Date.now();
+  await assert.rejects(
+    () => createApiClient({ ...config, timeoutMs: 30 }, hanging).whoami(),
+    (err: unknown) => err instanceof ApiError && err.status === 0 && err.code === 'TIMEOUT',
+  );
+  assert.ok(Date.now() - started < 2000, '타임아웃이 즉시 끊어야 함(무한 대기 아님)');
+});

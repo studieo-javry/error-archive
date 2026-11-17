@@ -318,6 +318,39 @@ test('approve → 토큰-ns 동의 인덱스에 APPROVED 미러, revoke → 제�
   }
 });
 
+test('inspectConsent → 승인 전/후/보류 읽기전용 상태(네트워크 없음)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-inspect-'));
+  const consentPath = join(dir, 'consent.json');
+  const c = new ProjectContext(makeClient([]), {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    sessionId: 'sess-insp',
+    consentNamespace: 'tok-insp',
+    consentPath,
+    resolve: () => PROJECT,
+  });
+  try {
+    // 승인 전: 미연결
+    let x = c.inspectConsent(PROJECT);
+    assert.equal(x.connected, false);
+    assert.equal(x.recordStatus, null);
+    assert.equal(x.since, null);
+    // 승인 후: 연결됨 + since(updatedAt)
+    await c.approve(PROJECT);
+    x = c.inspectConsent(PROJECT);
+    assert.equal(x.connected, true);
+    assert.equal(x.recordStatus, 'APPROVED');
+    assert.ok(x.since, 'since(updatedAt) 설정');
+    // 보류: SNOOZED, 미연결
+    await c.snooze(PROJECT);
+    x = c.inspectConsent(PROJECT);
+    assert.equal(x.connected, false);
+    assert.equal(x.recordStatus, 'SNOOZED');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('snooze → SNOOZED(세션키), decline → DECLINED (토큰-ns 인덱스)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ea-sd-'));
   const consentPath = join(dir, 'consent.json');

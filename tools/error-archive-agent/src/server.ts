@@ -12,6 +12,7 @@ import type { ApiClient } from './apiClient.js';
 import { ApiError } from './apiClient.js';
 import { defaultArtifactId, idempotencyKeyFor, newUuid } from './idempotency.js';
 import { buildAttemptDetail, buildCaptureContent, buildSolutionContent } from './mappers.js';
+import { describeConnection } from './connectionStatus.js';
 import type { ProjectContext } from './projectContext.js';
 import { createRequire } from 'node:module';
 
@@ -493,6 +494,39 @@ export function createServer(
         // 사용자 거절 → 영속 DECLINED(다음 세션에도 자동 안내 안 함, 명시 재연결로만 해제).
         await project.decline(resolved);
         return ok({ ...base, connected: false, declined: true, message: '거절로 기록했습니다. 다시 연결하려면 connect_project 를 명시 실행하세요.' });
+      }),
+  );
+
+  server.registerTool(
+    'connection_status',
+    {
+      title: '연결 상태 조회',
+      description:
+        '현재 작업 폴더(git)가 Error Archive 에 연결(승인)됐는지, 어떤 프로젝트로 연결됐는지 **읽기 전용**으로 조회한다. ' +
+        'connect_project 와 달리 승인 다이얼로그를 띄우지 않고 아무것도 바꾸지 않는다(네트워크 없음 — 오프라인 동의 인덱스만). ' +
+        '사용자가 "지금 (이 프로젝트) 연결됐어? / 어떤 프로젝트로 연결돼 있어?" 라고 물으면 이 도구로 답한다.',
+      inputSchema: {
+        path: z.string().optional().describe('git 작업 폴더 경로(생략 시 설정 projectRoot·현재 경로로 자동 식별)'),
+      },
+    },
+    (args) =>
+      guard(async () => {
+        if (!project) return ok({ enabled: false, message: '프로젝트 문맥 비활성(설정 없음).' });
+        const resolved = project.detect(args.path);
+        if (!resolved) {
+          return ok({ detected: false, message: 'git 저장소를 찾지 못했습니다. path 로 작업 폴더를 지정하세요.' });
+        }
+        const insp = project.inspectConsent(resolved);
+        const { state, label } = describeConnection(insp);
+        return ok({
+          projectKey: resolved.projectKey,
+          gitRoot: resolved.gitRoot,
+          remote: resolved.remote,
+          connected: insp.connected,
+          state,
+          since: insp.connected ? insp.since : null,
+          message: label,
+        });
       }),
   );
 

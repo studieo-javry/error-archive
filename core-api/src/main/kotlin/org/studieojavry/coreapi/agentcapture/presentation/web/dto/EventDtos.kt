@@ -81,3 +81,11 @@ data class AgentEventListResponse(
     @Schema(description = "더 오래된 이벤트가 더 있는지")
     val hasNext: Boolean = false,
 )
+
+@Schema(
+    description = "(PR-5 E) 봉인 후 뒤늦게 도착해 이 Capture 에 연결되지 못한, 같은 세션의 미연결 이벤트(고아 근거) 목록. " +
+        "리뷰에서 선택해 연결할 후보. 세션의 전체 미연결분이라 페이지네이션 없음.",
+)
+data class CaptureOrphanEventsResponse(
+    val items: List<AgentEventSummaryResponse>,
+)

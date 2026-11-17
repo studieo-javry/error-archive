@@ -47,6 +47,17 @@ export interface FlushOptions {
   /** (Phase3) 토큰-ns 동의 인덱스로 각 이벤트의 승인을 전송 직전 재검사. 미설정이면 재검사 생략(하위호환). */
   consentNamespace?: string;
   consentPath?: string;
+  /**
+   * (PR-4) 이번 flush 로 전송 시도할 이벤트 상한(예산). 미설정이면 전량.
+   * 조회직전 flush 가 대량 적체를 다 밀어내느라 조회를 지연시키지 않도록 상한을 둔다 — 초과분은 pending 으로
+   * 남아 백그라운드 주기 flush 가 처리하고, 호출측은 FlushResult.pending 으로 잔여를 안다.
+   */
+  maxEvents?: number;
+  /**
+   * (PR-4) true 면 **최신(observedAt 큰) 이벤트부터** 전송. readAll 은 오래된→최신 순이라, 예산이 걸린
+   * 조회직전 flush 에서 '방금 터진 오류'의 최신 근거가 먼저 서버에 반영되게 한다.
+   */
+  newestFirst?: boolean;
 }
 
 export async function flushQueue(client: ApiClient, queue: EventQueue, opts: FlushOptions = {}): Promise<FlushResult> {
@@ -74,9 +85,16 @@ export async function flushQueue(client: ApiClient, queue: EventQueue, opts: Flu
     if (pending.length === 0) return { sent: 0, rejected: 0, dropped, pending: queue.size() };
   }
 
+  // (PR-4) 전송 순서·예산. newestFirst 면 최신부터(readAll 은 오래된→최신이라 뒤집음), maxEvents 로 상한.
+  //  초과분은 보내지 않고 pending 에 남긴다(아래 queue.size() 에 반영 → 호출측이 잔여를 안다).
+  let toSend = opts.newestFirst ? [...pending].reverse() : pending;
+  if (opts.maxEvents != null && toSend.length > opts.maxEvents) {
+    toSend = toSend.slice(0, opts.maxEvents);
+  }
+
   let sent = 0;
   let rejected = 0;
-  for (const batch of toBatches(pending)) {
+  for (const batch of toBatches(toSend)) {
     let response;
     try {
       response = await client.ingestEvents({ events: batch.map(stripLocal) }); // _local 은 서버로 보내지 않음

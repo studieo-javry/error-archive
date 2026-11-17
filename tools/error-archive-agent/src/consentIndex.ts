@@ -26,6 +26,11 @@ export interface ConsentRecord {
   updatedAt: string;
   /** SNOOZED 일 때 보류 범위인 Claude Code 세션 id(세션 단위). 그 외 상태엔 없음/null. */
   snoozeSessionId?: string | null;
+  /**
+   * "연결 완료" 안내를 1회 노출했음을 기록한 시각(ISO). 설정돼 있으면 이후 세션엔 확인 안내를 다시 띄우지 않는다.
+   * setConsent(재승인) 는 레코드를 새로 써서 이 값을 떨어뜨리므로, 재연결하면 다시 1회만 노출된다.
+   */
+  connectAckAt?: string | null;
 }
 
 /** namespace -> gitRoot -> record */
@@ -112,6 +117,19 @@ export function setConsent(
   ns[record.gitRoot] = saved;
   persist(path, store);
   return saved;
+}
+
+/**
+ * "연결 완료" 안내를 1회 노출했음을 기록(connectAckAt=now). 기존 레코드의 다른 필드는 보존한다.
+ * 레코드가 없으면 no-op. 재승인(setConsent)으로 레코드가 새로 써지면 이 값이 사라져 다시 1회 노출된다.
+ */
+export function markConnectAck(namespace: string, gitRoot: string, opts: ConsentOptions = {}): void {
+  const path = opts.path ?? defaultConsentIndexPath();
+  const store = load(path);
+  const rec = store[namespace]?.[gitRoot];
+  if (!rec) return;
+  rec.connectAckAt = new Date().toISOString();
+  persist(path, store);
 }
 
 /** 레코드 삭제(→ UNAPPROVED). 연결 해제 시 수집 즉시 중단. */

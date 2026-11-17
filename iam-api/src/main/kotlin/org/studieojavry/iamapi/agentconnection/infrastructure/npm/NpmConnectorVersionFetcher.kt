@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.studieojavry.iamapi.agentconnection.application.port.ConnectorVersionSource
 import org.studieojavry.iamapi.agentconnection.config.AgentConnectorProperties
+import java.net.URI
 import java.time.Duration
 
 /**
@@ -28,11 +29,13 @@ class NpmConnectorVersionFetcher(
     override fun fetchLatest(): String? {
         val token = properties.npmToken
         if (token.isNullOrBlank()) return null // 비공개 패키지 — 읽기 토큰 없으면 조회 불가
-        val encodedName = properties.packageName.replace("/", "%2F") // @error-archive%2Fagent
+        // 미리 %2F 로 인코딩하면 RestClient 의 uri 템플릿이 '%' 를 또 인코딩해 %252F 가 되고 npm 이 405 를 반환한다.
+        // java.net.URI 로 직접 만들어 넘기면(템플릿 처리 우회) 스코프 패키지의 '/' 가 그대로 전달돼 정상 조회된다.
+        val uri = URI.create("${properties.npmRegistryUrl.trimEnd('/')}/${properties.packageName}")
         return try {
             val body =
                 restClient.get()
-                    .uri("${properties.npmRegistryUrl.trimEnd('/')}/$encodedName")
+                    .uri(uri)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer $token")
                     .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                     .retrieve()

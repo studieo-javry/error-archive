@@ -188,3 +188,23 @@ test('(PR-4) newestFirst: 최신 이벤트부터 전송(조회에 바로 보이�
     cleanup();
   }
 });
+
+test('(PR-4) 두 flush 동시 실행 — per-file + 멱등으로 유실·크래시 없음(분리 single-flight 트레이드오프)', async () => {
+  const { q, cleanup } = tempQueue();
+  try {
+    for (let i = 0; i < 50; i++) q.enqueue(ev(`c${String(i).padStart(3, '0')}`));
+    const seen = new Set<string>();
+    const client = clientWith(async (req) => {
+      await new Promise((r) => setTimeout(r, 1)); // 두 flush 의 실제 겹침 재현
+      for (const e of req.events) seen.add(e.clientEventId);
+      return { results: req.events.map((e) => ({ clientEventId: e.clientEventId, result: 'ACCEPTED' })) };
+    });
+    // 주기 flush 와 조회직전 flush 가 분리된 뒤엔 둘이 동시에 같은 큐를 비울 수 있다.
+    const [a, b] = await Promise.all([flushQueue(client, q), flushQueue(client, q)]);
+    assert.equal(q.size(), 0, '동시 flush 후 큐 완전히 비움(유실 없음)');
+    assert.equal(seen.size, 50, '모든 이벤트가 최소 한 번은 서버로 전송됨');
+    assert.ok(a.sent + b.sent >= 50, '중복 전송은 허용(멱등) — 합계 ≥ 전체'); // 트레이드오프: 중복 가능
+  } finally {
+    cleanup();
+  }
+});

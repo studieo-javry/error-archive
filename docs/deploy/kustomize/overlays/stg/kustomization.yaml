@@ -74,7 +74,7 @@ images:
   newTag: c04cce024e9718cdfa30669e79292dd3ed712aca
 - name: iam-api
   newName: ghcr.io/studieo-javry/iam-api
-  newTag: 7a3938a46e4c268897c1a380f45a42668b1b8f96
+  newTag: 56339937a1d740a2e5347f2c81303618d03085e5
 - name: insight-api
   newName: ghcr.io/studieo-javry/insight-api
   newTag: d6f899a1d35f523da18e4e3758446589f2772855

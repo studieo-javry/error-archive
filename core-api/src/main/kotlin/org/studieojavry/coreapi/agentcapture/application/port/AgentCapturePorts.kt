@@ -54,13 +54,17 @@ interface CaptureEventRepositoryPort {
     fun save(event: CaptureEvent): CaptureEvent
 
     /**
-     * 본인 소유 이벤트를 상태별 조회(선택적 sessionId 필터). AI 가 어떤 이벤트를 Capture 에 연결할지
-     * 판단하기 위한 후보 조회(B). observedAt DESC. 인덱스 ix_capture_event_owner_status 활용.
+     * 본인 소유 **이 연결(connectionId)** 의 상태별 이벤트 후보 조회(선택적 sessionId 필터).
+     * 연결 스코프로 좁혀 링크 API(connectionId 기준)와 범위를 일치시킨다 — 조회된 건 전부 연결 가능.
+     * id DESC(최신 인입 우선) + keyset cursor(cursorId 미만의 id). limit 만큼 반환.
+     * 인덱스 ix_capture_event_owner_conn_status_id 활용.
      */
-    fun findByOwnerAndStatus(
+    fun findCandidateEvents(
         ownerUserId: Long,
+        connectionId: UUID,
         status: CaptureEventStatus,
         sessionId: String?,
+        cursorId: Long?,
         limit: Int,
     ): List<CaptureEvent>
 }

@@ -1,6 +1,7 @@
 package org.studieojavry.coreapi.agentcapture.presentation.web
 
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -40,11 +41,12 @@ class AgentEventController(
 
     @Operation(
         summary = "미분류 이벤트 조회",
-        description = "본인 소유 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 " +
-            "판단하기 위한 후보. sessionId 로 현재 세션만 좁힐 수 있다. 조회는 연결하지 않는다.",
+        description = "본인 소유 **이 연결** 의 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 " +
+            "연결할지 판단하기 위한 후보. 조회 범위는 링크 API(연결 기준)와 동일해 조회된 건 전부 연결 가능하다. " +
+            "sessionId 로 현재 세션만 좁힐 수 있고, cursor 로 과거까지 이어 조회한다(응답 nextCursor 를 다음 cursor 로). 조회는 연결하지 않는다.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "200", description = "성공(nextCursor 가 null 이면 더 없음)"),
         ApiResponse(responseCode = "403", description = "capture:read 스코프 없음"),
     )
     @GetMapping
@@ -52,12 +54,22 @@ class AgentEventController(
         principal: AgentPrincipal,
         @RequestParam(required = false, defaultValue = "UNCLASSIFIED") status: String,
         @RequestParam(required = false) sessionId: String?,
+        @Parameter(description = "keyset cursor — 이전 응답의 nextCursor. 이 값 미만의 더 오래된 이벤트를 조회.")
+        @RequestParam(required = false) cursor: Long?,
         @RequestParam(defaultValue = "30") limit: Int,
     ): AgentEventListResponse {
         principal.requireScope(AgentScopes.CAPTURE_READ)
         val st = runCatching { CaptureEventStatus.valueOf(status.uppercase()) }.getOrDefault(CaptureEventStatus.UNCLASSIFIED)
-        val items = listEvents.invoke(principal.userId, st, sessionId?.takeIf { it.isNotBlank() }, limit.coerceIn(1, 100))
-        return AgentEventListResponse(items.map(::toSummary))
+        val page =
+            listEvents.invoke(
+                ownerUserId = principal.userId,
+                connectionId = UUID.fromString(principal.connectionId),
+                status = st,
+                sessionId = sessionId?.takeIf { it.isNotBlank() },
+                cursorId = cursor,
+                limit = limit.coerceIn(1, 100),
+            )
+        return AgentEventListResponse(items = page.items.map(::toSummary), nextCursor = page.nextCursor, hasNext = page.hasNext)
     }
 
     private fun toSummary(e: CaptureEvent): AgentEventSummaryResponse = AgentEventSummaryResponse(

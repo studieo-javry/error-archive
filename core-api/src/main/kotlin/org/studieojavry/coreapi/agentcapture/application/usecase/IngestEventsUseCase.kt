@@ -103,16 +103,33 @@ enum class EventResultType { ACCEPTED, DUPLICATE, REJECTED }
 data class EventOutcome(val clientEventId: String, val result: EventResultType, val reason: String? = null)
 
 /**
- * 본인 소유 이벤트를 상태별 조회(B) — AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보.
- * 기본 status=UNCLASSIFIED, 선택 sessionId 필터. 연결은 하지 않는다(판단·연결은 호출측 AI + 링크 API).
+ * 본인 소유 **이 연결(connectionId)** 의 상태별 이벤트 후보 조회(B) — AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보.
+ * 기본 status=UNCLASSIFIED, 선택 sessionId 필터. 연결 스코프로 좁혀 링크 API 와 범위를 일치시킨다(보이는 건 전부 연결 가능).
+ * keyset cursor(cursorId) 로 과거까지 이어 조회 가능. 연결은 하지 않는다(판단·연결은 호출측 AI + 링크 API).
  */
 @Service
 class ListAgentEventsUseCase(
     private val events: CaptureEventRepositoryPort,
 ) {
+    /** 한 페이지 결과. nextCursor 를 다음 조회의 cursor 로 넘기면 더 오래된 이벤트를 잇는다. */
+    data class Page(val items: List<CaptureEvent>, val nextCursor: Long?, val hasNext: Boolean)
+
     @Transactional(readOnly = true)
-    fun invoke(ownerUserId: Long, status: CaptureEventStatus, sessionId: String?, limit: Int): List<CaptureEvent> =
-        events.findByOwnerAndStatus(ownerUserId, status, sessionId, limit.coerceIn(1, MAX_LIMIT))
+    fun invoke(
+        ownerUserId: Long,
+        connectionId: UUID,
+        status: CaptureEventStatus,
+        sessionId: String?,
+        cursorId: Long?,
+        limit: Int,
+    ): Page {
+        val capped = limit.coerceIn(1, MAX_LIMIT)
+        // limit+1 로 한 건 더 조회해 다음 페이지 존재 여부(hasNext)를 판정한다.
+        val rows = events.findCandidateEvents(ownerUserId, connectionId, status, sessionId, cursorId, capped + 1)
+        val hasNext = rows.size > capped
+        val items = if (hasNext) rows.take(capped) else rows
+        return Page(items = items, nextCursor = if (hasNext) items.last().id else null, hasNext = hasNext)
+    }
 
     private companion object {
         const val MAX_LIMIT = 100

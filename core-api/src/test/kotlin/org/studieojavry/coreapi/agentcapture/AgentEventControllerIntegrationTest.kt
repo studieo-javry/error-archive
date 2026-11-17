@@ -150,6 +150,50 @@ class AgentEventControllerIntegrationTest {
             .andExpect(jsonPath("$.items[?(@.clientEventId=='o3')]").doesNotExist())
     }
 
+    private fun agentConn(c: String, scopes: List<String> = listOf("capture:read", "capture:write")) =
+        authentication(InternalAuthentication(userId, scopes.map { SimpleGrantedAuthority("SCOPE_$it") }, "gateway", c, scopes))
+
+    private fun batchConn(c: String, vararg events: Map<String, Any?>) =
+        post("/api/v1/agent/events/batch").with(agentConn(c))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(om.writeValueAsString(mapOf("events" to events.toList())))
+
+    @Test
+    fun `같은 사용자라도 다른 연결의 이벤트는 조회에서 제외(연결 스코프)`() {
+        val connA = UUID.randomUUID().toString()
+        val connB = UUID.randomUUID().toString()
+        mvc.perform(batchConn(connA, event("a1", mapOf("tool" to "bash")))).andExpect(status().isOk)
+        mvc.perform(batchConn(connB, event("b1", mapOf("tool" to "edit")))).andExpect(status().isOk)
+        // 연결 A 로 조회 → a1 만, 다른 연결 b1 제외 — 링크 API(연결 기준)와 범위 일치(보이는 건 전부 연결 가능)
+        mvc.perform(get("/api/v1/agent/events").with(agentConn(connA, listOf("capture:read"))))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='a1')]").exists())
+            .andExpect(jsonPath("$.items[?(@.clientEventId=='b1')]").doesNotExist())
+    }
+
+    @Test
+    fun `커서 페이지네이션 — limit 로 나눠 nextCursor 로 과거까지 조회`() {
+        val c = UUID.randomUUID().toString()
+        mvc.perform(batchConn(c, event("c1", mapOf("i" to 1)), event("c2", mapOf("i" to 2)), event("c3", mapOf("i" to 3))))
+            .andExpect(status().isOk)
+        // 1페이지(limit=2) → 2건 + hasNext=true + nextCursor
+        val first = mvc.perform(get("/api/v1/agent/events").with(agentConn(c, listOf("capture:read"))).queryParam("limit", "2"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.hasNext").value(true))
+            .andExpect(jsonPath("$.nextCursor").isNumber)
+            .andReturn()
+        val cursor = (om.readValue(first.response.contentAsString, Map::class.java)["nextCursor"] as Number).toLong()
+        // 2페이지(cursor) → 나머지 1건 + hasNext=false
+        mvc.perform(
+            get("/api/v1/agent/events").with(agentConn(c, listOf("capture:read")))
+                .queryParam("limit", "2").queryParam("cursor", cursor.toString()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.hasNext").value(false))
+    }
+
     @Test
     fun `조회는 capture-read 필요 — 없으면 403`() {
         mvc.perform(get("/api/v1/agent/events").with(agent(listOf("capture:write"))))

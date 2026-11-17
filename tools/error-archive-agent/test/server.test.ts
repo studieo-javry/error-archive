@@ -264,6 +264,28 @@ test('capture_list_events: 조회 전 flush 하고 UNCLASSIFIED 를 sessionId �
   assert.ok(Array.isArray(payload.items));
 });
 
+test('capture_list_events: cursor 를 서버로 전달하고 nextCursor/hasNext 를 응답에 통과', async () => {
+  let gotCursor: number | undefined;
+  const { client } = fakeClient({
+    listEvents: async (_status, _sessionId, _limit, cursor) => {
+      gotCursor = cursor;
+      return {
+        items: [{ clientEventId: 'E1', eventType: 'PostToolUse:Bash', sessionId: 's1', observedAt: 't', toolCallId: null, truncated: false, status: 'UNCLASSIFIED', redactedPayload: {} }],
+        nextCursor: 40,
+        hasNext: true,
+      };
+    },
+  });
+  const mcp = await connect(client);
+  const res = (await mcp.callTool({ name: 'capture_list_events', arguments: { cursor: 42 } })) as {
+    content: Array<{ type: string; text?: string }>;
+  };
+  assert.equal(gotCursor, 42, 'cursor 가 서버 조회로 전달됨');
+  const payload = JSON.parse(res.content[0].text ?? '{}');
+  assert.equal(payload.nextCursor, 40); // 다음 페이지 cursor 통과
+  assert.equal(payload.hasNext, true);
+});
+
 test('capture_list_events: sessionId 생략 → 현재 세션 id 자동 주입(주)', async () => {
   let listed: { sessionId?: string } | null = null;
   const { client } = fakeClient({

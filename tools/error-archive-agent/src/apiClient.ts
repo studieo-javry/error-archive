@@ -103,7 +103,7 @@ export interface ApiClient {
   /** Hook 이벤트 배치 적재(미분류 인박스). per-event clientEventId 로 멱등. */
   ingestEvents(req: EventBatchRequest): Promise<EventBatchResponse>;
   /** 본인 미분류 이벤트 조회(AI 판단 후보). status 기본 UNCLASSIFIED, sessionId 선택. */
-  listEvents(status?: string, sessionId?: string, limit?: number): Promise<AgentEventListResponse>;
+  listEvents(status?: string, sessionId?: string, limit?: number, cursor?: number): Promise<AgentEventListResponse>;
   /** AI 가 선택한 이벤트만 OPEN Capture 에 연결(이미 타 Capture 소속은 skipped). */
   linkEvents(captureUuid: string, clientEventIds: string[]): Promise<LinkEventsResponse>;
 }
@@ -265,11 +265,12 @@ export function createApiClient(config: AgentConfig, fetchImpl?: FetchLike, clie
     ingestEvents: (req) =>
       request<EventBatchResponse>({ method: 'POST', path: '/api/v1/agent/events/batch', body: req }),
 
-    listEvents: (status, sessionId, limit) => {
+    listEvents: (status, sessionId, limit, cursor) => {
       const qs = new URLSearchParams();
       if (status != null) qs.set('status', status);
       if (sessionId != null && sessionId !== '') qs.set('sessionId', sessionId);
       if (limit != null) qs.set('limit', String(limit));
+      if (cursor != null) qs.set('cursor', String(cursor));
       const suffix = qs.toString() ? `?${qs}` : '';
       return request<AgentEventListResponse>({ method: 'GET', path: `/api/v1/agent/events${suffix}` });
     },

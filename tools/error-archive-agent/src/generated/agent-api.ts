@@ -262,7 +262,7 @@ export interface paths {
         };
         /**
          * 미분류 이벤트 조회
-         * @description 본인 소유 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보. sessionId 로 현재 세션만 좁힐 수 있다. 조회는 연결하지 않는다.
+         * @description 본인 소유 **이 연결** 의 이벤트를 상태별 조회(기본 UNCLASSIFIED). AI 가 어떤 이벤트를 Capture 에 연결할지 판단하기 위한 후보. 조회 범위는 링크 API(연결 기준)와 동일해 조회된 건 전부 연결 가능하다. sessionId 로 현재 세션만 좁힐 수 있고, cursor 로 과거까지 이어 조회한다(응답 nextCursor 를 다음 cursor 로). 조회는 연결하지 않는다.
          */
         get: operations["list"];
         put?: never;
@@ -410,14 +410,20 @@ export interface components {
             evidenceRefs: string[];
         };
         JsonNode: {
-            valueNode?: boolean;
             container?: boolean;
-            missingNode?: boolean;
+            float?: boolean;
+            object?: boolean;
+            string?: boolean;
+            empty?: boolean;
+            array?: boolean;
+            number?: boolean;
+            null?: boolean;
+            valueNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            string?: boolean;
-            integralNumber?: boolean;
+            missingNode?: boolean;
             pojo?: boolean;
+            integralNumber?: boolean;
             floatingPointNumber?: boolean;
             short?: boolean;
             int?: boolean;
@@ -429,12 +435,6 @@ export interface components {
             textual?: boolean;
             boolean?: boolean;
             binary?: boolean;
-            number?: boolean;
-            null?: boolean;
-            object?: boolean;
-            float?: boolean;
-            empty?: boolean;
-            array?: boolean;
             embeddedValue?: boolean;
         };
         /** @description 배치 적재 결과. HTTP 200 이어도 개별 이벤트는 REJECTED 일 수 있다. */
@@ -618,9 +618,16 @@ export interface components {
             connectionId: string;
             scopes: string[];
         };
-        /** @description 미분류 이벤트 조회 목록. */
+        /** @description 이벤트 후보 조회 목록(이 연결 스코프, keyset cursor 페이지). */
         AgentEventListResponse: {
             items: components["schemas"]["AgentEventSummaryResponse"][];
+            /**
+             * Format: int64
+             * @description 다음 페이지 cursor — 이 값을 cursor 로 다시 조회하면 더 오래된 이벤트를 잇는다. 더 없으면 null.
+             */
+            nextCursor?: number | null;
+            /** @description 더 오래된 이벤트가 더 있는지 */
+            hasNext: boolean;
         };
         /** @description 미분류 이벤트 조회 결과 1건(AI 가 Capture 연결 여부를 판단하기 위한 후보). */
         AgentEventSummaryResponse: {
@@ -1369,6 +1376,8 @@ export interface operations {
                 principal: components["schemas"]["AgentPrincipal"];
                 status?: string;
                 sessionId?: string;
+                /** @description keyset cursor — 이전 응답의 nextCursor. 이 값 미만의 더 오래된 이벤트를 조회. */
+                cursor?: number;
                 limit?: number;
             };
             header?: never;
@@ -1377,7 +1386,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 성공 */
+            /** @description 성공(nextCursor 가 null 이면 더 없음) */
             200: {
                 headers: {
                     [name: string]: unknown;

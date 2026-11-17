@@ -50,6 +50,7 @@ export interface FlushOptions {
 }
 
 export async function flushQueue(client: ApiClient, queue: EventQueue, opts: FlushOptions = {}): Promise<FlushResult> {
+  queue.migrateLegacy(); // 구버전 공유 JSONL 이 있으면 이벤트별 파일로 이관(멱등 — flush 마다 재호출 안전)
   const all = queue.readAll();
   if (all.length === 0) return { sent: 0, rejected: 0, dropped: 0, pending: 0 };
 
@@ -89,7 +90,8 @@ export async function flushQueue(client: ApiClient, queue: EventQueue, opts: Flu
         done.add(r.clientEventId);
         sent += 1;
       } else if (r.result === 'REJECTED') {
-        done.add(r.clientEventId);
+        // REJECTED 는 doneIds 에 넣지 않는다 — doneIds 는 '삭제' 대상이라, 삭제 후 dead-letter 기록 전에 죽으면
+        // 유실된다. rejected 로만 넘겨 remove 가 pending→rejected 로 **원자적 이동(rename)** 하게 한다(무유실).
         const ev = batch.find((e) => e.clientEventId === r.clientEventId);
         if (ev) rej.push(ev);
         rejected += 1;

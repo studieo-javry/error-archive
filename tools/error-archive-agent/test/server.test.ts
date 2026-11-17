@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { ApiClient } from '../src/apiClient.js';
 import { ApiError } from '../src/apiClient.js';
+import type { FlushResult } from '../src/eventSender.js';
 import { idempotencyKeyFor } from '../src/idempotency.js';
 import { ProjectContext } from '../src/projectContext.js';
 import { createServer } from '../src/server.js';
@@ -54,7 +55,7 @@ function fakeClient(overrides: Partial<ApiClient> = {}) {
 
 async function connect(
   api: ApiClient,
-  flushEvents?: () => Promise<void>,
+  flushEvents?: () => Promise<FlushResult>,
   project?: { currentSessionId(): string | undefined },
 ): Promise<Client> {
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -246,11 +247,21 @@ test('capture_list_events: 조회 전 flush 하고 UNCLASSIFIED 를 sessionId �
     },
   });
   let flushed = false;
-  const mcp = await connect(client, async () => { flushed = true; });
-  await mcp.callTool({ name: 'capture_list_events', arguments: { sessionId: 's1' } });
+  const mcp = await connect(client, async () => {
+    flushed = true;
+    return { sent: 2, rejected: 0, dropped: 0, pending: 3 };
+  });
+  const res = (await mcp.callTool({ name: 'capture_list_events', arguments: { sessionId: 's1' } })) as {
+    content: Array<{ type: string; text?: string }>;
+  };
   assert.equal(flushed, true); // 조회 전 flush
   assert.equal(listed!.status, 'UNCLASSIFIED');
   assert.equal(listed!.sessionId, 's1');
+  // flush 결과가 응답 sync 로 전달돼 미전송(pending) 건수를 AI 가 알 수 있다.
+  const payload = JSON.parse(res.content[0].text ?? '{}');
+  assert.equal(payload.sync.pending, 3);
+  assert.equal(payload.sync.rejected, 0);
+  assert.ok(Array.isArray(payload.items));
 });
 
 test('capture_list_events: sessionId 생략 → 현재 세션 id 자동 주입(주)', async () => {

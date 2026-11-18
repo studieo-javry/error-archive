@@ -1,0 +1,60 @@
+name: backend-ci
+
+# PR 품질 게이트 — PR 이 열리거나 갱신될 때 바뀐 백엔드 서비스의 테스트를 돌린다.
+# 배포(release-stg)는 alpha 머지 때만 돈다. 여기선 빌드/배포 없이 테스트만 — 미머지 코드가 배포되지 않도록.
+on:
+  pull_request:
+    paths:
+      - 'gateway/**'
+      - 'iam-api/**'
+      - 'core-api/**'
+      - 'noti-api/**'
+      - 'insight-api/**'
+      - 'publish-api/**'
+      - 'shared-**/**'
+      - '*.gradle.kts'
+      - '.github/workflows/backend-ci.yml'
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1) 바뀐 서비스 결정(paths-filter 는 PR base 와 비교). shared/*.gradle.kts 변경은 전체에 반영.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            gateway:     [ 'gateway/**',     'shared-**/**', '*.gradle.kts' ]
+            iam-api:     [ 'iam-api/**',     'shared-**/**', '*.gradle.kts' ]
+            core-api:    [ 'core-api/**',    'shared-**/**', '*.gradle.kts' ]
+            noti-api:    [ 'noti-api/**',    'shared-**/**', '*.gradle.kts' ]
+            insight-api: [ 'insight-api/**', 'shared-**/**', '*.gradle.kts' ]
+            publish-api: [ 'publish-api/**', 'shared-**/**', '*.gradle.kts' ]
+
+  # 2) 바뀐 서비스만 테스트(배포 없음). release-stg 의 test 게이트와 동일 환경·명령.
+  #    composite build 라 :<svc>:test 가 각 included build 로 위임됨. fail-fast:false = 서비스별 독립.
+  test:
+    needs: detect
+    if: ${{ needs.detect.outputs.services != '[]' && needs.detect.outputs.services != '' }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        svc: ${{ fromJSON(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: test
+        run: ./gradlew :${{ matrix.svc }}:test --no-daemon

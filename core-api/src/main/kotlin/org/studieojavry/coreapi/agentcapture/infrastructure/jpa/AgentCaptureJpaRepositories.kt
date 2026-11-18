@@ -129,6 +129,13 @@ interface CaptureSessionLinkJpaRepository : JpaRepository<CaptureSessionLinkEnti
 
     @Query("select l.captureId from CaptureSessionLinkEntity l where l.sessionId = :sessionId")
     fun captureIdsBySessionId(@Param("sessionId") sessionId: Long): List<Long>
+
+    /** (PR-5 E) 이 Capture 에 연결된 세션들의 clientSessionId(링크⋈세션). 보통 1개. */
+    @Query(
+        "select s.clientSessionId from CaptureSessionLinkEntity l, CaptureSessionEntity s " +
+            "where l.captureId = :captureId and s.id = l.sessionId",
+    )
+    fun clientSessionIdsByCaptureId(@Param("captureId") captureId: Long): List<String>
 }
 
 interface IdempotencyReceiptJpaRepository : JpaRepository<IdempotencyReceiptEntity, Long> {
@@ -162,6 +169,18 @@ interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
         @Param("sessionId") sessionId: String?,
         @Param("cursorId") cursorId: Long?,
         pageable: Pageable,
+    ): List<CaptureEventEntity>
+
+    /** (PR-5 E) 이 세션의 미연결 이벤트 전체(status=UNCLASSIFIED ⇒ captureId null). 최신 우선. */
+    @Query(
+        "SELECT e FROM CaptureEventEntity e WHERE e.ownerUserId = :owner AND e.connectionId = :conn " +
+            "AND e.sessionId = :sessionId AND e.status = :status ORDER BY e.id DESC",
+    )
+    fun findUnlinkedBySession(
+        @Param("owner") owner: Long,
+        @Param("conn") connectionId: UUID,
+        @Param("sessionId") sessionId: String,
+        @Param("status") status: CaptureEventStatus,
     ): List<CaptureEventEntity>
 }
 

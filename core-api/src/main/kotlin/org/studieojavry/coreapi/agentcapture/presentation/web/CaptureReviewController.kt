@@ -28,6 +28,8 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.StepEdit
 import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureHistoryUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.CaptureMetricsUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureOrphanEventsUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.AttachReviewEventsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureCommand
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureUseCase
@@ -42,6 +44,12 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ImportCaptureR
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureMetricsResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ReviewQueueResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SolutionResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentEventSummaryResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureOrphanEventsResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsRequest
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsResponse
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
+import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
 /**
@@ -62,7 +70,10 @@ class CaptureReviewController(
     private val discardCapture: DiscardCaptureUseCase,
     private val restoreCapture: RestoreCaptureUseCase,
     private val captureMetrics: CaptureMetricsUseCase,
+    private val listOrphanEvents: ListCaptureOrphanEventsUseCase,
+    private val attachReviewEvents: AttachReviewEventsUseCase,
     private val idempotency: IdempotencyService,
+    private val objectMapper: ObjectMapper,
 ) {
 
     @Operation(
@@ -269,4 +280,56 @@ class CaptureReviewController(
         CaptureResponse.from(
             restoreCapture.invoke(RestoreCaptureCommand(captureUuid = captureUuid, reviewerUserId = userId)),
         )
+
+    @Operation(
+        summary = "봉인 후 고아 근거 조회 (리뷰 백스톱)",
+        description = """
+            봉인(READY_FOR_REVIEW) 후 뒤늦게 서버에 도착해 이 Capture 에 연결되지 못한, **같은 세션의
+            미연결 이벤트**를 반환한다. 커넥터가 force 로 봉인했거나 미전송분이 늦게 반영된 경우의 근거 공백을
+            리뷰에서 메우기 위한 후보. 이 Capture 가 생성된 세션 범위로만 좁힌다. 본인 소유만(아니면 404).
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공(없으면 빈 목록)"),
+        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+    )
+    @GetMapping("/{captureUuid}/orphan-events")
+    fun orphanEvents(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @PathVariable captureUuid: UUID,
+    ): CaptureOrphanEventsResponse =
+        CaptureOrphanEventsResponse(items = listOrphanEvents.invoke(captureUuid, userId).map(::toSummary))
+
+    @Operation(
+        summary = "고아 근거를 이 Capture 에 연결 (리뷰 백스톱)",
+        description = """
+            리뷰에서 선택한 고아 이벤트를 이 Capture 에 연결한다(사람 경로라 봉인된 초안에도 허용 — READY_FOR_REVIEW 에서만).
+            같은 세션·미연결 이벤트만 붙는다. linked=연결됨(멱등 포함), skipped=없음/타 Capture 소속/타 세션이라 제외.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공"),
+        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+        ApiResponse(responseCode = "409", description = "READY_FOR_REVIEW 아님(봉인 전/반영·폐기됨)", content = [Content()]),
+    )
+    @PostMapping("/{captureUuid}/orphan-events/link")
+    fun linkOrphanEvents(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @PathVariable captureUuid: UUID,
+        @Valid @RequestBody request: LinkEventsRequest,
+    ): LinkEventsResponse {
+        val r = attachReviewEvents.invoke(captureUuid, userId, request.clientEventIds)
+        return LinkEventsResponse(linked = r.linked, skipped = r.skipped)
+    }
+
+    private fun toSummary(e: CaptureEvent): AgentEventSummaryResponse = AgentEventSummaryResponse(
+        clientEventId = e.clientEventId,
+        eventType = e.eventType,
+        sessionId = e.sessionId,
+        observedAt = e.observedAt,
+        toolCallId = e.toolCallId,
+        truncated = e.truncated,
+        status = e.status.name,
+        redactedPayload = objectMapper.readTree(e.redactedPayload),
+    )
 }

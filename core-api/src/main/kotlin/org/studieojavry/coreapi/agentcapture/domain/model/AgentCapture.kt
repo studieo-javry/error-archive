@@ -33,6 +33,11 @@ class AgentCapture private constructor(
         if (!status.acceptsAgentWrites) throw CaptureSealedException(captureUuid)
     }
 
+    /** 사용자 검토 액션(봉인 후 뒤늦게 도착한 세션 근거 연결 등)은 READY_FOR_REVIEW 에서만. 그 외 409. */
+    fun requireReviewable() {
+        if (status != CaptureStatus.READY_FOR_REVIEW) throw CaptureNotReviewableException(captureUuid, status)
+    }
+
     /** expectedRevision 이 주어졌고 현재와 다르면 409. */
     fun requireRevision(expected: Int?) {
         if (expected != null && expected != revision) {

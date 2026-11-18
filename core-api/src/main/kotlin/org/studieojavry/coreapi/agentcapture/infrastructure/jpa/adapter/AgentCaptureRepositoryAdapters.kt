@@ -248,6 +248,9 @@ class CaptureSessionRepositoryAdapter(
     override fun linkedCaptureIds(sessionId: Long): Set<Long> =
         linkJpa.captureIdsBySessionId(sessionId).toSet()
 
+    override fun clientSessionIdsForCapture(captureId: Long): List<String> =
+        linkJpa.clientSessionIdsByCaptureId(captureId)
+
     override fun link(sessionId: Long, captureId: Long) {
         if (!linkJpa.existsBySessionIdAndCaptureId(sessionId, captureId)) {
             linkJpa.save(CaptureSessionLinkEntity(sessionId = sessionId, captureId = captureId))
@@ -405,6 +408,10 @@ class CaptureEventRepositoryAdapter(
         limit: Int,
     ): List<CaptureEvent> =
         jpa.findCandidates(ownerUserId, connectionId, status, sessionId, cursorId, org.springframework.data.domain.PageRequest.of(0, limit))
+            .map { it.toDomain() }
+
+    override fun findUnlinkedBySession(ownerUserId: Long, connectionId: java.util.UUID, sessionId: String): List<CaptureEvent> =
+        jpa.findUnlinkedBySession(ownerUserId, connectionId, sessionId, org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus.UNCLASSIFIED)
             .map { it.toDomain() }
 
     override fun save(event: CaptureEvent): CaptureEvent {

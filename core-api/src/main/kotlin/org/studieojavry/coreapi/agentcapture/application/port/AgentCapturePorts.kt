@@ -67,6 +67,12 @@ interface CaptureEventRepositoryPort {
         cursorId: Long?,
         limit: Int,
     ): List<CaptureEvent>
+
+    /**
+     * (PR-5 E) 리뷰 백스톱 — 이 세션의 **미연결(UNCLASSIFIED)** 이벤트 전체. 봉인 후 뒤늦게 도착해
+     * Capture 에 붙지 못한 '고아 근거'를 사람이 리뷰에서 붙일 후보로 노출한다. id DESC(최신 우선).
+     */
+    fun findUnlinkedBySession(ownerUserId: Long, connectionId: UUID, sessionId: String): List<CaptureEvent>
 }
 
 /** 프로젝트 바인딩(P1 토대). 소유자별 projectKey 유일. */
@@ -109,6 +115,9 @@ interface CaptureSessionRepositoryPort {
     fun link(sessionId: Long, captureId: Long)
     /** 이 세션에 연결된 Capture id 집합(진행 중 후보를 세션 범위로 좁힐 때). */
     fun linkedCaptureIds(sessionId: Long): Set<Long>
+
+    /** (PR-5 E) 이 Capture 에 연결된 세션들의 clientSessionId 집합(보통 1개 — 봉인 후 고아 이벤트를 세션 범위로 좁힐 때). */
+    fun clientSessionIdsForCapture(captureId: Long): List<String>
 }
 
 /**

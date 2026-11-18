@@ -97,6 +97,11 @@ export class EventQueue {
     return this.listJsonFiles(this.pendingDir).length;
   }
 
+  /** (PR-5) 이 세션의 미전송(pending) 이벤트 수 — 봉인 완결성 판단용. sessionId 태그 기준. */
+  pendingForSession(sessionId: string): number {
+    return this.readAll().filter((e) => e.sessionId === sessionId).length;
+  }
+
   /** 완료 id 파일 삭제 + rejected 는 rejected/ 로 이동(dead-letter). 모두 개별 파일 → 무간섭·멱등. */
   remove(doneIds: Set<string>, rejected: QueuedEvent[] = []): void {
     for (const id of doneIds) {

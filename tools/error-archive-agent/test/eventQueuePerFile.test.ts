@@ -207,3 +207,19 @@ test('실제 다중 프로세스 병렬 적재 — 전부 보존', async () => {
     assert.equal(q(dir).size(), PROCS * PER, '모든 프로세스의 이벤트가 유실 없이 저장됨');
   } finally { cleanup(); }
 });
+
+// PR-5: 세션별 미전송 수(봉인 완결성 판단용)
+test('pendingForSession — 해당 세션 이벤트만 카운트', () => {
+  const { dir, cleanup } = tmp();
+  try {
+    const evS = (id: string, sid: string) =>
+      ({ clientEventId: id, eventType: 'PostToolUse:Bash', localSequence: 1, observedAt: '2026-11-10T00:00:00Z', redactedPayload: {}, truncated: false, evidenceRefs: [], sessionId: sid }) as never;
+    const s = q(dir);
+    s.enqueue(evS('a1', 's1'));
+    s.enqueue(evS('a2', 's1'));
+    s.enqueue(evS('b1', 's2'));
+    assert.equal(s.pendingForSession('s1'), 2);
+    assert.equal(s.pendingForSession('s2'), 1);
+    assert.equal(s.pendingForSession('s3'), 0);
+  } finally { cleanup(); }
+});

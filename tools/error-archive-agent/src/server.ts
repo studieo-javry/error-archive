@@ -71,8 +71,25 @@ export function createServer(
   client: ApiClient,
   project?: ProjectContext,
   flushEvents?: () => Promise<FlushResult>,
+  /** (PR-5) 봉인 전 전량 flush — 조회직전 예산 flush 와 달리 남은 걸 다 밀어낸다. */
+  sealFlush?: () => Promise<FlushResult>,
+  /** (PR-5) 이 세션의 큐 미전송 수(전송 실패분) — 봉인 완결성 판단용. */
+  pendingForSession?: (sessionId: string) => number,
 ): McpServer {
   const server = new McpServer({ name: 'error-archive-agent', version: PKG_VERSION });
+
+  // (PR-5 D) AI 가 capture_list_events 로 '본' 이벤트의 clientEventId(세션별). 봉인 시 '아직 못 본' 서버
+  // 이벤트(=조회로 확인하지 못한 근거)를 감지해, 봤지만 일부러 안 붙인 것과 구분한다(무분별 넛지 방지).
+  const seenEventIds = new Map<string, Set<string>>();
+  const markSeen = (sessionId: string | undefined, ids: string[]): void => {
+    if (!sessionId) return;
+    let set = seenEventIds.get(sessionId);
+    if (!set) {
+      set = new Set<string>();
+      seenEventIds.set(sessionId, set);
+    }
+    for (const id of ids) set.add(id);
+  };
 
   server.registerTool(
     'diagnose',
@@ -404,20 +421,48 @@ export function createServer(
         '초안을 READY_FOR_REVIEW 로 봉인한다. 문제 해결 여부와 무관(해결/미해결 모두 봉인 가능 — 미해결은 조사 내용·미해결 사유를 남기고 봉인). ' +
         '참조한 근거(evidenceRefs)가 모두 업로드돼 있어야 한다(아니면 422). ' +
         '한 번의 문제 해결 작업(조사·수정·검증, 또는 조사 끝 미해결 결론)이 끝났을 때 봉인한다 — 사용자가 기록을 따로 요청하지 않아도 된다. ' +
-        '단, 아직 원인 조사 중이거나 사용자 결정(수정 방향)을 기다리는 중, 또는 단지 한 턴이 끝났다는 이유만으로 봉인하지 말 것(그 동안은 OPEN 유지).',
+        '단, 아직 원인 조사 중이거나 사용자 결정(수정 방향)을 기다리는 중, 또는 단지 한 턴이 끝났다는 이유만으로 봉인하지 말 것(그 동안은 OPEN 유지). ' +
+        '봉인 전 이 세션의 근거가 서버에 다 반영됐는지 확인한다 — 아직 전송되지 못했거나(미전송) 네가 조회로 ' +
+        '확인하지 못한(미확인) 이벤트가 있으면 **봉인하지 않고 sealed:false 를 돌려준다**. 그때는 잠시 후 ' +
+        'capture_list_events 로 재조회해 관련 이벤트를 link 한 뒤 다시 봉인하라. 오프라인이거나 남은 이벤트가 ' +
+        '이 오류와 무관하다고 판단하면 force=true 로 봉인할 수 있다(그 경우 미연결 근거는 리뷰 단계에서 붙일 수 있다).',
       inputSchema: {
         captureUuid: z.string().uuid(),
         expectedRevision: z.number().int().optional(),
+        force: z.boolean().optional().describe('미전송/미확인 근거가 있어도 봉인을 강행(오프라인·무관 판단 시).'),
       },
     },
     (args) =>
       guard(async () => {
+        // (PR-5 B+D) 봉인 완결성 — 전량 flush 후 이 세션의 미전송(local)·미확인(서버엔 왔으나 조회로 못 본) 근거를 점검.
+        const sessionId = project?.currentSessionId();
+        if (sealFlush) await sealFlush(); // B: 남은 로컬 이벤트를 다 서버로 밀어냄(예산 없는 전량)
+        const localPending = sessionId && pendingForSession ? pendingForSession(sessionId) : 0;
+        let unseenOnServer = 0;
+        if (sessionId) {
+          // D: 서버 UNCLASSIFIED 세션 이벤트 중 AI 가 capture_list_events 로 본 적 없는 것.
+          const serverEvents = await client.listEvents('UNCLASSIFIED', sessionId, 100);
+          const seen = seenEventIds.get(sessionId);
+          unseenOnServer = serverEvents.items.filter((e) => !seen?.has(e.clientEventId)).length;
+        }
+        if (!args.force && (localPending > 0 || unseenOnServer > 0)) {
+          return ok({
+            sealed: false,
+            reason: 'EVIDENCE_PENDING',
+            localPending,
+            unseenOnServer,
+            guidance:
+              '이 세션에 아직 서버로 전송되지 못했거나(미전송) 네가 조회로 확인하지 못한(미확인) 근거 이벤트가 있다. ' +
+              '봉인하면 이 Case 에 연결되지 못한 채 남는다. 잠시 후 capture_list_events 로 재조회해 관련 이벤트를 ' +
+              'link 한 뒤 다시 봉인하라. 오프라인이거나 남은 이벤트가 이 오류와 무관하면 force=true 로 봉인하라.',
+          });
+        }
         const sealed = await client.completeCapture(
           args.captureUuid,
           { expectedRevision: args.expectedRevision },
           idempotencyKeyFor('capture.complete', args.captureUuid),
         );
-        return ok({ captureUuid: sealed.captureUuid, status: sealed.status, revision: sealed.revision });
+        return ok({ sealed: true, captureUuid: sealed.captureUuid, status: sealed.status, revision: sealed.revision });
       }),
   );
 
@@ -562,6 +607,8 @@ export function createServer(
         // 이벤트는 원본 session_id 로 태깅되므로 파생 UUID 가 아니라 원본을 넘겨야 매칭된다(project.currentSessionId).
         const sessionId = args.sessionId ?? project?.currentSessionId();
         const res = await client.listEvents('UNCLASSIFIED', sessionId, args.limit, args.cursor);
+        // (PR-5 D) AI 가 본 이벤트로 기록 — 봉인 시 '아직 못 본' 근거만 넛지하기 위함.
+        markSeen(sessionId, res.items.map((e) => e.clientEventId));
         return ok({
           ...res,
           sync: flush ? { pending: flush.pending, rejected: flush.rejected } : undefined,

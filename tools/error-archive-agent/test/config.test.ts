@@ -46,6 +46,24 @@ test('환경변수가 없으면 설정 파일로 폴백한다', () => {
   assert.equal(cfg.token, 'eaa_fromfile');
 });
 
+test('(PR-4) 설정 파일의 timeoutMs 가 AgentConfig 까지 전파된다', () => {
+  const cfg = loadConfig({
+    env: {},
+    configPath: '/fake/config.json',
+    readFile: () => JSON.stringify({ baseUrl: 'https://x.com', token: 'eaa_1', timeoutMs: 30000 }),
+  });
+  assert.equal(cfg.timeoutMs, 30000); // loadConfig 반환 누락 회귀 방지(리뷰 지적)
+});
+
+test('(PR-4) timeoutMs 가 숫자가 아니거나 0 이하면 무시(undefined → apiClient 기본값)', () => {
+  const cfg = loadConfig({
+    env: {},
+    configPath: '/fake/config.json',
+    readFile: () => JSON.stringify({ baseUrl: 'https://x.com', token: 'eaa_1', timeoutMs: -5 }),
+  });
+  assert.equal(cfg.timeoutMs, undefined);
+});
+
 test('환경변수가 설정 파일보다 우선한다', () => {
   const cfg = loadConfig({
     env: { ERROR_ARCHIVE_AGENT_TOKEN: 'eaa_env' },

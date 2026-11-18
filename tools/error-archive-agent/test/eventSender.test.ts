@@ -143,3 +143,68 @@ test('flush(Phase3): _local 없는 레거시 이벤트는 그대로 전송', asy
     cleanup();
   }
 });
+
+// ── PR-4: 조회직전 flush 예산(maxEvents) + 최신 우선(newestFirst) ──────────────
+function evAt(id: string, observedAt: string): EventItemRequest {
+  return { ...ev(id), observedAt };
+}
+
+test('(PR-4) maxEvents: 예산만큼만 전송하고 초과분은 pending 유지', async () => {
+  const { q, cleanup } = tempQueue();
+  try {
+    for (let i = 0; i < 250; i++) q.enqueue(ev(`e${String(i).padStart(3, '0')}`));
+    let received = 0;
+    const client = clientWith(async (req) => {
+      received += req.events.length;
+      return { results: req.events.map((e) => ({ clientEventId: e.clientEventId, result: 'ACCEPTED' })) };
+    });
+    const r = await flushQueue(client, q, { maxEvents: 100 });
+    assert.equal(received, 100, '예산(100)만 전송 시도');
+    assert.equal(r.sent, 100);
+    assert.equal(r.pending, 150, '초과분 150 은 pending 유지(백그라운드가 처리)');
+    assert.equal(q.size(), 150);
+  } finally {
+    cleanup();
+  }
+});
+
+test('(PR-4) newestFirst: 최신 이벤트부터 전송(조회에 바로 보이게)', async () => {
+  const { q, cleanup } = tempQueue();
+  try {
+    q.enqueue(evAt('old', '2026-11-10T00:00:01Z'));
+    q.enqueue(evAt('mid', '2026-11-10T00:00:02Z'));
+    q.enqueue(evAt('new', '2026-11-10T00:00:03Z'));
+    const sentIds: string[] = [];
+    const client = clientWith(async (req) => {
+      for (const e of req.events) sentIds.push(e.clientEventId);
+      return { results: req.events.map((e) => ({ clientEventId: e.clientEventId, result: 'ACCEPTED' })) };
+    });
+    // 예산 1 + 최신우선 → 가장 최신('new')만 전송, 과거 둘은 pending 유지
+    const r = await flushQueue(client, q, { maxEvents: 1, newestFirst: true });
+    assert.deepEqual(sentIds, ['new']);
+    assert.equal(r.sent, 1);
+    assert.equal(q.size(), 2);
+  } finally {
+    cleanup();
+  }
+});
+
+test('(PR-4) 두 flush 동시 실행 — per-file + 멱등으로 유실·크래시 없음(분리 single-flight 트레이드오프)', async () => {
+  const { q, cleanup } = tempQueue();
+  try {
+    for (let i = 0; i < 50; i++) q.enqueue(ev(`c${String(i).padStart(3, '0')}`));
+    const seen = new Set<string>();
+    const client = clientWith(async (req) => {
+      await new Promise((r) => setTimeout(r, 1)); // 두 flush 의 실제 겹침 재현
+      for (const e of req.events) seen.add(e.clientEventId);
+      return { results: req.events.map((e) => ({ clientEventId: e.clientEventId, result: 'ACCEPTED' })) };
+    });
+    // 주기 flush 와 조회직전 flush 가 분리된 뒤엔 둘이 동시에 같은 큐를 비울 수 있다.
+    const [a, b] = await Promise.all([flushQueue(client, q), flushQueue(client, q)]);
+    assert.equal(q.size(), 0, '동시 flush 후 큐 완전히 비움(유실 없음)');
+    assert.equal(seen.size, 50, '모든 이벤트가 최소 한 번은 서버로 전송됨');
+    assert.ok(a.sent + b.sent >= 50, '중복 전송은 허용(멱등) — 합계 ≥ 전체'); // 트레이드오프: 중복 가능
+  } finally {
+    cleanup();
+  }
+});

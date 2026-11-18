@@ -69,6 +69,9 @@ class AttachmentRepositoryAdapter(
         jpa.findByErrorCaseIdIsNullAndUploadedByUserIdOrderByUploadedAtDesc(uploaderUserId, PageRequest.of(0, limit))
             .map { it.toDomain() }
 
+    override fun countUnlinkedOlderThan(threshold: Instant): Long =
+        jpa.countByErrorCaseIdIsNullAndUploadedAtBefore(threshold)
+
     private fun AttachmentEntity.toDomain(): Attachment = Attachment(
         markerId = markerId,
         title = title,

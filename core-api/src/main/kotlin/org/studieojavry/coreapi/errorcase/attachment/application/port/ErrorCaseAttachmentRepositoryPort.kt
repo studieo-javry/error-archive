@@ -31,6 +31,12 @@ interface ErrorCaseAttachmentRepositoryPort {
     fun findUnlinkedOlderThan(threshold: Instant, limit: Int): List<Attachment>
 
     /**
+     * 미연결(errorCaseId IS NULL) + threshold 이전 orphan row 수. orphan 백로그 관측(게이지)용.
+     * 정상 정상상태 ≈ 0 (GC 가 비움). 지속 상승 = GC/스토리지 삭제 실패 신호.
+     */
+    fun countUnlinkedOlderThan(threshold: Instant): Long
+
+    /**
      * 특정 업로더의 미연결(pending) 첨부를 최신순으로 limit 만큼 조회.
      * 작성 화면의 "이번에 올린 첨부" 트레이 재조회용(GET /error-attachments/mine?linked=false).
      * 인덱스: ix_attachment_uploader_orphan (uploaded_by_user_id, error_case_id).

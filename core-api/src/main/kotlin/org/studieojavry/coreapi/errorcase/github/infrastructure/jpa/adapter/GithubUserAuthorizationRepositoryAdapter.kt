@@ -28,11 +28,16 @@ class GithubUserAuthorizationRepositoryAdapter(
     @Transactional
     override fun save(authorization: GithubUserAuthorization): GithubUserAuthorization {
         val enc = cipher.encrypt(authorization.token)
+        val refreshEnc = authorization.refreshToken?.let { cipher.encrypt(it) }
         val entity = repository.findById(authorization.eaUserId).orElse(null)?.apply {
             githubUserId = authorization.githubUserId
             githubLogin = authorization.githubLogin
             tokenCiphertext = enc.ciphertext
             tokenIv = enc.iv
+            refreshTokenCiphertext = refreshEnc?.ciphertext
+            refreshTokenIv = refreshEnc?.iv
+            accessTokenExpiresAt = authorization.expiresAt
+            refreshTokenExpiresAt = authorization.refreshTokenExpiresAt
             updatedAt = authorization.updatedAt
         } ?: GithubUserAuthorizationEntity(
             eaUserId = authorization.eaUserId,
@@ -40,6 +45,10 @@ class GithubUserAuthorizationRepositoryAdapter(
             githubLogin = authorization.githubLogin,
             tokenCiphertext = enc.ciphertext,
             tokenIv = enc.iv,
+            refreshTokenCiphertext = refreshEnc?.ciphertext,
+            refreshTokenIv = refreshEnc?.iv,
+            accessTokenExpiresAt = authorization.expiresAt,
+            refreshTokenExpiresAt = authorization.refreshTokenExpiresAt,
             createdAt = authorization.createdAt,
             updatedAt = authorization.updatedAt,
         )
@@ -61,6 +70,18 @@ class GithubUserAuthorizationRepositoryAdapter(
                 log.warn(ex) { "github token decrypt failed for eaUserId=$eaUserId — treating as no stored token" }
                 return@let null
             }
+            // refresh 토큰 복호화 실패는 access 토큰 자체는 아직 유효할 수 있으니 치명적이지 않다 → refresh 만 비우고(갱신 불가),
+            // 만료 시점에 기존 폐기 경로로 재인가. access 토큰 복호화 실패(위)와 달리 행 전체를 버리지 않는다.
+            val refreshToken = if (e.refreshTokenCiphertext != null && e.refreshTokenIv != null) {
+                try {
+                    cipher.decrypt(GithubTokenCipher.Encrypted(e.refreshTokenIv!!, e.refreshTokenCiphertext!!))
+                } catch (ex: GeneralSecurityException) {
+                    log.warn(ex) { "github refresh token decrypt failed for eaUserId=$eaUserId — refresh disabled, re-auth on expiry" }
+                    null
+                }
+            } else {
+                null
+            }
             GithubUserAuthorization(
                 eaUserId = e.eaUserId,
                 githubUserId = e.githubUserId,
@@ -68,6 +89,9 @@ class GithubUserAuthorizationRepositoryAdapter(
                 token = token,
                 createdAt = e.createdAt,
                 updatedAt = e.updatedAt,
+                refreshToken = refreshToken,
+                expiresAt = e.accessTokenExpiresAt,
+                refreshTokenExpiresAt = e.refreshTokenExpiresAt,
             )
         }
 

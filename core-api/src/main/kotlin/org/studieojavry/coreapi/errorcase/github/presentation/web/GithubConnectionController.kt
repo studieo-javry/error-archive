@@ -62,7 +62,8 @@ class GithubConnectionController(
         summary = "연결 옵션 조회 (시나리오 ②)",
         description = "저장된 사용자 토큰으로 상황을 구분한다. VERIFIED_AVAILABLE 면 GitHub 재이동 없이 candidates 로 바로 " +
             "레포를 고를 수 있다. NOT_AUTHORIZED 면 authorizeUrl, VERIFIED_EMPTY(설치 없음)면 installUrl 로 이동. " +
-            "workspaceId 를 주면 그 워크스페이스 기준(ADMIN 필요).",
+            "workspaceId 를 주면 그 워크스페이스 기준(ADMIN 필요). remember=true 면 '6개월 기억' 동의를 authorizeUrl 의 " +
+            "state 에 실어, 왕복 뒤 후보 조회에서 refresh 토큰까지 저장한다(기본 false=단명 토큰만, 약 8시간 뒤 재인가).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "상태 + (후보 또는 이동 URL)"),
@@ -73,12 +74,15 @@ class GithubConnectionController(
     fun connectionOptions(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결할 워크스페이스 ID (생략 시 개인 연결)") @RequestParam(required = false) workspaceId: Long?,
-    ): GithubConnectionOptionsResponse = GithubConnectionOptionsResponse.of(getOptions.invoke(userId, workspaceId))
+        @Parameter(description = "'6개월 기억' 동의 — true 면 재인가 토큰을 refresh 토큰과 함께 보관(기본 false)")
+        @RequestParam(required = false, defaultValue = "false") remember: Boolean,
+    ): GithubConnectionOptionsResponse = GithubConnectionOptionsResponse.of(getOptions.invoke(userId, workspaceId, remember))
 
     @Operation(
         summary = "연결 시작 — OAuth 인가 URL 발급",
         description = "이미 설치된 GitHub App 을 (이) 공간에 연결하기 위한 인가 URL. installations/new 와 달리 이미 설치된 " +
-            "계정에서도 막다른 길(Save 비활성)에 빠지지 않는다. workspaceId 를 주면 그 워크스페이스로 연결(ADMIN 필요).",
+            "계정에서도 막다른 길(Save 비활성)에 빠지지 않는다. workspaceId 를 주면 그 워크스페이스로 연결(ADMIN 필요). " +
+            "remember=true 면 '6개월 기억' 동의를 state 에 실어, 왕복 뒤 후보 조회에서 refresh 토큰까지 저장한다(기본 false).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "발급 성공"),
@@ -89,7 +93,9 @@ class GithubConnectionController(
     fun authorizeUrl(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결할 워크스페이스 ID (생략 시 개인 연결)") @RequestParam(required = false) workspaceId: Long?,
-    ): GithubAuthorizeUrlResponse = GithubAuthorizeUrlResponse(issueAuthorizeUrl.invoke(userId, workspaceId))
+        @Parameter(description = "'6개월 기억' 동의 (기본 false)")
+        @RequestParam(required = false, defaultValue = "false") remember: Boolean,
+    ): GithubAuthorizeUrlResponse = GithubAuthorizeUrlResponse(issueAuthorizeUrl.invoke(userId, workspaceId, remember))
 
     @Operation(
         summary = "연결 후보 조회",

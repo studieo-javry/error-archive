@@ -8,8 +8,9 @@ import jakarta.persistence.Table
 import java.time.Instant
 
 /**
- * `github_user_authorization` — EA 사용자당 1건(@Id = eaUserId). 토큰은 AES-GCM ciphertext + IV 분리 저장(평문 없음).
- * [githubUserId] 인덱스로 revoked 웹훅의 sender.id → 폐기 조회.
+ * `github_user_authorization` — EA 사용자당 1건(@Id = eaUserId). access/refresh 토큰 모두 AES-GCM
+ * ciphertext + IV 분리 저장(평문 없음). [githubUserId] 인덱스로 revoked 웹훅의 sender.id → 폐기 조회.
+ * refresh 토큰·만료 컬럼은 nullable — App 이 토큰 만료를 끄면 갱신 정보가 없고, V18 레거시 행도 비어 있다.
  */
 @Entity
 @Table(
@@ -32,6 +33,18 @@ class GithubUserAuthorizationEntity(
 
     @Column(name = "token_iv", nullable = false)
     var tokenIv: ByteArray = ByteArray(0),
+
+    @Column(name = "refresh_token_ciphertext")
+    var refreshTokenCiphertext: ByteArray? = null,
+
+    @Column(name = "refresh_token_iv")
+    var refreshTokenIv: ByteArray? = null,
+
+    @Column(name = "access_token_expires_at")
+    var accessTokenExpiresAt: Instant? = null,
+
+    @Column(name = "refresh_token_expires_at")
+    var refreshTokenExpiresAt: Instant? = null,
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.EPOCH,

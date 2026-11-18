@@ -25,12 +25,13 @@ class IssueGithubAuthorizeUrlUseCase(
     private val stateCodec: GithubInstallStateCodec,
     private val workspaceQuery: WorkspaceQueryPort,
 ) {
-    fun invoke(userId: Long, workspaceId: Long?): String {
+    /** [remember]=true 면 "6개월 기억" 동의를 state 에 실어, 왕복 뒤 후보 조회에서 refresh 토큰까지 저장하게 한다. */
+    fun invoke(userId: Long, workspaceId: Long?, remember: Boolean = false): String {
         workspaceId?.let { requireWorkspaceAdmin(workspaceQuery, userId, it) }
         return UriComponentsBuilder.fromUriString(properties.webBaseUrl)
             .path("/login/oauth/authorize")
             .queryParam("client_id", properties.clientId)
-            .queryParam("state", stateCodec.issue(userId, workspaceId))
+            .queryParam("state", stateCodec.issue(userId, workspaceId, remember))
             .build()
             .toUriString()
     }

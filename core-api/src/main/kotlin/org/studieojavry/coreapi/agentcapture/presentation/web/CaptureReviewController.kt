@@ -188,6 +188,7 @@ class CaptureReviewController(
                     selectedAttemptIds = request.selectedAttemptIds,
                     selectedSolutionIds = request.selectedSolutionIds,
                     selectedArtifactIds = request.selectedArtifactIds,
+                    selectedEventIds = request.selectedEventIds,
                     markResolved = request.markResolved,
                     editedTitle = request.editedTitle,
                     editedDescription = request.editedDescription,

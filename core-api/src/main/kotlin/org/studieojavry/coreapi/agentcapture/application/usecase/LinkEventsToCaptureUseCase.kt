@@ -22,7 +22,8 @@ class LinkEventsToCaptureUseCase(
 ) {
     @Transactional
     fun invoke(captureUuid: UUID, ownerUserId: Long, connectionId: UUID, clientEventIds: List<String>): Result {
-        val capture = captures.findByUuidAndOwner(captureUuid, ownerUserId)
+        // 행 락으로 Complete·Discard 와 직렬화(OPEN 연결이 봉인/폐기와 인터리브되지 않도록). 이벤트 자체 경합은 claim 이 막는다.
+        val capture = captures.findByUuidAndOwnerForUpdate(captureUuid, ownerUserId)
             ?: throw CaptureNotFoundException(captureUuid)
         capture.requireAgentWritable()
         val captureId = capture.id!!

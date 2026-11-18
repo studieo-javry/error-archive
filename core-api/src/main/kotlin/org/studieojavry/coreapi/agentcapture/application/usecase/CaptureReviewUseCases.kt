@@ -5,6 +5,8 @@ import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureArtifactRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureAttemptRepositoryPort
+import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
+import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureImportRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSolutionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.ProjectBindingRepositoryPort
@@ -39,6 +41,9 @@ import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferen
 import org.studieojavry.coreapi.agentcapture.domain.model.Verification
 import org.studieojavry.coreapi.errorcase.case.application.port.ErrorCaseRepositoryPort
 import org.studieojavry.coreapi.errorcase.case.domain.model.ErrorCase
+import org.studieojavry.coreapi.errorcase.eventevidence.application.port.CaseEventEvidenceRepositoryPort
+import org.studieojavry.coreapi.errorcase.eventevidence.domain.model.CaseEventEvidence
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownEventReferenceException
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ContentSource
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.ErrorCaseStatus
 import org.studieojavry.coreapi.errorcase.case.domain.model.vo.Meta
@@ -75,6 +80,8 @@ class ImportCaptureUseCase(
     private val solutions: CaptureSolutionRepositoryPort,
     private val captureImports: CaptureImportRepositoryPort,
     private val captureArtifacts: CaptureArtifactRepositoryPort,
+    private val events: CaptureEventRepositoryPort,
+    private val caseEventEvidence: CaseEventEvidenceRepositoryPort,
     private val projectBindings: ProjectBindingRepositoryPort,
     private val errorCases: ErrorCaseRepositoryPort,
     private val steps: StepRepositoryPort,
@@ -187,6 +194,19 @@ class ImportCaptureUseCase(
             val art = artifactByClientId[it] ?: throw UnknownArtifactReferenceException(cmd.captureUuid, it)
             if (!art.isCompleted) throw UnknownArtifactReferenceException(cmd.captureUuid, it)
         }
+        // 선택한 수집 근거(이 Capture 에 연결된 LINKED 이벤트) 검증 — 다른 축과 동일 엄격(없음/타인/타 Capture/비-LINKED → 422).
+        // case 생성 전 fail-fast. 실제 스냅샷 저장은 caseId 확보 후.
+        val selectedEvents = cmd.selectedEventIds.distinct().map { clientEventId ->
+            val event = events.findByConnectionAndClientId(capture.originatingConnectionId, clientEventId)
+            if (event == null ||
+                event.ownerUserId != reviewer ||
+                event.captureId != captureId ||
+                event.status != CaptureEventStatus.LINKED
+            ) {
+                throw UnknownEventReferenceException(cmd.captureUuid, clientEventId)
+            }
+            event
+        }
 
         // 1) 신규 케이스(PRIVATE, OPEN). 자동 RESOLVED 하지 않는다.
         //    검토 중 수정: editedTitle/editedDescription 이 있으면 캡처 원본 대신 사용.
@@ -218,6 +238,26 @@ class ImportCaptureUseCase(
             )
         )
         val caseId = case.id!!
+
+        // 1-evt) 선택한 수집 근거를 Case 독립 스냅샷(CaseEventEvidence)으로 보존. 원본 capture_event 는 LINKED 로 남아(출처),
+        //        생명주기는 분리된다. 같은 @Transactional + capture 행 락(PR-1) 안이라 연결⇄반영 경합이 없고,
+        //        저장 실패 시 Case 생성까지 롤백. 노출은 소유자 전용(조회 API) — 발행/공유엔 자동 포함되지 않는다.
+        selectedEvents.forEach { ev ->
+            caseEventEvidence.save(
+                CaseEventEvidence(
+                    errorCaseId = caseId,
+                    sourceCaptureEventId = ev.id!!,
+                    sourceClientEventId = ev.clientEventId,
+                    eventType = ev.eventType,
+                    observedAt = ev.observedAt,
+                    receivedAt = ev.receivedAt,
+                    redactedPayload = ev.redactedPayload,
+                    truncated = ev.truncated,
+                    reviewedByUserId = reviewer,
+                    reviewedAt = now,
+                ),
+            )
+        }
 
         // 2-pre) 반영할 근거 = selectedArtifactIds (명시 선택 집합). Attempt 선택만으로 근거가 자동 포함되지 않으며,
         //        사용자가 개별 근거를 제외할 수 있다(민감/노이즈 파일). FE 는 선택 Attempt 의 evidenceRefs 를 기본 포함해 보낸다.
@@ -402,6 +442,11 @@ class ImportCaptureUseCase(
             "clearProjectBinding" to cmd.clearProjectBinding,
             "promoteSnippets" to cmd.promoteSnippets,
         )
+        // selectedEventIds: 비었을 때만 생략해 레거시(이벤트 선택 없던) 요청의 해시를 불변으로 유지(하위호환),
+        //   비어있지 않으면 정렬해 포함 — 서로 다른 이벤트 집합("A,B" vs "A,C")을 같은 요청으로 오판하지 않도록.
+        if (cmd.selectedEventIds.isNotEmpty()) {
+            normalized["selectedEventIds"] = cmd.selectedEventIds.distinct().sorted()
+        }
         val json = objectMapper.writeValueAsString(normalized)
         return MessageDigest.getInstance("SHA-256").digest(json.toByteArray())
             .joinToString("") { "%02x".format(it) }
@@ -530,6 +575,8 @@ data class ImportCaptureCommand(
     val selectedSolutionIds: List<String> = emptyList(),
     /** 반영할 근거(clientArtifactId). 선택 Attempt 의 evidenceRefs 와 합쳐 Case 첨부로 승격·연결된다. */
     val selectedArtifactIds: List<String> = emptyList(),
+    /** 반영할 수집 근거(clientEventId). 이 Capture 에 연결(LINKED)된 이벤트만 CaseEventEvidence 스냅샷으로 보존. */
+    val selectedEventIds: List<String> = emptyList(),
     /** 사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지). */
     val markResolved: Boolean = false,
     /** 검토 중 수정: Case 제목 override(null 이면 캡처 제목). */
@@ -579,7 +626,8 @@ class DiscardCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: DiscardCaptureCommand): AgentCapture {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+        // 행 락으로 연결(Attach/Link)·반영·복원과 상태 전환을 직렬화.
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.discard(Instant.now(clock))
         return captures.save(capture)
@@ -732,7 +780,8 @@ class RestoreCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: RestoreCaptureCommand): AgentCapture {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+        // 행 락으로 상태 전환을 연결·반영·폐기와 직렬화(동일 정책).
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.restore(Instant.now(clock))
         return captures.save(capture)

@@ -579,7 +579,8 @@ class DiscardCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: DiscardCaptureCommand): AgentCapture {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+        // 행 락으로 연결(Attach/Link)·반영·복원과 상태 전환을 직렬화.
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.discard(Instant.now(clock))
         return captures.save(capture)
@@ -732,7 +733,8 @@ class RestoreCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: RestoreCaptureCommand): AgentCapture {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+        // 행 락으로 상태 전환을 연결·반영·폐기와 직렬화(동일 정책).
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
         capture.restore(Instant.now(clock))
         return captures.save(capture)

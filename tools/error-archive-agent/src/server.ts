@@ -540,10 +540,17 @@ export function createServer(
         '해당하는 이벤트를 **고르기 위한 후보**다. 같은 세션이라고 전부 연결하지 말고, 이 오류와 관련된 것만 골라라. ' +
         'sessionId 를 생략하면 현재 개발 세션으로 자동으로 좁혀진다(다른 세션 이벤트 제외). 명시하면 그 값으로 좁힌다. ' +
         '응답의 sync.pending 이 0 보다 크면 아직 서버로 전송되지 못한 로컬 이벤트가 그만큼 있다는 뜻이다 — ' +
-        '중요한 근거가 빠졌을 수 있으니, 봉인(capture_complete) 전에 잠시 후 다시 조회해 반영을 확인하라.',
+        '중요한 근거가 빠졌을 수 있으니, 봉인(capture_complete) 전에 잠시 후 다시 조회해 반영을 확인하라. ' +
+        '기본은 최신 일부만 반환한다. 응답 hasNext 가 true 면 더 오래된 이벤트가 있으니, 필요하면 응답 nextCursor 를 ' +
+        'cursor 로 넘겨 과거(최초 오류 근거 등)까지 이어 조회하라.',
       inputSchema: {
         sessionId: z.string().optional(),
         limit: z.number().int().min(1).max(100).optional(),
+        cursor: z
+          .number()
+          .int()
+          .optional()
+          .describe('keyset cursor — 이전 응답의 nextCursor. 이 값보다 오래된 이벤트를 이어서 조회.'),
       },
     },
     (args) =>
@@ -554,7 +561,7 @@ export function createServer(
         // 세션 스코프 자동 주입(주): AI 가 sessionId 를 생략하면 커넥터가 아는 **원본** 세션 id 로 좁힌다.
         // 이벤트는 원본 session_id 로 태깅되므로 파생 UUID 가 아니라 원본을 넘겨야 매칭된다(project.currentSessionId).
         const sessionId = args.sessionId ?? project?.currentSessionId();
-        const res = await client.listEvents('UNCLASSIFIED', sessionId, args.limit);
+        const res = await client.listEvents('UNCLASSIFIED', sessionId, args.limit, args.cursor);
         return ok({
           ...res,
           sync: flush ? { pending: flush.pending, rejected: flush.rejected } : undefined,

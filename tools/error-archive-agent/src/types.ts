@@ -321,6 +321,10 @@ export interface AgentEventSummary {
 
 export interface AgentEventListResponse {
   items: AgentEventSummary[];
+  /** 다음 페이지 cursor — 이 값을 cursor 로 다시 조회하면 더 오래된 이벤트를 잇는다. 더 없으면 null. */
+  nextCursor?: number | null;
+  /** 더 오래된 이벤트가 더 있는지. */
+  hasNext?: boolean;
 }
 
 /** 이벤트→Capture 연결 결과. */

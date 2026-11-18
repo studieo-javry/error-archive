@@ -286,6 +286,11 @@ data class ImportCaptureRequest(
         "Attempt 선택만으로 자동 포함되지 않으므로 개별 제외 가능(민감/노이즈 파일). FE 는 선택 Attempt 의 evidenceRefs 를 기본 포함. " +
         "존재하지 않거나 업로드 미완료 근거 참조 시 422.")
     val selectedArtifactIds: List<String> = emptyList(),
+    @field:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    @Schema(description = "반영할 수집 근거(clientEventId) — 이 Capture 에 연결(LINKED)된 Hook 이벤트 중 Case 에 보존할 집합. " +
+        "연결(귀속)과 반영(노출)은 별개라 연결됐어도 선택하지 않으면 Case 에 안 실린다. 연결 안 됐거나 타 Capture·타인·미존재 참조 시 422. " +
+        "(빈 목록은 멱등 영수증 해시 직렬화에서 생략되어 기존 요청과 호환.)")
+    val selectedEventIds: List<String> = emptyList(),
     @Schema(description = "사용자가 명시적으로 해결로 표시(기본 false — 자동 RESOLVED 금지).")
     val markResolved: Boolean = false,
     @Schema(description = "검토 중 수정: Case 제목 override. 미지정이면 캡처 제목.")

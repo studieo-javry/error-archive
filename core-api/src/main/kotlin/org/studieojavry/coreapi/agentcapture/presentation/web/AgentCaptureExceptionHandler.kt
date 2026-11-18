@@ -29,6 +29,7 @@ import org.studieojavry.coreapi.agentcapture.domain.model.SolutionWithoutSelecte
 import org.studieojavry.coreapi.agentcapture.domain.model.UnexecutedVerificationPassedException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownArtifactReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownAttemptReferenceException
+import org.studieojavry.coreapi.agentcapture.domain.model.UnknownEventReferenceException
 import java.sql.SQLException
 import org.studieojavry.coreapi.agentcapture.domain.model.UnknownSolutionReferenceException
 import org.studieojavry.coreapi.agentcapture.domain.model.VerificationEvidenceRequiredException
@@ -116,6 +117,10 @@ class AgentCaptureExceptionHandler {
     @ExceptionHandler(UnknownArtifactReferenceException::class)
     fun unknownArtifact(ex: UnknownArtifactReferenceException): ProblemDetail =
         problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_ARTIFACT_REFERENCE", ex.message)
+
+    @ExceptionHandler(UnknownEventReferenceException::class)
+    fun unknownEvent(ex: UnknownEventReferenceException): ProblemDetail =
+        problem(HttpStatus.UNPROCESSABLE_ENTITY, "UNKNOWN_EVENT_REFERENCE", ex.message)
 
     @ExceptionHandler(SolutionWithoutSelectedAttemptException::class)
     fun solutionWithoutSelectedAttempt(ex: SolutionWithoutSelectedAttemptException): ProblemDetail =

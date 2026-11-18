@@ -38,6 +38,13 @@ class UnknownArtifactReferenceException(val captureUuid: UUID, val clientArtifac
     RuntimeException("references unknown/incomplete artifact '$clientArtifactId' in $captureUuid")
 
 /**
+ * selectedEventIds 가 이 캡처에 연결(LINKED)되지 않았거나 존재하지 않는/타인·타 Capture 이벤트를 참조
+ * → 422 UNKNOWN_EVENT_REFERENCE. (수집 근거 선택 반영 — 다른 축과 동일하게 조용히 무시하지 않고 거부.)
+ */
+class UnknownEventReferenceException(val captureUuid: UUID, val clientEventId: String) :
+    RuntimeException("references unknown/unlinked event '$clientEventId' in $captureUuid")
+
+/**
  * 선택한 Solution 이 참조하는 Attempt 를 하나도 선택하지 않아 반영할 Step 이 없음 → 422.
  * (부분 참조는 허용하되, 참조 Step 이 0개가 되는 선택은 조용히 누락하지 않고 거부한다.)
  */

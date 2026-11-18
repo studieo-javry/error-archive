@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
@@ -182,6 +183,39 @@ interface CaptureEventJpaRepository : JpaRepository<CaptureEventEntity, Long> {
         @Param("sessionId") sessionId: String,
         @Param("status") status: CaptureEventStatus,
     ): List<CaptureEventEntity>
+
+    /** 이 Capture 에 연결된(status) 이벤트 — 소유자 범위, id DESC + keyset(cursorId 미만). ix_capture_event_capture 활용. */
+    @Query(
+        "SELECT e FROM CaptureEventEntity e WHERE e.captureId = :captureId AND e.ownerUserId = :owner AND e.status = :status " +
+            "AND (:cursorId IS NULL OR e.id < :cursorId) ORDER BY e.id DESC",
+    )
+    fun findLinkedByCapture(
+        @Param("captureId") captureId: Long,
+        @Param("owner") owner: Long,
+        @Param("status") status: CaptureEventStatus,
+        @Param("cursorId") cursorId: Long?,
+        pageable: Pageable,
+    ): List<CaptureEventEntity>
+
+    /**
+     * 조건부 원자 연결 — 미연결(captureId NULL & status=:unclassified)인 단건만 captureId·status 를 갱신한다.
+     * 멱등 유니크 (connection_id, client_event_id) 로 단건 타겟. 반환=영향 행 수(1=성공, 0=없음/선점/비-UNCLASSIFIED).
+     * clearAutomatically/flushAutomatically 로 호출 후 재조회가 벌크 갱신 결과를 신선하게 반영하도록 1차 캐시 정리.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        "UPDATE CaptureEventEntity e SET e.captureId = :captureId, e.status = :linked " +
+            "WHERE e.connectionId = :conn AND e.ownerUserId = :owner AND e.clientEventId = :cid " +
+            "AND e.captureId IS NULL AND e.status = :unclassified",
+    )
+    fun claim(
+        @Param("conn") connectionId: UUID,
+        @Param("owner") ownerUserId: Long,
+        @Param("cid") clientEventId: String,
+        @Param("captureId") captureId: Long,
+        @Param("linked") linked: CaptureEventStatus,
+        @Param("unclassified") unclassified: CaptureEventStatus,
+    ): Int
 }
 
 interface ProjectBindingJpaRepository : JpaRepository<ProjectBindingEntity, Long> {

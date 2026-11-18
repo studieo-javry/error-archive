@@ -6,7 +6,6 @@ import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureReposi
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureSessionRepositoryPort
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEvent
-import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import java.util.UUID
 
@@ -48,7 +47,10 @@ class AttachReviewEventsUseCase(
 ) {
     @Transactional
     fun invoke(captureUuid: UUID, ownerUserId: Long, clientEventIds: List<String>): Result {
-        val capture = captures.findByUuidAndOwner(captureUuid, ownerUserId)
+        // 행 락(PESSIMISTIC_WRITE)으로 Import·Complete·Discard 와 직렬화한다. Attach 는 capture 를 저장하진
+        // 않지만, 락을 공유해야 "연결 커밋 후 Import 가 그 이벤트를 포함" 또는 "Import 선행 시 여기서 409"로
+        // 결정론적으로 갈려 '연결됐지만 Case 미반영' 누락 창이 닫힌다.
+        val capture = captures.findByUuidAndOwnerForUpdate(captureUuid, ownerUserId)
             ?: throw CaptureNotFoundException(captureUuid)
         capture.requireReviewable()
         val captureId = capture.id!!
@@ -65,8 +67,15 @@ class AttachReviewEventsUseCase(
                 event.captureId != null -> skipped += clientEventId // 다른 Capture 소속 — 가로채지 않음
                 event.sessionId == null || event.sessionId !in allowedSessions -> skipped += clientEventId // 이 세션 고아만
                 else -> {
-                    events.save(event.copy(captureId = captureId, status = CaptureEventStatus.LINKED))
-                    linked += clientEventId
+                    // 위 검사는 skipped 분류용이고, 실제 귀속은 조건부 UPDATE 의 WHERE(captureId IS NULL & UNCLASSIFIED)가
+                    // 원자 보장한다 — 읽기~저장 사이 교차-Capture 선점 경합을 DB 수준에서 차단.
+                    if (events.claim(capture.originatingConnectionId, ownerUserId, clientEventId, captureId) == 1) {
+                        linked += clientEventId
+                    } else {
+                        // 경합(타 Capture 선점/동시 중복요청)으로 0행 → 재조회해 멱등(같은 Capture)/선점(타 Capture) 구분.
+                        val now = events.findByConnectionAndClientId(capture.originatingConnectionId, clientEventId)
+                        if (now?.captureId == captureId) linked += clientEventId else skipped += clientEventId
+                    }
                 }
             }
         }

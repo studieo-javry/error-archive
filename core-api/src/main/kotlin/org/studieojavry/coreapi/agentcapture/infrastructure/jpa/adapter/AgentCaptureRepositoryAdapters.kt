@@ -414,6 +414,25 @@ class CaptureEventRepositoryAdapter(
         jpa.findUnlinkedBySession(ownerUserId, connectionId, sessionId, org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus.UNCLASSIFIED)
             .map { it.toDomain() }
 
+    override fun findLinkedByCapture(captureId: Long, ownerUserId: Long, cursorId: Long?, limit: Int): List<CaptureEvent> =
+        jpa.findLinkedByCapture(
+            captureId,
+            ownerUserId,
+            org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus.LINKED,
+            cursorId,
+            org.springframework.data.domain.PageRequest.of(0, limit),
+        ).map { it.toDomain() }
+
+    override fun claim(connectionId: java.util.UUID, ownerUserId: Long, clientEventId: String, captureId: Long): Int =
+        jpa.claim(
+            connectionId,
+            ownerUserId,
+            clientEventId,
+            captureId,
+            org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus.LINKED,
+            org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus.UNCLASSIFIED,
+        )
+
     override fun save(event: CaptureEvent): CaptureEvent {
         val entity = CaptureEventEntity(
             id = event.id,
@@ -440,7 +459,9 @@ class CaptureEventRepositoryAdapter(
         return jpa.save(entity).toDomain()
     }
 
-    // evidenceRefs 는 영속 전용(read-back 소비처 없어 빈 리스트로 둔다).
+    // evidenceRefs 는 저장된 JSONB(배열)를 역직렬화해 복원한다. 과거엔 read-back 소비처가 없어 빈 리스트로 뒀으나,
+    // 연결된 근거 조회·반영 경로가 이를 소비하므로 저장(writeValueAsString)과 왕복을 맞춘다. 컬럼은 NOT NULL 이지만
+    // 방어적으로 공백이면 빈 리스트.
     private fun CaptureEventEntity.toDomain(): CaptureEvent = CaptureEvent(
         id = id,
         connectionId = connectionId,
@@ -458,7 +479,8 @@ class CaptureEventRepositoryAdapter(
         receivedAt = receivedAt,
         redactedPayload = redactedPayload,
         truncated = truncated,
-        evidenceRefs = emptyList(),
+        evidenceRefs = if (evidenceRefs.isBlank()) emptyList()
+        else objectMapper.readValue(evidenceRefs, Array<String>::class.java).toList(),
         payloadHash = payloadHash,
         captureId = captureId,
         status = status,

@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.studieojavry.coreapi.agentcapture.application.port.AgentCaptureRepositoryPort
 import org.studieojavry.coreapi.agentcapture.application.port.CaptureEventRepositoryPort
-import org.studieojavry.coreapi.agentcapture.domain.model.CaptureEventStatus
 import org.studieojavry.coreapi.agentcapture.domain.model.CaptureNotFoundException
 import java.util.UUID
 
@@ -37,8 +36,14 @@ class LinkEventsToCaptureUseCase(
                 event.captureId == captureId -> linked += clientEventId // 멱등
                 event.captureId != null -> skipped += clientEventId // 다른 Capture 소속 — 가로채지 않음
                 else -> {
-                    events.save(event.copy(captureId = captureId, status = CaptureEventStatus.LINKED))
-                    linked += clientEventId
+                    // 조건부 원자 연결(captureId IS NULL & UNCLASSIFIED) — 같은 세션에 Capture 여러 개가 동시에
+                    // 같은 이벤트를 연결하려는 경합을 DB WHERE 로 차단. 0행이면 재조회로 멱등/선점 구분.
+                    if (events.claim(connectionId, ownerUserId, clientEventId, captureId) == 1) {
+                        linked += clientEventId
+                    } else {
+                        val now = events.findByConnectionAndClientId(connectionId, clientEventId)
+                        if (now?.captureId == captureId) linked += clientEventId else skipped += clientEventId
+                    }
                 }
             }
         }

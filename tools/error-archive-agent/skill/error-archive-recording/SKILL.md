@@ -26,6 +26,22 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
 기록하지 않는 것: 단순 코드 질문·설명 요청, 의도적으로 실패를 확인하는 테스트, 일시적 환경 오류(네트워크 끊김 등),
 잡담.
 
+## Case 로 어떻게 보이는가 — 작성 전에 산출물을 인지하라
+Capture 는 리뷰에서 **Case** 로 반영된다. 좋은 품질 = 이 최종 형태를 **역산**해 채우는 것. 필드↔Case 매핑:
+
+| 네가 쓰는 것 | Case 에서 | 품질 포인트 |
+|---|---|---|
+| `capture_add_attempt` 1건 | **Step** 1개 | 조사·수정·검증을 시간순 Step 으로 쪼갠다 |
+| attempt `result` | Step 상태: SUCCEEDED→RESOLVED, FAILED→FAILED, PENDING·INCONCLUSIVE→IN_PROGRESS | **반증한 가설은 result=FAILED** |
+| attempt `action` 의 ` ```코드블록``` ` | **코드 스니펫 카드** | diff·실패 명령·핵심 조각만(전체 덤프 X, 시크릿 X) |
+| `hypotheses`(capture_start, 평면 목록) | **본문 블록**(Step 아님) | **아직 검증 전 후보만** — 판정나면 attempt 로 승격 |
+| `capture_add_solution` | **해결/검증 카드** | 기여 attempt 참조 + 실제 검증 명령·결과 |
+| 첨부 / `evidenceRefs` | **근거 카드** | 스크린샷·로그 파일 |
+
+**핵심 규칙 — 틀린 가설도 스텝이다:** 세운 가설을 검증해 **반증**했다면 그 가설을 `hypotheses` 평면 목록에 묻지 말고
+`capture_add_attempt(attemptType="investigate", hypothesis="그 가설", result="FAILED", insight="반증 근거")` 로 남겨라.
+틀린 길을 **왜 배제했는지**가 Case 에 FAILED Step 으로 보존돼 다음 사람의 시간을 아낀다. `hypotheses` 는 아직 검증 안 한 후보만 둔다.
+
 ## 절차
 1. **진행 중 Capture 확인** — `capture_list_open` 을 먼저 호출한다. 지금 다루는 문제가 기존 진행 중 Capture
    와 **같은 버그의 연속**이면 그 `captureUuid` 를 재사용하고, **원인이 다른 별개 문제**면 새로 시작한다.
@@ -35,7 +51,7 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
 3. **관련 이벤트 연결** — `capture_list_events` 로 수집된 Hook 이벤트(실패한 명령·수정·재실행 등)를 확인하고
    `capture_link_events` 로 이 Capture 에 연결한다.
 4. **조사·시도 기록** — 시도마다 `capture_add_attempt`(result = SUCCEEDED/FAILED/INCONCLUSIVE, 무엇을 했고
-   무엇을 알았는지). 실패한 시도도 남긴다(나중의 교훈).
+   무엇을 알았는지). 실패한 시도·**반증한 가설도 result=FAILED 로 각각 남긴다**(평면 hypotheses 에 묻지 말 것 — 위 표 참조).
    - **코드는 코드블록으로**: 바꾼 코드·실패한 명령·핵심 diff 가 있으면 action(또는 symptom)에 ` ```언어 ` 펜스
      코드블록으로 포함한다. 반영 시 **코드 스니펫 카드**로 전환된다. 전체 파일 덤프 말고 관련 조각만, 시크릿은 제외.
    - **시각 재현 근거**(깨진 UI·렌더 결과 스크린샷, 읽은 이미지)도 1급 근거다. 문제가 시각 상태와 관련되면
@@ -48,6 +64,16 @@ AI 가 참여한 **하나의 의미 있는 문제 해결 과정**을 **하나의
    - 사용자가 **계획만 요청하고 수정은 미착수**했거나 아직 조사 중이면 봉인하지 않는다(OPEN 유지).
    - 조사했지만 **끝내 해결하지 못한** 경우에도, 조사 내용과 미해결 사유가 정리됐다면 봉인할 수 있다(결과를
      미해결로 명확히 남긴다).
+
+## 골드 예시 (요지)
+증상 "통합테스트가 DB 연결거부로 실패", 가설 3개를 검증한 흐름:
+1. `capture_start` — symptom + ` ```실패 로그``` `, hypotheses=[아직 검증 안 한 후보만]
+2. `capture_add_attempt`(investigate, hypothesis="포트/네트워크 문제", **result=FAILED**, insight="같은 설정의 기존 테스트는 통과 → 환경 아님") ← 반증=FAILED Step
+3. `capture_add_attempt`(investigate→fix, hypothesis="mock stub 누락", **result=SUCCEEDED**, action=` ```kotlin …stub…``` `, insight="1차 예외는 NPE")
+4. `capture_add_solution`(clientAttemptIds=[3], verificationCommand="gradle test", verificationResult=PASSED)
+5. `capture_complete`
+
+→ Case: **FAILED Step 1 + RESOLVED Step 1 + 코드 스니펫 카드 + 검증 카드**. "DB 연결거부"라는 2차 증상이 아니라 1차 원인과 **배제한 길**까지 남는다.
 
 ## 경계
 - 정식 **Case 반영은 사용자 검토 단계**에서 이뤄진다. AI 는 Capture 작성·봉인까지만 담당하고 Case 를 확정하지

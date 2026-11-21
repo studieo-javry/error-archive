@@ -76,6 +76,8 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-testcontainers")
   testImplementation("org.testcontainers:junit-jupiter")
   testImplementation("org.testcontainers:postgresql")
+  // 실 Kafka 브로커로 user-activity.v1 소비 e2e 검증
+  testImplementation("org.testcontainers:kafka")
 }
 
 configure<KotlinJvmProjectExtension> {

@@ -65,4 +65,10 @@ interface UserJpaRepository : JpaRepository<UserEntity, Long> {
     ): List<UserEntity>
 
     fun findAllByIdIn(ids: Collection<Long>): List<UserEntity>
+
+    /** 활성화 지표용 — since 이후 가입한 비게스트 사용자, 가입시각 오름차순. */
+    fun findByIsGuestFalseAndCreatedAtGreaterThanEqualOrderByCreatedAtAsc(
+        since: Instant,
+        pageable: Pageable,
+    ): List<UserEntity>
 }

@@ -61,4 +61,9 @@ class UserRepositoryAdapter(
     override fun deleteById(id: Long) = jpa.deleteById(id)
 
     override fun deleteGuestsExcept(keepHandle: String): Int = jpa.deleteGuestsExcept(keepHandle)
+
+    override fun findSignupsSince(since: Instant, limit: Int): List<User> =
+        jpa.findByIsGuestFalseAndCreatedAtGreaterThanEqualOrderByCreatedAtAsc(
+            since, PageRequest.of(0, limit.coerceIn(1, 10_000))
+        ).map { it.toDomain() }
 }

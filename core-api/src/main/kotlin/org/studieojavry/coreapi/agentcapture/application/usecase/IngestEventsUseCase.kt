@@ -30,6 +30,12 @@ class IngestEventsUseCase(
     }
 
     private fun ingestOne(connectionId: UUID, ownerUserId: Long, item: IngestEventItem, now: Instant): EventOutcome {
+        // 서버 안전망(구버전 커넥터 대비): 커넥터 자기 도구 호출(capture_*/diagnose 등)은 '기록 행위'지 증거가 아니다.
+        // 저장하지 않는다 — UNCLASSIFIED 로 쌓이면 capture_complete 의 봉인 완결성(unseenOnServer)을 영구히 막는다.
+        // 최신 커넥터는 애초에 전송하지 않으므로(hook isSelfReferential) 이건 옛 커넥터용 2차 방어다.
+        if (isSelfReferentialEventType(item.eventType)) {
+            return EventOutcome(item.clientEventId, EventResultType.REJECTED, "self-referential connector tool event (not collected)")
+        }
         if (item.redactedPayloadJson.toByteArray(Charsets.UTF_8).size > MAX_PAYLOAD_BYTES) {
             return EventOutcome(item.clientEventId, EventResultType.REJECTED, "redactedPayload exceeds 64 KiB")
         }
@@ -77,8 +83,15 @@ class IngestEventsUseCase(
     private fun sha256(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
+    /** eventType 은 `<hook>:<tool_name>` 형식. tool 파트가 이 커넥터 자신의 MCP 도구면 self-referential. */
+    private fun isSelfReferentialEventType(eventType: String): Boolean =
+        eventType.substringAfter(':', "").startsWith(SELF_TOOL_PREFIX)
+
     companion object {
         const val MAX_PAYLOAD_BYTES = 64 * 1024
+
+        /** 커넥터 자신의 MCP 도구 이름 접두사(capture_*, diagnose, connect_project, *_events …). */
+        const val SELF_TOOL_PREFIX = "mcp__error-archive__"
     }
 }
 

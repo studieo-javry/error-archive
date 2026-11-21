@@ -24,7 +24,7 @@ import { accountNamespace, EventQueue } from './eventQueue.js';
 import { flushQueue, type FlushResult } from './eventSender.js';
 import { singleFlight } from './singleFlight.js';
 import { buildFirstConnectNotice } from './firstConnect.js';
-import { collectionEnabled, isSensitive, normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
+import { collectionEnabled, isSelfReferential, isSensitive, normalizeHookEvent, shouldCollect, type HookInput } from './hook.js';
 import { resolveClientInfo } from './install.js';
 import { resolveProject } from './project.js';
 import { ProjectContext } from './projectContext.js';
@@ -273,6 +273,7 @@ async function runHook(): Promise<number> {
     if (!shouldCollect(input)) return 0;
     if (!collectionEnabled()) return 0; // 귀속 승인과 분리된 수집 토글 — 문맥은 기록, 적재만 중지
     if (isSensitive(input)) return 0; // .env·키·크리덴셜 등을 건드리는 이벤트는 수집 안 함(마스킹과 별개 2차 방어)
+    if (isSelfReferential(input)) return 0; // 커넥터 자기 도구 호출(capture_*/diagnose 등)은 기록 행위지 증거가 아님 → 노이즈·봉인루프 차단
     // (Phase3) 승인 기반 수집 게이트 — 미연결(미승인) 프로젝트의 이벤트는 적재하지 않는다(fail-closed, 오프라인).
     const proj = resolveProject({ cwd: input.cwd });
     if (!proj) return 0; // 프로젝트 미식별 → 무수집

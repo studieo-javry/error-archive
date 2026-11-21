@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { collectionEnabled, isSensitive, normalizeHookEvent, shouldCollect } from '../src/hook.js';
+import { collectionEnabled, isSelfReferential, isSensitive, normalizeHookEvent, shouldCollect } from '../src/hook.js';
+
+test('isSelfReferential: 커넥터 자기 도구 호출(capture_*/diagnose 등)·error-archive ToolSearch 는 수집 제외', () => {
+  // 커넥터 자신의 MCP 도구 → 메타(기록 행위), 수집 제외
+  assert.equal(isSelfReferential({ tool_name: 'mcp__error-archive__capture_start' }), true);
+  assert.equal(isSelfReferential({ tool_name: 'mcp__error-archive__capture_complete' }), true);
+  assert.equal(isSelfReferential({ tool_name: 'mcp__error-archive__diagnose' }), true);
+  // error-archive 도구를 로드하는 ToolSearch 도 메타
+  assert.equal(
+    isSelfReferential({ tool_name: 'ToolSearch', tool_input: { query: 'select:mcp__error-archive__capture_list_events' } }),
+    true,
+  );
+  // 일반 도구·다른 MCP 서버 도구·무관한 ToolSearch 는 증거이므로 수집
+  assert.equal(isSelfReferential({ tool_name: 'Bash', tool_input: { command: './gradlew build' } }), false);
+  assert.equal(isSelfReferential({ tool_name: 'mcp__other-server__do_thing' }), false);
+  assert.equal(isSelfReferential({ tool_name: 'ToolSearch', tool_input: { query: 'select:Read,Edit' } }), false);
+  assert.equal(isSelfReferential({}), false);
+});
 
 test('shouldCollect: PostToolUse·PostToolUseFailure·Stop 만 수집', () => {
   assert.equal(shouldCollect({ hook_event_name: 'PostToolUse' }), true);

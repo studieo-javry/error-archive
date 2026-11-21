@@ -68,6 +68,30 @@ export function isSensitive(input: HookInput, patterns: string[] = sensitivePatt
   return patterns.some((p) => hay.includes(p));
 }
 
+/** 이 커넥터 자신의 MCP 도구 이름 접두사 — capture_*, diagnose, connect_project, *_events 등. */
+const SELF_TOOL_PREFIX = 'mcp__error-archive__';
+
+/**
+ * 커넥터 **자기 도구 호출**(capture 작성·조회·연결·진단)은 '기록 행위'일 뿐 해결 과정의 '증거'가 아니다 → 수집 제외.
+ *
+ * 수집하면 (1) 순수 노이즈이고, (2) capture_complete 의 `unseenOnServer` 를 매 호출마다 키워 — 캡처를
+ * 쓰는 행위 자체가 또 미확인 이벤트를 만들어 — 봉인을 영구히 막는다(force 강행을 강요). 둘 다 여기서 차단한다.
+ * error-archive 도구를 로드하는 ToolSearch(select/키워드) 호출도 같은 메타라 함께 제외한다.
+ */
+export function isSelfReferential(input: HookInput): boolean {
+  const tool = input.tool_name ?? '';
+  if (tool.startsWith(SELF_TOOL_PREFIX)) return true;
+  if (tool === 'ToolSearch') {
+    try {
+      const q = JSON.stringify(input.tool_input ?? '').toLowerCase();
+      if (q.includes('error-archive') || q.includes('capture_')) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
+}
+
 /** Hook JSON → 정규화 이벤트. redactedPayload 는 마스킹·절단된다. */
 export function normalizeHookEvent(input: HookInput, localSequence: number): EventItemRequest {
   const base = input.hook_event_name ?? 'Unknown';

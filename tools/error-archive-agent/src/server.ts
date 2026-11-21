@@ -44,7 +44,10 @@ async function guard(run: () => Promise<CallToolResult>): Promise<CallToolResult
   }
 }
 
-const RESULT = z.enum(['PENDING', 'SUCCEEDED', 'FAILED', 'INCONCLUSIVE']);
+const RESULT = z.enum(['PENDING', 'SUCCEEDED', 'FAILED', 'INCONCLUSIVE']).describe(
+  '시도 결과 → 리뷰 시 Case Step 상태로 매핑: SUCCEEDED→RESOLVED, FAILED→FAILED, PENDING·INCONCLUSIVE→IN_PROGRESS. ' +
+  '가설을 검증해 **반증했으면 FAILED** 로 남겨라 — 틀린 가설도 FAILED Step 으로 보존돼 "무엇을 왜 배제했는지"가 Case 에 남는다.',
+);
 const VERIFICATION_RESULT = z.enum(['NOT_RUN', 'PASSED', 'FAILED', 'INCONCLUSIVE']);
 const VERIFICATION_SCOPE = z.enum(['LOCAL', 'CI', 'MANUAL']);
 
@@ -56,7 +59,11 @@ const CONTENT_SHAPE = {
     'observedFacts·hypotheses(목록)에는 넣지 말 것.',
   ),
   observedFacts: z.array(z.string()).optional().describe('실행 로그·테스트 결과 등 실제 관측된 사실'),
-  hypotheses: z.array(z.string()).optional().describe('원인 후보(가설). 확정이 아님'),
+  hypotheses: z.array(z.string()).optional().describe(
+    '**아직 검증 전** 원인 후보만(평면 목록 — 리뷰 시 본문 블록으로만 렌더). ' +
+    '검증해서 맞/틀 판정이 나면 capture_add_attempt(hypothesis=그 가설, result=SUCCEEDED/FAILED)로 **승격**하라 — ' +
+    '그래야 Case 에서 Step(특히 반증=FAILED Step)으로 남는다. 반증된 가설을 여기 목록에만 두면 본문에 묻혀 품질이 떨어진다.',
+  ),
   reproductionSteps: z.array(z.string()).optional().describe('재현 절차'),
   reproductionExecuted: z.boolean().optional().describe('재현을 실제로 실행했는가(미확인이면 생략/false)'),
   service: z.string().optional(),
@@ -107,7 +114,8 @@ export function createServer(
       title: '초안 수집 시작',
       description:
         '새 OPEN 초안을 만든다. 시작 전에 capture_list_open 으로 현재 세션의 진행 중 Capture 를 확인해, 같은 버그의 연속이면 새로 만들지 말고 그 captureUuid 에 이어서 기록하라(한 버그=한 Capture). ' +
-        'captureUuid 는 서버가 아닌 이 도구가 부여하므로, 반환된 captureUuid 를 이후 attempt/solution/evidence/complete 에 전달하라. 근거 없는 원인 단정은 넣지 말 것.',
+        'captureUuid 는 서버가 아닌 이 도구가 부여하므로, 반환된 captureUuid 를 이후 attempt/solution/evidence/complete 에 전달하라. 근거 없는 원인 단정은 넣지 말 것. ' +
+        '[Case 매핑] 이 초안은 리뷰에서 Case 로 반영된다: 각 attempt→Step(result→상태), action 의 ```코드블록```→스니펫 카드, hypotheses(평면)→본문 블록, solution→해결/검증 카드, 첨부/evidence→근거 카드. 그 산출물을 염두에 두고 역산해 채워라.',
       inputSchema: {
         title: z.string().optional(),
         project: z.string().optional(),
@@ -164,7 +172,9 @@ export function createServer(
         result: RESULT,
         attemptType: z.string().optional().describe('예: investigate, fix, verify'),
         title: z.string(),
-        hypothesis: z.string().optional(),
+        hypothesis: z.string().optional().describe(
+          '이 시도가 검증한 가설. **반증됐으면 result=FAILED** 로 — Case 에서 FAILED Step 으로 남아 배제 근거가 보존된다.',
+        ),
         action: z.string().optional().describe(
           '실제 수행한 내용. 바꾼 코드·실패한 명령·핵심 diff 가 있으면 ```언어 코드블록``` 으로 포함하라' +
           '(반영 시 코드 스니펫 카드로 전환된다). 파일 경로가 있으면 ```언어 경로/파일 처럼 첫 줄에 적는다. ' +
@@ -205,7 +215,9 @@ export function createServer(
         result: RESULT,
         attemptType: z.string().optional(),
         title: z.string(),
-        hypothesis: z.string().optional(),
+        hypothesis: z.string().optional().describe(
+          '이 시도가 검증한 가설. **반증됐으면 result=FAILED** 로 — Case 에서 FAILED Step 으로 남아 배제 근거가 보존된다.',
+        ),
         action: z.string().optional(),
         insight: z.string().optional(),
         nextStep: z.string().optional(),

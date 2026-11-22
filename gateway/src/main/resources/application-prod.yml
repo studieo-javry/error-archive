@@ -33,6 +33,11 @@ server:
     include-message: never
     include-stacktrace: never
     include-binding-errors: never
+  # X-Forwarded-For 를 믿는 프록시는 OCI LB(10.0.0.0/24)뿐. 그 외 피어(30443 직결 등)는 헤더를 무시하고
+  # 피어 주소가 remoteAddr. Service 는 externalTrafficPolicy: Local 이어야 피어가 LB IP 로 보인다.
+  tomcat:
+    remoteip:
+      internal-proxies: 10.0.0.0/24
 
 # G3: 사용자 JWT 검증 — secret 은 iam-api 와 공유(ENV). issuer/audience 는 prod iam 발급값과 일치.
 #     secret 의 @Size(min=64) 가 미해소 ${IAM_JWT_SECRET}(짧은 literal)을 부팅 실패로 잡는다(fail-fast).
@@ -52,11 +57,6 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
-  # 소켓 피어가 이 대역(LB 사설 IP) 안이면 XFF 마지막 값을 신뢰한다(ClientIpResolver 참고).
-  # Service 가 externalTrafficPolicy: Local 이어야 한다 — Cluster 는 피어가 10.42.x 로 SNAT 되어 대역 밖.
-  client-ip:
-    trusted-proxies:
-      - 10.0.0.0/24
   # 분산 rate limit — Redis 공유 버킷(RedisRateLimiter).
   ratelimit:
     backend: redis

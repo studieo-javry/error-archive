@@ -3,6 +3,7 @@ package org.studieojavry.insightapi.shared.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -51,6 +52,10 @@ class SecurityConfig {
                     .requestMatchers("/internal/actuator/health", "/internal/actuator/health/**").permitAll()
                     // Prometheus 메트릭 스크레이프 — /internal/** 은 gateway 가 외부 라우팅 안 함 → 클러스터 내부만 도달.
                     .requestMatchers("/actuator/prometheus", "/internal/actuator/prometheus").permitAll()
+                    // 제품 참여 지표 수동 재집계 — idempotent·read-only(원장 집계→gauge 갱신, 데이터 변경 없음).
+                    // internal 경로는 gateway 가 외부로 라우팅하지 않아 클러스터 내부만 도달 → 배포 직후·데모 때
+                    // 토큰 없이 port-forward 로 즉시 호출 가능하게 이 경로만 open.
+                    .requestMatchers(HttpMethod.POST, "/internal/admin/product-metrics/recompute").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     // I3: 공개 프로필 잔디 — 잔디 정책 v0.2 "전부 공개". 모든 프로파일에서 익명 열람 허용.

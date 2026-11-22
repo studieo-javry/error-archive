@@ -24,6 +24,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 
 /**
  * 제품 참여 지표 배치의 **실환경 검증** — 실 Postgres(Testcontainers) + Flyway(V1~) + ddl-auto=validate.
@@ -62,7 +63,11 @@ class ProductEngagementMetricsIntegrationTest {
     @MockitoBean private lateinit var userTimezone: UserTimezonePort
     @MockitoBean private lateinit var userSignup: UserSignupPort
 
-    private val now = Instant.now()
+    // 초 단위로 절삭: 지연/간격 지표는 Duration.toMinutes()(분 내림)로 계산되는데, Instant.now() 의 나노초
+    // 성분이 남으면 DB timestamptz(µs) 저장 시 서브-µs 가 잘려 Duration 이 "정확히 N시간"에서 수백 ns 모자라
+    // 지고(→ toMinutes() 가 한 분 내림), p50/p90 단언이 now 의 끝자리에 따라 랜덤하게 깨진다(flaky). 초로
+    // 맞추면 모든 오프셋(정수 시간)이 정확한 분이 되어 결정론적.
+    private val now = Instant.now().truncatedTo(ChronoUnit.SECONDS)
 
     @BeforeEach
     fun setUp() {

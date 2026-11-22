@@ -30,6 +30,10 @@ class SecurityConfig {
         http
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+            // 기본값 DENY 는 같은 출처 iframe 까지 막는다. FE 게스트 가이드가 공개 페이지(`/p/{slug}`)를
+            // 앱 안 iframe 으로 띄우므로 SAMEORIGIN 으로 낮춘다 — 외부 사이트의 프레이밍은 계속 차단된다.
+            // (gateway 는 downstream 이 보낸 X-Frame-Options 가 있으면 자기 기본값 DENY 를 덧붙이지 않는다.)
+            .headers { headers -> headers.frameOptions { it.sameOrigin() } }
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                     // prod 는 base-path=/internal/actuator → 프로브가 이 경로. 인증 없이 열려야 kubelet 200.

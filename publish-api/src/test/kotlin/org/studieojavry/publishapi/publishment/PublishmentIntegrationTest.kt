@@ -194,6 +194,12 @@ class PublishmentIntegrationTest {
         mvc.perform(get("/p/$slug")).andExpect(status().isOk)
     }
 
+    @Test
+    fun `공개 페이지는 같은 출처 iframe 임베드만 허용한다`() {
+        mvc.perform(get("/p/no-such-slug"))
+            .andExpect(header().string("X-Frame-Options", "SAMEORIGIN"))
+    }
+
     // ── 내 목록 ─────────────────────────────────────────────────────
 
     @Test

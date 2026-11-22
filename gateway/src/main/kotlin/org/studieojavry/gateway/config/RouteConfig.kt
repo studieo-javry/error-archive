@@ -12,7 +12,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.servlet.function.RequestPredicates.path
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.ServerResponse
-import org.studieojavry.gateway.filter.ClientIpResolver
 import org.studieojavry.gateway.filter.RateLimiter
 import org.studieojavry.gateway.filter.RateLimitFilters
 
@@ -33,7 +32,6 @@ import org.studieojavry.gateway.filter.RateLimitFilters
 class RouteConfig(
     private val downstream: DownstreamProperties,
     private val rateLimiter: RateLimiter,
-    private val clientIp: ClientIpResolver,
 ) {
 
     // ⚠️ Route Bean 순서가 매칭 우선순위. 더 구체적인 path를 먼저 정의해야 한다.
@@ -107,7 +105,7 @@ class RouteConfig(
         route("auth-guest")
             .route(path("/api/v1/auth/guest"), http())
             .before(uri(downstream.iamApi))
-            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "auth-guest", capacity = 5.0, refillPerSec = 0.05))
+            .filter(RateLimitFilters.perIp(rateLimiter, "auth-guest", capacity = 5.0, refillPerSec = 0.05))
             .filter(circuitBreaker("iamApiCB", "/__fallback/iam-api"))
             .build()
 
@@ -182,7 +180,7 @@ class RouteConfig(
                 http()
             )
             .before(uri(downstream.publishApi))
-            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "publish-export", capacity = 5.0, refillPerSec = 0.1))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-export", capacity = 5.0, refillPerSec = 0.1))
             .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
             .filter(retry(2))
             .build()
@@ -203,7 +201,7 @@ class RouteConfig(
                 http()
             )
             .before(uri(downstream.publishApi))
-            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "publish-public", capacity = 120.0, refillPerSec = 10.0))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-public", capacity = 120.0, refillPerSec = 10.0))
             .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
             .filter(retry(2))
             .build()
@@ -216,7 +214,7 @@ class RouteConfig(
         route("publish-public-list")
             .GET("/api/v1/publishments/public", http())
             .before(uri(downstream.publishApi))
-            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "publish-public-list", capacity = 60.0, refillPerSec = 5.0))
+            .filter(RateLimitFilters.perIp(rateLimiter, "publish-public-list", capacity = 60.0, refillPerSec = 5.0))
             .filter(circuitBreaker("publishApiCB", "/__fallback/publish-api"))
             .filter(retry(2))
             .build()
@@ -260,7 +258,7 @@ class RouteConfig(
         route("github-webhook")
             .POST("/api/v1/integrations/github/webhook", http())
             .before(uri(downstream.coreApi))
-            .filter(RateLimitFilters.perIp(rateLimiter, clientIp, "github-webhook", capacity = 60.0, refillPerSec = 5.0))
+            .filter(RateLimitFilters.perIp(rateLimiter, "github-webhook", capacity = 60.0, refillPerSec = 5.0))
             .filter(circuitBreaker("coreApiCB", "/__fallback/core-api"))
             .build()
 

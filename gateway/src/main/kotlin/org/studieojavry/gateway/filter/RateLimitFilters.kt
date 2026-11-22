@@ -62,17 +62,19 @@ object RateLimitFilters {
 
     /**
      * per-IP 토큰버킷 필터. 고갈 시 downstream 프록시 전에 429(problem+json)로 즉시 차단.
-     * IP 는 [ClientIpResolver] 로 추출한다.
+     *
+     * IP 는 `remoteAddr` 다. `server.forward-headers-strategy: native` 로 Tomcat RemoteIpValve 가
+     * `X-Forwarded-For` 를 오른쪽부터 읽어 신뢰 프록시(`server.tomcat.remoteip.internal-proxies`)를
+     * 건너뛴 첫 주소로 remoteAddr 를 바꿔 둔다. 클라이언트가 앞에 넣은 위조 값은 쓰이지 않는다.
      */
     fun perIp(
         limiter: RateLimiter,
-        clientIp: ClientIpResolver,
         name: String,
         capacity: Double,
         refillPerSec: Double,
     ): HandlerFilterFunction<ServerResponse, ServerResponse> =
         HandlerFilterFunction { request, next ->
-            val ip = clientIp.resolve(request)
+            val ip = request.servletRequest().remoteAddr ?: "unknown"
             if (limiter.tryConsume("$name|$ip", capacity, refillPerSec)) {
                 next.handle(request)
             } else {

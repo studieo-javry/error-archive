@@ -38,6 +38,11 @@ class SecurityConfig {
             .csrf { it.disable() }
             .cors(Customizer.withDefaults())
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+            // 공개 페이지만 SAMEORIGIN, 나머지 DENY (FrameOptionsHeaderWriter 참고).
+            .headers { headers ->
+                headers.frameOptions { it.disable() }
+                headers.addHeaderWriter(FrameOptionsHeaderWriter)
+            }
             .authorizeHttpRequests { auth ->
                 auth
                     // `/users/me/activity-grass` 는 본인 식별이 필요 → 인증 필수.

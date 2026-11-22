@@ -52,8 +52,8 @@ internal-auth:
     private-key-pem: ${INTERNAL_AUTH_GATEWAY_PRIVATE_KEY}
 
 gateway:
- # Cluster(기본)·Local 모두 동작: 피어(Cluster=노드 SNAT IP / Local=LB 사설 IP)가 이 대역 안이면
- # XFF 마지막 값을 신뢰한다(ClientIpResolver 참고).
+  # 소켓 피어가 이 대역(LB 사설 IP) 안이면 XFF 마지막 값을 신뢰한다(ClientIpResolver 참고).
+  # Service 가 externalTrafficPolicy: Local 이어야 한다 — Cluster 는 피어가 10.42.x 로 SNAT 되어 대역 밖.
   client-ip:
     trusted-proxies:
       - 10.0.0.0/24

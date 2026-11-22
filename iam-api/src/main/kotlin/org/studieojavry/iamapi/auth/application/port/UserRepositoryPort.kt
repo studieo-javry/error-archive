@@ -45,4 +45,10 @@ interface UserRepositoryPort {
 
     /** 게스트 사용자 일괄 삭제 — 야간 리셋. [keepHandle](공유 게스트)은 제외. 삭제된 행 수 반환. */
     fun deleteGuestsExcept(keepHandle: String): Int
+
+    /**
+     * 활성화 지표용 — [since] 이후 가입한 **비게스트** 사용자를 가입시각 오름차순으로 [limit] 만큼.
+     * insight-api 가 "가입 → 첫 케이스 지연/활성화율" 코호트를 계산할 때 service-to-service 로 호출.
+     */
+    fun findSignupsSince(since: Instant, limit: Int): List<User>
 }

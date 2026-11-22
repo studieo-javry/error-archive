@@ -1,5 +1,7 @@
 package org.studieojavry.coreapi.errorcase.shared.infrastructure.outbox
 
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import org.studieojavry.coreapi.errorcase.shared.application.port.ActivityEventPublisherPort
@@ -21,6 +23,7 @@ import tools.jackson.databind.ObjectMapper
 class OutboxActivityEventPublisherAdapter(
     private val outboxRepo: OutboxEventJpaRepository,
     private val objectMapper: ObjectMapper,
+    private val meterRegistry: MeterRegistry,
 ) : ActivityEventPublisherPort {
 
     private val log = io.github.oshai.kotlinlogging.KotlinLogging.logger {}
@@ -46,6 +49,14 @@ class OutboxActivityEventPublisherAdapter(
                     payload = payload,
                 )
             )
+            // 실시간 쓰기경로 카운터 — 활동 종류·출처별 발행량(rate()). insight 집계 파이프라인과 독립이라
+            // "쓰기경로엔 찍혔는데 insight 에 안 들어옴"(파이프라인 장애)을 교차검증하는 운영 신호도 된다.
+            Counter.builder("ea.activity.published")
+                .tag("type", event.type.name)
+                .tag("origin", event.origin?.name ?: "USER")
+                .description("core-api 쓰기경로에서 발행된 사용자 활동 수")
+                .register(meterRegistry)
+                .increment()
         } catch (ex: Exception) {
             log.warn(ex) { "outbox activity INSERT failed (silently dropped): key=${event.idempotencyKey}" }
         }

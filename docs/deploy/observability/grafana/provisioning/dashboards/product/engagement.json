@@ -1,0 +1,144 @@
+{
+  "uid": "ea-engagement",
+  "title": "제품 참여(Engagement) — 에러 케이스 등록·재방문",
+  "tags": ["error-archive", "engagement", "product"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "활성 작성자 수 (기간 내 1건+ 작성한 distinct 유저)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 15, "drawStyle": "line", "pointSize": 6 } } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_active_creators{window=\"1d\"}", "legendFormat": "1d (DAU)" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_active_creators{window=\"7d\"}", "legendFormat": "7d (WAU)" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_active_creators{window=\"28d\"}", "legendFormat": "28d (MAU)" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "활성화 퍼널 — 코호트 / 활성화 유저 / 활성화율",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal", "textMode": "value_and_name", "colorMode": "value" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "C" }, "properties": [ { "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.3 }, { "color": "green", "value": 0.6 } ] } } ] }
+        ]
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cohort_signups", "legendFormat": "코호트 가입(N)" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_activated_users", "legendFormat": "활성화 유저" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_activation_rate", "legendFormat": "활성화율" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "가입 → 첫 케이스 지연 (활성화 지연, 시간)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "h", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_time_to_first_case_hours{stat=\"p50\"}", "legendFormat": "p50" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_time_to_first_case_hours{stat=\"p90\"}", "legendFormat": "p90" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "연속 케이스 간격 (습관화, 시간)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "h", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_inter_case_interval_hours{stat=\"p50\"}", "legendFormat": "p50" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_inter_case_interval_hours{stat=\"p90\"}", "legendFormat": "p90" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "유저당 누적 케이스 수 분포",
+      "type": "bargauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal", "displayMode": "gradient" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_per_user{stat=\"p50\"}", "legendFormat": "p50" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_per_user{stat=\"p90\"}", "legendFormat": "p90" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_per_user{stat=\"avg\"}", "legendFormat": "avg" },
+        { "refId": "D", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_per_user{stat=\"max\"}", "legendFormat": "max" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "리텐션 & 이탈",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal", "textMode": "value_and_name", "colorMode": "value" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [ { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.4 } ] } } ] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [ { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "red", "value": 0.7 } ] } } ] }
+        ]
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_retention_w1_ratio", "legendFormat": "W1 리텐션(첫→7일내 2번째)" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_one_and_done_ratio", "legendFormat": "one-and-done(1개만)" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "케이스 소스믹스 (최근 28d) — 수동 vs 에이전트",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "pieType": "donut", "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_by_origin", "legendFormat": "{{origin}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "공개율 & 생성/해결 (최근 28d)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal", "textMode": "value_and_name", "colorMode": "value" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [ { "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 } ] }
+        ]
+      },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_public_ratio", "legendFormat": "공개(PUBLIC) 비율" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_created_window", "legendFormat": "생성 수" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "ea_cases_resolved_window", "legendFormat": "해결 수" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "실시간 발행 레이트 — ea_activity_published_total (core 쓰기경로)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "ops", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (type) (rate(ea_activity_published_total[1m]))", "legendFormat": "{{type}}" }
+      ]
+    }
+  ]
+}

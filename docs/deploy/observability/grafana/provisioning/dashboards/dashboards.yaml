@@ -16,3 +16,11 @@ providers:
     allowUiUpdates: true
     options:
       path: /etc/grafana/provisioning/dashboards/infra
+  - name: product-dashboards
+    orgId: 1
+    folder: Product
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/product

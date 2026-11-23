@@ -35,6 +35,9 @@ const FLUSH_INTERVAL_MS = 10_000;
 // 조회직전 flush 예산 — 최신 이 건수만 전송 시도하고 바로 조회로 넘어간다(대량 적체 시 조회 지연 방지).
 // 초과분은 pending 으로 남아 주기 flush(FLUSH_INTERVAL_MS)가 처리하고, capture_list_events 는 sync.pending 으로 알린다.
 const PREQUERY_FLUSH_MAX_EVENTS = 100;
+// (갭 보완) 기동 직후 eager 귀속: SessionStart 훅이 session_id 를 기록하는 타이밍을 기다리는 짧은 폴링.
+const EAGER_BIND_POLL_MS = 500;
+const EAGER_BIND_MAX_TRIES = 6; // 최대 ~3s 대기 후 미확정이면 지연 경로에 맡김
 
 async function runDoctor(): Promise<number> {
   let config;
@@ -146,6 +149,22 @@ async function runServer(): Promise<void> {
   void flushAll();
   const timer = setInterval(() => void flushAll(), FLUSH_INTERVAL_MS);
   if (typeof timer.unref === 'function') timer.unref();
+
+  // (갭 보완) 기동 직후 best-effort eager 귀속 — 이미 승인된 프로젝트면 capture 를 기다리지 않고 세션을 즉시 등록한다.
+  // (CLI 사전승인 → 세션만 여는 흐름 대응.) SessionStart 훅이 session_id·cwd 를 기록하는 타이밍을 짧게 기다려
+  // 세션 정체성을 확정한 뒤 1회 시도한다. 모호(다중 세션)·미식별·미승인이면 조용히 건너뛰고 지연 경로에 맡긴다.
+  void (async () => {
+    try {
+      for (let i = 0; i < EAGER_BIND_MAX_TRIES && !project.currentSessionId(); i++) {
+        await new Promise((r) => setTimeout(r, EAGER_BIND_POLL_MS));
+      }
+      if (!project.currentSessionId()) return; // 끝내 세션 정체성 미확정 → eager 등록 보류(지연 경로)
+      const bound = await project.eagerBindIfApproved();
+      if (bound) process.stderr.write(`[project] 세션 즉시 귀속(기동 시): ${bound}\n`);
+    } catch (err) {
+      process.stderr.write(`[project] eager 귀속 실패(무시): ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  })();
 }
 
 /** CLI 프로젝트 연결 승인(1회성) — 터미널에서 사용자가 직접 실행하는 명시적 승인 경로(elicitation 폴백). */

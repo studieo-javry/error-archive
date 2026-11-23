@@ -406,6 +406,42 @@ test('connect_project: 승인만으로 세션을 프로젝트에 즉시 등록(�
   }
 });
 
+test('eagerBindIfApproved: 승인된 프로젝트면 즉시 등록, 미승인이면 no-op(미승인 세션 안 만듦)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-eager-'));
+  const resolved = { gitRoot: '/dev/y', remote: 'github.com/o/y', projectKey: 'github.com/o/y', trust: 'config' as const };
+  let registered: { projectKey?: string } | null = null;
+  const { client: api } = fakeClient({
+    registerSession: async (req) => {
+      registered = { projectKey: req.projectKey };
+      return {
+        sessionUuid: req.sessionUuid, connectionId: 'c', clientKind: req.clientKind,
+        clientVersion: null, clientSessionId: req.clientSessionId, startedAt: 't',
+      };
+    },
+  });
+  const pc = new ProjectContext(api, {
+    baseUrl: 'https://api', sessionId: 'sess-y',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: 'cns', consentPath: join(dir, 'c.json'),
+    resolve: () => resolved,
+  });
+  try {
+    // 미승인 → eager 등록 안 함(미승인 세션을 서버에 만들지 않는다).
+    assert.equal(await pc.eagerBindIfApproved(), null);
+    assert.equal(registered, null, '미승인이면 registerSession 미호출');
+
+    // 승인 후 → 즉시 등록(capture 불필요).
+    await pc.approve(resolved);
+    registered = null; // approve 는 등록 안 함(표시만)
+    const key = await pc.eagerBindIfApproved();
+    assert.equal(key, 'github.com/o/y');
+    assert.ok(registered, '승인 상태면 eager 등록 발생');
+    assert.equal(registered!.projectKey, 'github.com/o/y', '승인한 프로젝트로 귀속');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── PR-5: 봉인 완결성(B+D) — 미전송/미확인 근거 있으면 봉인 보류, force 로 강행 ──────────
 const fr = (pending: number): FlushResult => ({ sent: 0, rejected: 0, dropped: 0, pending });
 const sealResp = (): CaptureResponse => ({

@@ -29,6 +29,7 @@ import org.studieojavry.coreapi.agentcapture.application.usecase.ImportCaptureUs
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureHistoryUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.CaptureMetricsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureOrphanEventsUseCase
+import org.studieojavry.coreapi.agentcapture.application.usecase.ListCaptureLinkedEventsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.AttachReviewEventsUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.ListCapturesForReviewUseCase
 import org.studieojavry.coreapi.agentcapture.application.usecase.RestoreCaptureCommand
@@ -45,6 +46,7 @@ import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureMetrics
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.ReviewQueueResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.SolutionResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentEventSummaryResponse
+import org.studieojavry.coreapi.agentcapture.presentation.web.dto.AgentEventListResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.CaptureOrphanEventsResponse
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsRequest
 import org.studieojavry.coreapi.agentcapture.presentation.web.dto.LinkEventsResponse
@@ -71,6 +73,7 @@ class CaptureReviewController(
     private val restoreCapture: RestoreCaptureUseCase,
     private val captureMetrics: CaptureMetricsUseCase,
     private val listOrphanEvents: ListCaptureOrphanEventsUseCase,
+    private val listLinkedEvents: ListCaptureLinkedEventsUseCase,
     private val attachReviewEvents: AttachReviewEventsUseCase,
     private val idempotency: IdempotencyService,
     private val objectMapper: ObjectMapper,
@@ -320,6 +323,31 @@ class CaptureReviewController(
     ): LinkEventsResponse {
         val r = attachReviewEvents.invoke(captureUuid, userId, request.clientEventIds)
         return LinkEventsResponse(linked = r.linked, skipped = r.skipped)
+    }
+
+    @Operation(
+        summary = "이 Capture 에 연결된 수집 근거 조회 (cursor 페이지)",
+        description = """
+            이 Capture 에 연결된(LINKED) 수집 근거(Hook 자동수집 이벤트)를 최신순 조회한다. #205 의 '추가 근거' 연결 결과가
+            검토 화면에서 실제로 되비춰지는 경로. 본인 소유만(아니면 404).
+            keyset 페이징: `cursor` 생략 = 첫 페이지, 응답 `nextCursor` 를 다음 `cursor` 로. `hasNext=false` 면 끝. 정렬 id DESC.
+            payload 는 마스킹된 원본으로 인라인 반환(소유자 전용 — 발행/공유 노출은 별도 정책).
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "성공(없으면 빈 목록)"),
+        ApiResponse(responseCode = "404", description = "없음/타인 소유", content = [Content()]),
+    )
+    @GetMapping("/{captureUuid}/events")
+    fun linkedEvents(
+        @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
+        @PathVariable captureUuid: UUID,
+        @Parameter(description = "keyset cursor — 이전 응답의 nextCursor. 이 값 미만의 더 오래된 이벤트를 조회.")
+        @RequestParam(required = false) cursor: Long?,
+        @RequestParam(defaultValue = "30") limit: Int,
+    ): AgentEventListResponse {
+        val page = listLinkedEvents.invoke(captureUuid, userId, cursor, limit.coerceIn(1, 100))
+        return AgentEventListResponse(items = page.items.map(::toSummary), nextCursor = page.nextCursor, hasNext = page.hasNext)
     }
 
     private fun toSummary(e: CaptureEvent): AgentEventSummaryResponse = AgentEventSummaryResponse(

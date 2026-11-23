@@ -91,7 +91,10 @@ class ImportCaptureUseCase(
 ) {
     @Transactional
     fun invoke(cmd: ImportCaptureCommand): ImportResult {
-        val capture = captures.findByUuidAndOwner(cmd.captureUuid, cmd.reviewerUserId)
+        // 행 락(PESSIMISTIC_WRITE)으로 근거 연결(AttachReviewEvents)·봉인(Complete)과 직렬화한다 —
+        // 연결과 반영이 인터리브되어 "이벤트는 LINKED 인데 Case 엔 미반영"되는 누락 경로를 막는다(PR-2 의 selectedEventIds
+        // 소비가 이 락 위에서 안전해진다).
+        val capture = captures.findByUuidAndOwnerForUpdate(cmd.captureUuid, cmd.reviewerUserId)
             ?: throw CaptureNotFoundException(cmd.captureUuid)
 
         val requestHash = requestHash(cmd)

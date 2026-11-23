@@ -73,6 +73,19 @@ interface CaptureEventRepositoryPort {
      * Capture 에 붙지 못한 '고아 근거'를 사람이 리뷰에서 붙일 후보로 노출한다. id DESC(최신 우선).
      */
     fun findUnlinkedBySession(ownerUserId: Long, connectionId: UUID, sessionId: String): List<CaptureEvent>
+
+    /**
+     * 이 Capture 에 연결된(status=LINKED) 이벤트 조회 — 사용자 검토 화면의 "수집 근거" 되비추기(기록화 경로①의 조회측).
+     * id DESC(최신 우선) + keyset cursor(cursorId 미만). 본인 소유 범위. 인덱스 ix_capture_event_capture 활용.
+     */
+    fun findLinkedByCapture(captureId: Long, ownerUserId: Long, cursorId: Long?, limit: Int): List<CaptureEvent>
+
+    /**
+     * 조건부 원자 연결 — `capture_id IS NULL AND status=UNCLASSIFIED` 인 **미연결** 이벤트만 이 captureId 로 귀속한다.
+     * read-check-save 의 교차-Capture 선점 경합(둘 다 null 을 읽고 나중 저장이 덮어씀)을 DB 수준에서 차단한다.
+     * 반환은 영향 행 수: 1=연결 성공, 0=없음/이미 연결됨(타 Capture·멱등)/비-UNCLASSIFIED → 호출측이 재조회로 분류.
+     */
+    fun claim(connectionId: UUID, ownerUserId: Long, clientEventId: String, captureId: Long): Int
 }
 
 /** 프로젝트 바인딩(P1 토대). 소유자별 projectKey 유일. */

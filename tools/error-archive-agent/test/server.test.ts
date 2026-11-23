@@ -364,6 +364,48 @@ test('capture_start(Phase3): 미승인 프로젝트면 생성 차단, 승인 후
   }
 });
 
+test('connect_project: 승인만으로 세션을 프로젝트에 즉시 등록(귀속) — capture_start 불필요', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-srv-connect-'));
+  const resolved = { gitRoot: '/dev/x', remote: 'github.com/o/x', projectKey: 'github.com/o/x', trust: 'config' as const };
+  let registered: { sessionUuid: string; projectKey?: string } | null = null;
+  const { client: api } = fakeClient({
+    registerSession: async (req) => {
+      registered = { sessionUuid: req.sessionUuid, projectKey: req.projectKey };
+      return {
+        sessionUuid: req.sessionUuid, connectionId: 'conn-7', clientKind: req.clientKind,
+        clientVersion: null, clientSessionId: req.clientSessionId, startedAt: 't',
+      };
+    },
+  });
+  const pc = new ProjectContext(api, {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: 'cns',
+    consentPath: join(dir, 'c.json'),
+    resolve: () => resolved,
+  });
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createServer(api, pc);
+  await server.connect(serverT);
+  const mcp = new Client({ name: 'test', version: '0' });
+  await mcp.connect(clientT);
+  try {
+    // 사전 승인(기존 연결 상태) — approve 만으로는 아직 서버 세션 등록 전.
+    await pc.approve(resolved);
+    assert.equal(registered, null, 'approve 만으로는 아직 registerSession 호출 안 됨');
+
+    // connect_project 호출만으로(= capture_start 없이) 세션이 프로젝트에 등록(귀속)돼야 한다.
+    const res = JSON.parse(textOf((await mcp.callTool({ name: 'connect_project', arguments: {} })) as never));
+    assert.equal(res.connected, true);
+    assert.ok(res.sessionUuid, 'connect_project 가 등록된 sessionUuid 를 반환');
+    assert.ok(registered, 'connect_project 호출만으로 registerSession 발생(즉시 귀속)');
+    assert.equal(registered!.projectKey, 'github.com/o/x', '승인한 프로젝트로 귀속');
+  } finally {
+    await mcp.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── PR-5: 봉인 완결성(B+D) — 미전송/미확인 근거 있으면 봉인 보류, force 로 강행 ──────────
 const fr = (pending: number): FlushResult => ({ sent: 0, rejected: 0, dropped: 0, pending });
 const sealResp = (): CaptureResponse => ({

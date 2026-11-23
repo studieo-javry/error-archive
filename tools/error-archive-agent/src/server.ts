@@ -524,12 +524,18 @@ export function createServer(
           return ok({ ...base, connected: false, snoozed: true, message: "이 세션에선 다시 안내하지 않습니다('나중에'). 수집·귀속은 아직 비활성." });
         }
         if (await project.isApproved(resolved)) {
-          return ok({ ...base, connected: true, message: '이미 연결됨.' });
+          // 이미 승인됨 — 이 세션이 아직 서버에 등록(귀속)되지 않았으면 지금 등록한다(멱등: 등록돼 있으면 no-op).
+          // 프로세스 재시작으로 승인은 남았지만 세션 미등록인 경우에도 connect_project 만으로 즉시 귀속되게 한다.
+          const sessionUuid = await project.ensureSession();
+          return ok({ ...base, connected: true, sessionUuid, message: '이미 연결됨(세션 귀속 확인).' });
         }
         const decision = await elicitProjectApproval(server, resolved.gitRoot, resolved.projectKey);
         if (decision === 'accept') {
           await project.approve(resolved);
-          return ok({ ...base, connected: true, message: '연결 승인됨. 이후 Capture 가 이 프로젝트에 귀속됩니다.' });
+          // 승인 즉시 세션을 프로젝트로 등록(귀속)한다 — capture_start 를 기다리는 '지연 등록'을 '즉시 등록'으로.
+          // registerSession 실패(오프라인 등)는 ensureSession 이 삼키고 sessionUuid 를 반환하므로 연결은 성공 처리.
+          const sessionUuid = await project.ensureSession();
+          return ok({ ...base, connected: true, sessionUuid, message: '연결 승인됨. 이 세션이 프로젝트에 귀속되었습니다(이후 Capture 자동 귀속).' });
         }
         if (decision === 'unsupported') {
           return ok({

@@ -364,6 +364,84 @@ test('capture_start(Phase3): 미승인 프로젝트면 생성 차단, 승인 후
   }
 });
 
+test('connect_project: 승인만으로 세션을 프로젝트에 즉시 등록(귀속) — capture_start 불필요', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-srv-connect-'));
+  const resolved = { gitRoot: '/dev/x', remote: 'github.com/o/x', projectKey: 'github.com/o/x', trust: 'config' as const };
+  let registered: { sessionUuid: string; projectKey?: string } | null = null;
+  const { client: api } = fakeClient({
+    registerSession: async (req) => {
+      registered = { sessionUuid: req.sessionUuid, projectKey: req.projectKey };
+      return {
+        sessionUuid: req.sessionUuid, connectionId: 'conn-7', clientKind: req.clientKind,
+        clientVersion: null, clientSessionId: req.clientSessionId, startedAt: 't',
+      };
+    },
+  });
+  const pc = new ProjectContext(api, {
+    baseUrl: 'https://api',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: 'cns',
+    consentPath: join(dir, 'c.json'),
+    resolve: () => resolved,
+  });
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createServer(api, pc);
+  await server.connect(serverT);
+  const mcp = new Client({ name: 'test', version: '0' });
+  await mcp.connect(clientT);
+  try {
+    // 사전 승인(기존 연결 상태) — approve 만으로는 아직 서버 세션 등록 전.
+    await pc.approve(resolved);
+    assert.equal(registered, null, 'approve 만으로는 아직 registerSession 호출 안 됨');
+
+    // connect_project 호출만으로(= capture_start 없이) 세션이 프로젝트에 등록(귀속)돼야 한다.
+    const res = JSON.parse(textOf((await mcp.callTool({ name: 'connect_project', arguments: {} })) as never));
+    assert.equal(res.connected, true);
+    assert.ok(res.sessionUuid, 'connect_project 가 등록된 sessionUuid 를 반환');
+    assert.ok(registered, 'connect_project 호출만으로 registerSession 발생(즉시 귀속)');
+    assert.equal(registered!.projectKey, 'github.com/o/x', '승인한 프로젝트로 귀속');
+  } finally {
+    await mcp.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('eagerBindIfApproved: 승인된 프로젝트면 즉시 등록, 미승인이면 no-op(미승인 세션 안 만듦)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ea-eager-'));
+  const resolved = { gitRoot: '/dev/y', remote: 'github.com/o/y', projectKey: 'github.com/o/y', trust: 'config' as const };
+  let registered: { projectKey?: string } | null = null;
+  const { client: api } = fakeClient({
+    registerSession: async (req) => {
+      registered = { projectKey: req.projectKey };
+      return {
+        sessionUuid: req.sessionUuid, connectionId: 'c', clientKind: req.clientKind,
+        clientVersion: null, clientSessionId: req.clientSessionId, startedAt: 't',
+      };
+    },
+  });
+  const pc = new ProjectContext(api, {
+    baseUrl: 'https://api', sessionId: 'sess-y',
+    statePath: join(dir, 'p.json'),
+    consentNamespace: 'cns', consentPath: join(dir, 'c.json'),
+    resolve: () => resolved,
+  });
+  try {
+    // 미승인 → eager 등록 안 함(미승인 세션을 서버에 만들지 않는다).
+    assert.equal(await pc.eagerBindIfApproved(), null);
+    assert.equal(registered, null, '미승인이면 registerSession 미호출');
+
+    // 승인 후 → 즉시 등록(capture 불필요).
+    await pc.approve(resolved);
+    registered = null; // approve 는 등록 안 함(표시만)
+    const key = await pc.eagerBindIfApproved();
+    assert.equal(key, 'github.com/o/y');
+    assert.ok(registered, '승인 상태면 eager 등록 발생');
+    assert.equal(registered!.projectKey, 'github.com/o/y', '승인한 프로젝트로 귀속');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── PR-5: 봉인 완결성(B+D) — 미전송/미확인 근거 있으면 봉인 보류, force 로 강행 ──────────
 const fr = (pending: number): FlushResult => ({ sent: 0, rejected: 0, dropped: 0, pending });
 const sealResp = (): CaptureResponse => ({

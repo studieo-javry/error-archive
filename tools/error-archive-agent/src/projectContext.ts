@@ -141,6 +141,19 @@ export class ProjectContext {
   }
 
   /**
+   * (갭 보완) MCP 서버 기동 시 1회 호출용 — **이미 승인된** 프로젝트면 capture 를 기다리지 않고 세션을 즉시 등록(귀속)한다.
+   * CLI 로 미리 승인한 뒤 세션만 여는 흐름에서, 첫 capture 를 기다리지 않고 세션이 서버에 묶이게 한다.
+   *  - 미승인/미식별이면 아무것도 하지 않는다(지연 등록 경로 유지 — 미승인 세션을 서버에 만들지 않는다).
+   *  - 등록 실패(오프라인 등)는 ensureSession 이 삼킨다. 반환값은 귀속한 projectKey(또는 null).
+   */
+  async eagerBindIfApproved(): Promise<string | null> {
+    const key = await this.approvedProjectKey();
+    if (!key) return null;
+    await this.ensureSession();
+    return key;
+  }
+
+  /**
    * 읽기 전용 연결상태 조회 — 네트워크·승인 다이얼로그·상태 변경 없음.
    * 오프라인 토큰-ns 동의 인덱스(Hook 의 수집 판정 source of truth)만 읽는다.
    */

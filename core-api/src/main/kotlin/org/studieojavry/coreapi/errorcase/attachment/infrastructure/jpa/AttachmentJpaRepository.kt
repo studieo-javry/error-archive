@@ -30,6 +30,9 @@ interface AttachmentJpaRepository : JpaRepository<AttachmentEntity, Long> {
         pageable: Pageable,
     ): List<AttachmentEntity>
 
+    // 미연결(errorCaseId IS NULL) + TTL 경과(= GC 대상) row 수. orphan 백로그 게이지(AttachmentMetrics)용.
+    fun countByErrorCaseIdIsNullAndUploadedAtBefore(threshold: Instant): Long
+
     // 업로더의 미연결(pending) 첨부 최신순. "이번에 올린 첨부" 트레이 재조회용.
     fun findByErrorCaseIdIsNullAndUploadedByUserIdOrderByUploadedAtDesc(
         uploadedByUserId: Long,

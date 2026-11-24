@@ -18,11 +18,12 @@ class IssueGithubInstallUrlUseCase(
     private val stateCodec: GithubInstallStateCodec,
     private val workspaceQuery: WorkspaceQueryPort,
 ) {
-    fun invoke(userId: Long, workspaceId: Long?): String {
+    /** [remember]=true 면 "6개월 기억" 동의를 state 에 실어, 설치 완료(Flow B) 시 refresh 토큰까지 저장하게 한다. */
+    fun invoke(userId: Long, workspaceId: Long?, remember: Boolean = false): String {
         workspaceId?.let { requireWorkspaceAdmin(workspaceQuery, userId, it) }
         return UriComponentsBuilder.fromUriString(properties.webBaseUrl)
             .path("/apps/{slug}/installations/new")
-            .queryParam("state", stateCodec.issue(userId, workspaceId))
+            .queryParam("state", stateCodec.issue(userId, workspaceId, remember))
             .buildAndExpand(properties.appSlug)
             .toUriString()
     }

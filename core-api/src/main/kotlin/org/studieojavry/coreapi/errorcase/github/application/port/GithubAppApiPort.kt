@@ -12,8 +12,17 @@ import org.studieojavry.coreapi.errorcase.github.domain.model.vo.GithubRefKind
  */
 interface GithubAppApiPort {
 
-    /** 설치 콜백의 `code` → 사용자 토큰. 설치 소유 검증([listUserInstallationIds])에만 쓰고 버린다. */
-    fun exchangeUserCode(code: String): String
+    /**
+     * 설치/OAuth 콜백의 `code` → 사용자 토큰(+ App 이 토큰 만료를 켰다면 refresh 토큰·만료 시각 동반).
+     * 설치 소유 검증([listUserInstallationIds])·후보 조립에 쓰고, 재연결(시나리오 ②)용으로 저장할 수도 있다.
+     */
+    fun exchangeUserCode(code: String): UserAccessToken
+
+    /**
+     * refresh 토큰으로 사용자 토큰을 갱신(`grant_type=refresh_token`). GitHub 는 호출 때마다 **새 refresh 토큰으로 회전**하므로
+     * 응답의 refresh 토큰·만료를 그대로 다시 저장해야 한다. 만료·취소된 refresh 토큰이면 [GithubApiException.clientError].
+     */
+    fun refreshUserToken(refreshToken: String): UserAccessToken
 
     /** 이 사용자 토큰으로 접근 가능한 App 설치 id 목록 (`GET /user/installations`). */
     fun listUserInstallationIds(userToken: String): Set<Long>
@@ -92,6 +101,17 @@ interface GithubAppApiPort {
 
     /** `GET /user` 결과 — [id] 는 GitHub 사용자 숫자 id(불변), [login] 은 표시·감사용. */
     data class GithubUserIdentity(val id: Long, val login: String)
+
+    /**
+     * OAuth 토큰 교환/갱신 결과. App 이 토큰 만료를 **끈** 경우 토큰은 무기한이라 [refreshToken]·[expiresAt]·
+     * [refreshTokenExpiresAt] 가 모두 null 로 온다(그땐 갱신이 필요 없다).
+     */
+    data class UserAccessToken(
+        val token: String,
+        val refreshToken: String? = null,
+        val expiresAt: java.time.Instant? = null,
+        val refreshTokenExpiresAt: java.time.Instant? = null,
+    )
 
     data class InstallationInfo(val id: Long, val accountLogin: String, val accountType: String)
     data class RepositoryInfo(val id: Long, val fullName: String, val isPrivate: Boolean)

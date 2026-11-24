@@ -99,18 +99,26 @@ class GithubIntegrationTest {
     private fun asUser(uid: Long) = authentication(InternalAuthentication(uid, emptyList(), "test-caller"))
 
     // ── helpers ────────────────────────────────────────────────
-    private fun issueState(uid: Long): String {
-        val body = mvc.perform(get("/api/v1/integrations/github/install-url").with(asUser(uid)))
-            .andExpect(status().isOk)
-            .andReturn().response.contentAsString
+    private fun issueState(uid: Long, remember: Boolean = false): String {
+        val req = get("/api/v1/integrations/github/install-url").with(asUser(uid))
+        if (remember) req.param("remember", "true")
+        val body = mvc.perform(req).andExpect(status().isOk).andReturn().response.contentAsString
         val url = om.readTree(body)["url"].asText()
         assert(url.startsWith("https://github.com/apps/error-archive-test/installations/new?state=")) { url }
         return url.substringAfter("state=")
     }
 
-    private fun stubGithub(installationId: Long, code: String, repos: List<GithubAppApiPort.RepositoryInfo>) {
-        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$code")
+    private fun stubGithub(
+        installationId: Long,
+        code: String,
+        repos: List<GithubAppApiPort.RepositoryInfo>,
+        // 교환 토큰 기본값은 refresh 없음. remember 게이팅 테스트는 refresh 포함 토큰 전달(.token 은 "utok-$code" 유지).
+        token: GithubAppApiPort.UserAccessToken = GithubAppApiPort.UserAccessToken("utok-$code"),
+    ) {
+        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(token)
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$code")).thenReturn(setOf(installationId))
+        Mockito.`when`(githubApi.getAuthenticatedUser("utok-$code"))
+            .thenReturn(GithubAppApiPort.GithubUserIdentity(70000 + installationId, "octo-$code"))
         Mockito.`when`(githubApi.getInstallation(installationId))
             .thenReturn(GithubAppApiPort.InstallationInfo(installationId, "acme-$installationId", "Organization"))
         Mockito.`when`(githubApi.listInstallationRepositories(installationId)).thenReturn(repos)
@@ -145,6 +153,41 @@ class GithubIntegrationTest {
         val code = "code-$installationId"
         stubGithub(installationId, code, repos)
         complete(uid, installationId, code, issueState(uid)).andExpect(status().isOk)
+    }
+
+    /** refresh 토큰이 오는 교환 토큰(App 만료 설정 켜짐 가정). */
+    private fun tokenWithRefresh(code: String): GithubAppApiPort.UserAccessToken {
+        val now = Instant.now()
+        return GithubAppApiPort.UserAccessToken(
+            token = "utok-$code", refreshToken = "rtok-$code",
+            expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+        )
+    }
+
+    // ── 설치 완료(Flow B) 사용자 인가 저장 — Flow A 와 통일, remember 로 refresh 게이트 ──
+    @Test
+    fun `설치 완료 - 사용자 인가를 저장(Flow A 와 통일), remember 미동의면 refresh 없음(B)`() {
+        val uid = 3001L; val inst = 30_010L; val code = "code-$inst"
+        stubGithub(inst, code, listOf(GithubAppApiPort.RepositoryInfo(1, "acme/a", false)), token = tokenWithRefresh(code))
+        complete(uid, inst, code, issueState(uid)).andExpect(status().isOk) // remember 기본 false
+
+        val stored = userAuthorizations.findByEaUserId(uid)
+        assertNotNull(stored)
+        assertEquals("utok-$code", stored.token) // 인가 저장 → 시나리오 ② 를 Flow B 연결에도 제공
+        assertEquals(70000 + inst, stored.githubUserId)
+        assertNull(stored.refreshToken) // 미동의 → refresh 미저장(B)
+    }
+
+    @Test
+    fun `설치 완료 - remember 동의면 refresh 토큰·만료도 저장(A)`() {
+        val uid = 3002L; val inst = 30_020L; val code = "code-$inst"
+        stubGithub(inst, code, listOf(GithubAppApiPort.RepositoryInfo(1, "acme/a", false)), token = tokenWithRefresh(code))
+        complete(uid, inst, code, issueState(uid, remember = true)).andExpect(status().isOk)
+
+        val stored = userAuthorizations.findByEaUserId(uid)
+        assertNotNull(stored)
+        assertEquals("rtok-$code", stored.refreshToken) // 동의 → refresh 보관(A)
+        assertNotNull(stored.expiresAt)
     }
 
     // ── 웹훅 수신 ───────────────────────────────────────────────

@@ -36,7 +36,8 @@ class GithubInstallationController(
 
     @Operation(
         summary = "GitHub 연결 시작 — 설치 페이지 URL 발급",
-        description = "서명된 state(10분)를 포함한 GitHub App 설치 URL. workspaceId 를 주면 그 워크스페이스 범위로 연결(ADMIN 필요).",
+        description = "서명된 state(10분)를 포함한 GitHub App 설치 URL. workspaceId 를 주면 그 워크스페이스 범위로 연결(ADMIN 필요). " +
+            "remember=true 면 '6개월 기억' 동의를 state 에 실어, 설치 완료 시 refresh 토큰까지 저장한다(기본 false).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "발급 성공"),
@@ -47,7 +48,9 @@ class GithubInstallationController(
     fun installUrl(
         @Parameter(hidden = true) @AuthenticationPrincipal userId: Long,
         @Parameter(description = "연결할 워크스페이스 ID (생략 시 개인 연결)") @RequestParam(required = false) workspaceId: Long?,
-    ): GithubInstallUrlResponse = GithubInstallUrlResponse(issueInstallUrl.invoke(userId, workspaceId))
+        @Parameter(description = "'6개월 기억' 동의 (기본 false)")
+        @RequestParam(required = false, defaultValue = "false") remember: Boolean,
+    ): GithubInstallUrlResponse = GithubInstallUrlResponse(issueInstallUrl.invoke(userId, workspaceId, remember))
 
     @Operation(
         summary = "GitHub 연결 완료",

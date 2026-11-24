@@ -74,19 +74,44 @@ class GithubAppApiAdapter(
         .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
         .build()
 
-    override fun exchangeUserCode(code: String): String = call("exchangeUserCode") {
+    override fun exchangeUserCode(code: String): GithubAppApiPort.UserAccessToken = call("exchangeUserCode") {
         val form = LinkedMultiValueMap<String, String>().apply {
             add("client_id", properties.clientId)
             add("client_secret", properties.clientSecret)
             add("code", code)
         }
+        postOAuthToken(form)
+            // GitHub 는 잘못된 code 에도 200 + {"error":"bad_verification_code"} 로 응답한다.
+            ?: throw GithubApiException("GitHub 인가 코드가 유효하지 않음", clientError = true)
+    }
+
+    override fun refreshUserToken(refreshToken: String): GithubAppApiPort.UserAccessToken = call("refreshUserToken") {
+        val form = LinkedMultiValueMap<String, String>().apply {
+            add("client_id", properties.clientId)
+            add("client_secret", properties.clientSecret)
+            add("grant_type", "refresh_token")
+            add("refresh_token", refreshToken)
+        }
+        // 만료·취소된 refresh 토큰도 200 + {"error":"bad_refresh_token"} → access_token 없음 → clientError(폐기·재인가 신호).
+        postOAuthToken(form)
+            ?: throw GithubApiException("GitHub refresh 토큰이 유효하지 않음", clientError = true)
+    }
+
+    /** `/login/oauth/access_token` 폼 POST → 사용자 토큰. access_token 이 비면(에러 응답) null — 호출 쪽이 clientError 로 올린다. */
+    private fun postOAuthToken(form: LinkedMultiValueMap<String, String>): GithubAppApiPort.UserAccessToken? {
         val res = web.post().uri("/login/oauth/access_token")
             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
             .body(form)
             .retrieve()
             .body(OAuthTokenResponse::class.java)
-        // GitHub 는 잘못된 code 에도 200 + {"error":"bad_verification_code"} 로 응답한다.
-        res?.accessToken ?: throw GithubApiException("GitHub 인가 코드가 유효하지 않음: ${res?.error}", clientError = true)
+        val accessToken = res?.accessToken ?: return null
+        val now = Instant.now()
+        return GithubAppApiPort.UserAccessToken(
+            token = accessToken,
+            refreshToken = res.refreshToken,
+            expiresAt = res.expiresIn?.let { now.plusSeconds(it) },
+            refreshTokenExpiresAt = res.refreshTokenExpiresIn?.let { now.plusSeconds(it) },
+        )
     }
 
     override fun listUserInstallationIds(userToken: String): Set<Long> = call("listUserInstallations") {
@@ -298,6 +323,9 @@ class GithubAppApiAdapter(
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class OAuthTokenResponse(
         @JsonProperty("access_token") val accessToken: String? = null,
+        @JsonProperty("expires_in") val expiresIn: Long? = null,
+        @JsonProperty("refresh_token") val refreshToken: String? = null,
+        @JsonProperty("refresh_token_expires_in") val refreshTokenExpiresIn: Long? = null,
         @JsonProperty("error") val error: String? = null,
     )
 

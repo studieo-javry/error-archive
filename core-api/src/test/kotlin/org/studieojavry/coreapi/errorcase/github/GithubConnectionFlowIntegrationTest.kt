@@ -98,8 +98,10 @@ class GithubConnectionFlowIntegrationTest {
         // 기본: 모든 레포에 사용자 admin 권한(개인·워크스페이스 모두 선택 가능). 권한 정책 테스트는 명시 전달.
         userPerms: List<GithubAppApiPort.UserRepositoryInfo> =
             repos.map { GithubAppApiPort.UserRepositoryInfo(it.id, canAdmin = true, canPush = true, canPull = true) },
+        // 기본 교환 토큰은 refresh 없음. remember 게이팅 테스트는 refresh 포함 토큰을 명시 전달(.token 은 "utok-$uid" 유지).
+        token: GithubAppApiPort.UserAccessToken = GithubAppApiPort.UserAccessToken("utok-$uid"),
     ) {
-        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn("utok-$uid")
+        Mockito.`when`(githubApi.exchangeUserCode(code)).thenReturn(token)
         Mockito.`when`(githubApi.getAuthenticatedUser("utok-$uid"))
             .thenReturn(GithubAppApiPort.GithubUserIdentity(90000 + uid, "user-$uid"))
         Mockito.`when`(githubApi.listUserInstallationIds("utok-$uid")).thenReturn(setOf(installationId))
@@ -109,18 +111,19 @@ class GithubConnectionFlowIntegrationTest {
         Mockito.`when`(githubApi.listUserInstallationRepositories("utok-$uid", installationId)).thenReturn(userPerms)
     }
 
-    /** authorize-url 엔드포인트에서 서명된 state 를 뽑는다(개인 연결). */
-    private fun authorizeState(uid: Long, workspaceId: Long? = null): String {
+    /** authorize-url 엔드포인트에서 서명된 state 를 뽑는다(개인 연결). remember=true 면 "6개월 기억" 동의를 state 에 싣는다. */
+    private fun authorizeState(uid: Long, workspaceId: Long? = null, remember: Boolean = false): String {
         val req = get("/api/v1/integrations/github/authorize-url").with(asUser(uid))
         workspaceId?.let { req.param("workspaceId", it.toString()) }
+        if (remember) req.param("remember", "true")
         val url = om.readTree(mvc.perform(req).andExpect(status().isOk).andReturn().response.contentAsString)["url"].asText()
         assert(url.startsWith("https://github.com/login/oauth/authorize?client_id=cid&state=")) { url }
         return url.substringAfter("state=")
     }
 
     /** connection-candidates 호출 → 지정 설치의 candidateToken 반환. */
-    private fun candidateToken(uid: Long, installationId: Long, code: String, workspaceId: Long? = null): String {
-        val state = authorizeState(uid, workspaceId)
+    private fun candidateToken(uid: Long, installationId: Long, code: String, workspaceId: Long? = null, remember: Boolean = false): String {
+        val state = authorizeState(uid, workspaceId, remember)
         val body = mvc.perform(
             post("/api/v1/integrations/github/connection-candidates").with(asUser(uid))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -183,6 +186,40 @@ class GithubConnectionFlowIntegrationTest {
         assertEquals("user-44", stored.githubLogin)
     }
 
+    /** refresh 토큰이 오는 교환 토큰(App 만료 설정 켜짐 가정). */
+    private fun tokenWithRefresh(uid: Long): GithubAppApiPort.UserAccessToken {
+        val now = Instant.now()
+        return GithubAppApiPort.UserAccessToken(
+            token = "utok-$uid", refreshToken = "rtok-$uid",
+            expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+        )
+    }
+
+    @Test
+    fun `connection-candidates - remember 미동의(기본)면 refresh 토큰을 저장하지 않는다(B)`() {
+        stubOAuth(uid = 80, installationId = 8000, code = "c80", repos = listOf(repo(1, "acme/a")), token = tokenWithRefresh(80))
+        candidateToken(uid = 80, installationId = 8000, code = "c80") // remember 기본 false
+
+        val stored = userAuthorizations.findByEaUserId(80)
+        assertNotNull(stored)
+        assertEquals("utok-80", stored.token) // access 토큰은 저장(시나리오 ② ~8h)
+        assertEquals(null, stored.refreshToken) // 미동의 → refresh 미저장 → 선제 갱신 없음(8h 뒤 재인가)
+        assertEquals(null, stored.expiresAt)
+    }
+
+    @Test
+    fun `connection-candidates - remember 동의면 refresh 토큰·만료를 저장한다(A)`() {
+        stubOAuth(uid = 81, installationId = 8100, code = "c81", repos = listOf(repo(1, "acme/a")), token = tokenWithRefresh(81))
+        candidateToken(uid = 81, installationId = 8100, code = "c81", remember = true)
+
+        val stored = userAuthorizations.findByEaUserId(81)
+        assertNotNull(stored)
+        assertEquals("utok-81", stored.token)
+        assertEquals("rtok-81", stored.refreshToken) // 동의 → refresh 보관 → 선제 갱신으로 ~6개월 유지
+        assertNotNull(stored.expiresAt)
+        assertNotNull(stored.refreshTokenExpiresAt)
+    }
+
     // ── connection-options (시나리오 ②) ─────────────────────────
     @Test
     fun `connection-options - 저장 토큰 없으면 NOT_AUTHORIZED + authorizeUrl`() {
@@ -241,6 +278,110 @@ class GithubConnectionFlowIntegrationTest {
         val body = connectionOptions(uid = 64)
         assertEquals("TEMPORARY_FAILURE", body["status"].asText())
         assertNotNull(userAuthorizations.findByEaUserId(64)) // 유저 토큰은 유효 → 폐기하지 않음
+    }
+
+    // ── connection-options: 토큰 수명(선제 갱신) ────────────────
+    /** 만료 임박(이미 만료) + 살아있는 refresh 토큰을 가진 저장 행. */
+    private fun saveExpiringToken(uid: Long, githubUserId: Long, token: String, refreshToken: String) {
+        val now = Instant.now()
+        userAuthorizations.save(
+            GithubUserAuthorization(
+                eaUserId = uid, githubUserId = githubUserId, githubLogin = "login-$uid",
+                token = token, createdAt = now, updatedAt = now,
+                refreshToken = refreshToken,
+                expiresAt = now.minusSeconds(60), // 이미 만료 → needsRefresh
+                refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600), // refresh 는 아직 유효
+            ),
+        )
+    }
+
+    @Test
+    fun `connection-options - 만료 임박 토큰은 설치 조회 전에 선제 갱신하고 새 토큰을 저장`() {
+        saveExpiringToken(uid = 70, githubUserId = 90070, token = "utok-70", refreshToken = "rtok-70")
+        val now = Instant.now()
+        Mockito.`when`(githubApi.refreshUserToken("rtok-70")).thenReturn(
+            GithubAppApiPort.UserAccessToken(
+                token = "utok-70b", refreshToken = "rtok-70b",
+                expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+            ),
+        )
+        // 갱신된 토큰으로 설치 조회 — 설치 없음(VERIFIED_EMPTY)만으로 "새 토큰으로 호출됐다"를 증명.
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-70b")).thenReturn(emptySet())
+
+        val body = connectionOptions(uid = 70)
+        assertEquals("VERIFIED_EMPTY", body["status"].asText())
+        Mockito.verify(githubApi, Mockito.times(1)).refreshUserToken("rtok-70")
+        Mockito.verify(githubApi, Mockito.never()).listUserInstallationIds("utok-70") // 옛 토큰으론 호출 안 함
+        // 회전된 토큰·refresh 토큰이 저장됨(다음 갱신 대비).
+        val stored = userAuthorizations.findByEaUserId(70)
+        assertNotNull(stored)
+        assertEquals("utok-70b", stored.token)
+        assertEquals("rtok-70b", stored.refreshToken)
+    }
+
+    @Test
+    fun `connection-options - refresh 토큰이 만료·취소면 폐기하고 NOT_AUTHORIZED`() {
+        saveExpiringToken(uid = 71, githubUserId = 90071, token = "utok-71", refreshToken = "rtok-71")
+        Mockito.`when`(githubApi.refreshUserToken("rtok-71"))
+            .thenThrow(GithubApiException("bad_refresh_token", clientError = true))
+
+        val body = connectionOptions(uid = 71)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assertEquals(null, userAuthorizations.findByEaUserId(71)) // 갱신 불가 → 폐기
+        Mockito.verify(githubApi, Mockito.never()).listUserInstallationIds(Mockito.anyString())
+    }
+
+    @Test
+    fun `connection-options - refresh 가 일시 장애(비-clientError)면 토큰 보존하고 TEMPORARY_FAILURE`() {
+        saveExpiringToken(uid = 73, githubUserId = 90073, token = "utok-73", refreshToken = "rtok-73")
+        Mockito.`when`(githubApi.refreshUserToken("rtok-73"))
+            .thenThrow(GithubApiException("github 5xx", clientError = false)) // 일시 장애
+
+        val body = connectionOptions(uid = 73)
+        assertEquals("TEMPORARY_FAILURE", body["status"].asText())
+        // 토큰 문제가 아니라 GitHub 장애 → 폐기하지 않음(다음 시도에 갱신 재시도).
+        val stored = userAuthorizations.findByEaUserId(73)
+        assertNotNull(stored)
+        assertEquals("utok-73", stored.token) // 그대로
+        Mockito.verify(githubApi, Mockito.never()).listUserInstallationIds(Mockito.anyString())
+    }
+
+    @Test
+    fun `connection-options - 갱신은 됐지만 새 토큰 설치조회가 4xx 면 안전망으로 폐기하고 NOT_AUTHORIZED`() {
+        saveExpiringToken(uid = 74, githubUserId = 90074, token = "utok-74", refreshToken = "rtok-74")
+        val now = Instant.now()
+        Mockito.`when`(githubApi.refreshUserToken("rtok-74")).thenReturn(
+            GithubAppApiPort.UserAccessToken(
+                token = "utok-74b", refreshToken = "rtok-74b",
+                expiresAt = now.plusSeconds(8 * 3600), refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+            ),
+        )
+        // 갱신 직후 새 토큰이 곧바로 취소된 드문 경우 — 설치 조회가 4xx → 기존 폐기 경로(안전망).
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-74b"))
+            .thenThrow(GithubApiException("bad credentials", clientError = true))
+
+        val body = connectionOptions(uid = 74)
+        assertEquals("NOT_AUTHORIZED", body["status"].asText())
+        assertEquals(null, userAuthorizations.findByEaUserId(74)) // 안전망 폐기
+    }
+
+    @Test
+    fun `connection-options - refresh 토큰이 있어도 만료 전이면 갱신 없이 저장 토큰으로 조회`() {
+        val now = Instant.now()
+        userAuthorizations.save(
+            GithubUserAuthorization(
+                eaUserId = 72, githubUserId = 90072, githubLogin = "login-72",
+                token = "utok-72", createdAt = now, updatedAt = now,
+                refreshToken = "rtok-72",
+                expiresAt = now.plusSeconds(8 * 3600), // 여유 충분 → 갱신 불필요
+                refreshTokenExpiresAt = now.plusSeconds(180L * 24 * 3600),
+            ),
+        )
+        Mockito.`when`(githubApi.listUserInstallationIds("utok-72")).thenReturn(emptySet())
+
+        val body = connectionOptions(uid = 72)
+        assertEquals("VERIFIED_EMPTY", body["status"].asText())
+        Mockito.verify(githubApi, Mockito.never()).refreshUserToken(Mockito.anyString())
     }
 
     // ── 후보 조회 → 생성 ────────────────────────────────────────
